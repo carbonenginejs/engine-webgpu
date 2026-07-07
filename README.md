@@ -3,7 +3,7 @@
 WebGPU backend: CjsWebGPUDevice (ICjsDevice) + GPU resource adapters keyed off the faithful Tr2*Res + pipeline/bindgroup build from .cewgpu + render loop. Runs headless (Deno) and in-browser.
 
 Part of the CarbonEngineJS runtime/engine tier (Deno + TypeScript, WebGPU-first).
-See carbonenginejs.md for the CarbonEngine and ccpwgl source files this package is a candidate to port.
+Ports/adapts from CarbonEngine (https://github.com/carbonengine, MIT); ccpwgl consulted as a reference donor.
 
 ## Status
 
