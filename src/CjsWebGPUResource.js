@@ -1,0 +1,78 @@
+import { cloneJson, deepFreeze } from "./core/freeze.js";
+
+/**
+ * Immutable WebGPU-facing binding/resource descriptor.
+ */
+export class CjsWebGPUResource
+{
+
+  /**
+   * @param {object} values Descriptor values.
+   */
+  constructor(values = {})
+  {
+    this.key = String(values.key || "");
+    this.name = String(values.name || "");
+    this.techniqueName = String(values.techniqueName || "");
+    this.passIndex = Number.isInteger(values.passIndex) ? values.passIndex : 0;
+    this.stageName = typeof values.stageName === "string" ? values.stageName : "";
+    this.stageType = Number.isInteger(values.stageType) ? values.stageType : null;
+    this.generatedSymbol = String(values.generatedSymbol || "");
+    this.bindingKind = String(values.bindingKind || "resource");
+    this.access = String(values.access || "readOnly");
+    this.registerIndex = Number.isInteger(values.registerIndex) ? values.registerIndex : 0;
+    this.registerSpace = Number.isInteger(values.registerSpace) ? values.registerSpace : null;
+    this.registerCount = Number.isInteger(values.registerCount) ? values.registerCount : 1;
+    this.arrayCount = Number.isInteger(values.arrayCount) ? values.arrayCount : 1;
+    this.dynamic = Boolean(values.dynamic);
+    this.heapView = Boolean(values.heapView);
+    this.metadataName = values.metadataName ? String(values.metadataName) : null;
+    this.carbon = deepFreeze(cloneJson(values.carbon || null));
+    this.annotations = deepFreeze(cloneJson(values.annotations || []));
+    this.sourceTruth = String(values.sourceTruth || "unknown");
+    this.stages = deepFreeze(cloneJson(values.stages || []));
+    this.resourceKind = String(values.resourceKind || "");
+    this.group = Number.isInteger(values.group) ? values.group : null;
+    this.binding = Number.isInteger(values.binding) ? values.binding : null;
+    this.visibility = deepFreeze(cloneJson(values.visibility || []));
+    this.layout = deepFreeze(cloneJson(values.layout || null));
+    if (new.target === CjsWebGPUResource)
+    {
+      Object.freeze(this);
+    }
+  }
+
+  /**
+   * @returns {object} Plain JSON-compatible descriptor.
+   */
+  ToJSON()
+  {
+    return cloneJson({
+      key: this.key,
+      name: this.name,
+      techniqueName: this.techniqueName,
+      passIndex: this.passIndex,
+      stageName: this.stageName,
+      stageType: this.stageType,
+      generatedSymbol: this.generatedSymbol,
+      bindingKind: this.bindingKind,
+      access: this.access,
+      registerIndex: this.registerIndex,
+      registerSpace: this.registerSpace,
+      registerCount: this.registerCount,
+      arrayCount: this.arrayCount,
+      dynamic: this.dynamic,
+      heapView: this.heapView,
+      metadataName: this.metadataName,
+      carbon: this.carbon,
+      annotations: this.annotations,
+      sourceTruth: this.sourceTruth,
+      stages: this.stages,
+      resourceKind: this.resourceKind,
+      group: this.group,
+      binding: this.binding,
+      visibility: this.visibility,
+      layout: this.layout
+    });
+  }
+}

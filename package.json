@@ -1,0 +1,42 @@
+{
+  "name": "@carbonenginejs/engine-webgpu",
+  "version": "0.1.1",
+  "private": true,
+  "description": "CarbonEngineJS WebGPU descriptor and effect-path helpers for CEWGPU package consumption.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./utils/effectPaths": "./src/utils/effectPaths.js"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test",
+    "test:webgpu": "node scripts/run-webgpu-harness.js",
+    "test:webgpu:required": "node scripts/run-webgpu-harness.js --required",
+    "lint": "node --check src/index.js && node --check src/CjsWebGPUPackage.js && node --check src/CjsWebGPUPipeline.js && node --check src/CjsWebGPUShaderModule.js && node --check src/CjsWebGPUBindGroup.js && node --check src/CjsWebGPUResource.js && node --check src/CjsWebGPUBuffer.js && node --check src/CjsWebGPUTexture.js && node --check src/CjsWebGPUSampler.js && node --check src/core/packageHelpers.js && node --check src/core/packageDraw.js && node --check src/core/freeze.js && node --check src/utils/effectPaths.js && node --check test/package.test.js && node --check scripts/run-webgpu-harness.js && node --check harness/webgpu/run.js"
+  },
+  "keywords": [
+    "carbonenginejs",
+    "engine-webgpu",
+    "webgpu",
+    "cewgpu",
+    "shader"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
