@@ -157,10 +157,34 @@ async function CompileCandidate(device)
     };
 }
 
-function CreateAdapterResourceSlot()
+function CreateAdapterResourceSlot(payload = null)
 {
     const adapterResources = new Map();
     return {
+        state: "loaded",
+        IsCurrent()
+        {
+            return true;
+        },
+        GetPayload()
+        {
+            return payload;
+        },
+        MarkLoaded()
+        {
+            this.state = "loaded";
+            return this;
+        },
+        MarkPreparing()
+        {
+            this.state = "preparing";
+            return this;
+        },
+        MarkPrepared()
+        {
+            this.state = "prepared";
+            return this;
+        },
         GetAdapterResource(key)
         {
             return adapterResources.get(key) ?? null;
@@ -182,52 +206,32 @@ function CreateAdapterResourceSlot()
 
 async function PublishPreparedResourceBundle(webgpu, payload, name)
 {
-    const resource = CreateAdapterResourceSlot();
-    const stage = webgpu.CreateResourcePrepareStage({
-        name: `engine-webgpu-${name}`,
-        adapterKey: "webgpu"
-    });
-    const retained = await stage.prepare(payload, { resource });
-    Assert(retained === undefined, `${name} publication replaced its retained CPU payload`);
-    const bundle = resource.GetAdapterResource("webgpu");
+    const resource = CreateAdapterResourceSlot(payload);
+    const bundle = await webgpu.RealizeResource(resource, payload);
     Assert(bundle, `${name} publication did not populate the WebGPU adapter slot`);
     return bundle;
 }
 
 async function PublishPreparedRgba8Texture(webgpu, payload, name, textureKey)
 {
-    const resource = CreateAdapterResourceSlot();
-    const pipeline = webgpu.CreateRgba8TexturePreparePipeline({
+    const resource = CreateAdapterResourceSlot(payload);
+    const bundle = await webgpu.RealizeRgba8Texture(resource, {
         textureKey,
         bundleLabel: `${name} resources`,
-        mappingStageName: `engine-webgpu-${name}-map-rgba8`,
-        publicationStageName: `engine-webgpu-${name}-publish`,
         adapterKey: "webgpu"
     });
-    const mapped = pipeline.stages[0].prepare(payload, { resource });
-    Assert(mapped !== payload, `${name} mapping did not produce a texture-bundle payload`);
-    const retained = await pipeline.stages[1].prepare(mapped, { resource });
-    Assert(retained === undefined, `${name} publication replaced its retained mapped payload`);
-    const bundle = resource.GetAdapterResource("webgpu");
     Assert(bundle, `${name} publication did not populate the WebGPU adapter slot`);
     return bundle;
 }
 
 async function PublishPreparedSampler(webgpu, payload, name, samplerKey)
 {
-    const resource = CreateAdapterResourceSlot();
-    const pipeline = webgpu.CreateSamplerPreparePipeline({
+    const resource = CreateAdapterResourceSlot(payload);
+    const bundle = await webgpu.RealizeSampler(resource, {
         samplerKey,
         bundleLabel: `${name} resources`,
-        mappingStageName: `engine-webgpu-${name}-map-selected-sampler`,
-        publicationStageName: `engine-webgpu-${name}-publish`,
         adapterKey: "webgpu"
     });
-    const mapped = pipeline.stages[0].prepare(payload, { resource });
-    Assert(mapped !== payload, `${name} mapping did not produce a sampler-bundle payload`);
-    const retained = await pipeline.stages[1].prepare(mapped, { resource });
-    Assert(retained === undefined, `${name} publication replaced its retained mapped payload`);
-    const bundle = resource.GetAdapterResource("webgpu");
     Assert(bundle, `${name} publication did not populate the WebGPU adapter slot`);
     return bundle;
 }
@@ -918,7 +922,7 @@ async function RunHarness()
             geometryAdapter: "device-owned",
             textureAdapter: "device-owned uncompressed 2D",
             samplerAdapter: "device-owned",
-            resourcePublication: "atomic prepare-stage adapter-slot",
+            resourcePublication: "explicit guarded renderer realization",
             rgba8TexturePreparation: phaseZeroDraw
                 ? "canonical decoded RGBA8 -> texture bundle -> atomic adapter slot"
                 : null,

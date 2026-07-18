@@ -366,9 +366,35 @@ function adapterResourceSlot()
   return {
     values,
     history,
+    current: true,
+    state: "loaded",
+    payload: null,
     setError: null,
     setThenError: null,
     ignoreSet: false,
+    IsCurrent()
+    {
+      return this.current;
+    },
+    GetPayload()
+    {
+      return this.payload;
+    },
+    MarkLoaded()
+    {
+      this.state = "loaded";
+      return this;
+    },
+    MarkPreparing()
+    {
+      this.state = "preparing";
+      return this;
+    },
+    MarkPrepared()
+    {
+      this.state = "prepared";
+      return this;
+    },
     GetAdapterResource(key)
     {
       return values.get(key) ?? null;
@@ -1391,15 +1417,8 @@ test("CjsWebGPUDevice rejects foreign and stale sampler handles and resets the c
 
 test("CjsWebGPUDevice maps and publishes already-selected sampler state", async () =>
 {
-  const fake = fakeDevice("sampler-prepare-pipeline");
+  const fake = fakeDevice("sampler-realization");
   const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
-  const pipeline = webgpu.CreateSamplerPreparePipeline({
-    samplerKey: "sampler:0:0",
-    bundleLabel: "prepared material sampler",
-    mappingStageName: "map-material-sampler",
-    publicationStageName: "publish-material-sampler",
-    adapterKey: "webgpu:sampler"
-  });
   const selected = {
     payloadType: "webgpu-sampler",
     label: "selected material sampler",
@@ -1413,50 +1432,38 @@ test("CjsWebGPUDevice maps and publishes already-selected sampler state", async 
     lodMaxClamp: 8.1,
     maxAnisotropy: 4
   };
-
-  assert.equal(Object.isFrozen(pipeline), true);
-  assert.equal(Object.isFrozen(pipeline.stages), true);
-  assert.deepEqual(pipeline.stages.map((stage) => stage.name), [
-    "map-material-sampler",
-    "publish-material-sampler"
-  ]);
-  const callsBeforeMapping = fake.device.calls.length;
-  const mapped = pipeline.stages[0].prepare(selected);
-  assert.equal(fake.device.calls.length, callsBeforeMapping);
-  assert.equal(Object.isFrozen(mapped), true);
-  assert.equal(Object.isFrozen(mapped.samplers), true);
-  assert.equal(Object.isFrozen(mapped.samplers["sampler:0:0"]), true);
-  assert.deepEqual(mapped.samplers["sampler:0:0"], {
-    label: "selected material sampler",
-    addressModeU: "repeat",
-    addressModeV: "clamp-to-edge",
-    addressModeW: "clamp-to-edge",
-    magFilter: "linear",
-    minFilter: "linear",
-    mipmapFilter: "linear",
-    lodMinClamp: 0,
-    lodMaxClamp: Math.fround(8.1),
-    maxAnisotropy: 4
-  });
-
   const resource = adapterResourceSlot();
-  assert.equal(await pipeline.stages[1].prepare(mapped, { resource }), undefined);
-  const first = resource.GetAdapterResource("webgpu:sampler");
+  resource.payload = selected;
+  const first = await webgpu.RealizeSampler(resource, {
+    samplerKey: "sampler:0:0",
+    bundleLabel: "prepared material sampler",
+    adapterKey: "webgpu:sampler"
+  });
+  assert.equal(resource.state, "prepared");
+  assert.equal(resource.GetAdapterResource("webgpu:sampler"), first);
+  assert.equal(first.samplers["sampler:0:0"].label, "selected material sampler");
+  assert.equal(first.samplers["sampler:0:0"].addressModeU, "repeat");
+  assert.equal(first.samplers["sampler:0:0"].addressModeV, "clamp-to-edge");
+  assert.equal(first.samplers["sampler:0:0"].lodMaxClamp, Math.fround(8.1));
+  assert.equal(first.samplers["sampler:0:0"].maxAnisotropy, 4);
   assert.equal(first.samplers["sampler:0:0"].isFiltering, true);
 
-  const equivalent = pipeline.stages[0].prepare({ ...selected, label: "same effective state" });
-  await pipeline.stages[1].prepare(equivalent, { resource });
+  resource.payload = { ...selected, label: "same effective state" };
+  await webgpu.RealizeSampler(resource, {
+    samplerKey: "sampler:0:0",
+    adapterKey: "webgpu:sampler"
+  });
   const second = resource.GetAdapterResource("webgpu:sampler");
   assert.notEqual(second, first);
   assert.equal(fake.device.calls.filter(([ kind ]) => kind === "createSampler").length, 1);
   second.Destroy();
 });
 
-test("CjsWebGPUDevice sampler prepare mapper fails closed without selecting policy", () =>
+test("CjsWebGPUDevice sampler realization fails closed without selecting policy", async () =>
 {
-  const fake = fakeDevice("sampler-prepare-validation");
+  const fake = fakeDevice("sampler-realization-validation");
   const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
-  const stage = webgpu.CreateSamplerPrepareStage({ samplerKey: "main" });
+  const resource = adapterResourceSlot();
   const selected = {
     payloadType: "webgpu-sampler",
     addressModeU: "clamp-to-edge",
@@ -1469,70 +1476,70 @@ test("CjsWebGPUDevice sampler prepare mapper fails closed without selecting poli
     lodMaxClamp: 32,
     maxAnisotropy: 1
   };
-  const nearest = stage.prepare(selected);
+  resource.payload = selected;
+  const nearest = await webgpu.RealizeSampler(resource, { samplerKey: "main", adapterKey: "nearest" });
   assert.equal(nearest.samplers.main.minFilter, "nearest");
   assert.equal(nearest.samplers.main.maxAnisotropy, 1);
-  const comparison = stage.prepare({ ...selected, compare: "less-equal" });
+  resource.payload = { ...selected, compare: "less-equal" };
+  const comparison = await webgpu.RealizeSampler(resource, { samplerKey: "main", adapterKey: "comparison" });
   assert.equal(comparison.samplers.main.compare, "less-equal");
 
-  assert.throws(() => stage.prepare(new Date()), /payload must be a plain object/i);
-  assert.throws(() => stage.prepare({}), /payloadType must be webgpu-sampler/i);
-  assert.throws(() => stage.prepare({ ...selected, unknown: true }), /payload has unsupported unknown/i);
+  resource.payload = new Date();
+  assert.throws(() => webgpu.RealizeSampler(resource, { samplerKey: "main" }), /payload must be a plain object/i);
+  resource.payload = {};
+  assert.throws(() => webgpu.RealizeSampler(resource, { samplerKey: "main" }), /payloadType must be webgpu-sampler/i);
+  resource.payload = { ...selected, unknown: true };
+  assert.throws(() => webgpu.RealizeSampler(resource, { samplerKey: "main" }), /payload has unsupported unknown/i);
+  resource.payload = selected;
   assert.throws(
-    () => stage.prepare({
+    () => {
+      resource.payload = {
       ...selected,
       addressU: 1,
       mipFilter: 2,
       mipLODBias: 0,
       borderColor: [ 0, 0, 0, 0 ]
-    }),
+      };
+      webgpu.RealizeSampler(resource, { samplerKey: "main" });
+    },
     /payload has unsupported addressU/i
   );
+  resource.payload = { ...selected, addressModeU: 1 };
   assert.throws(
-    () => stage.prepare({ ...selected, addressModeU: 1 }),
+    () => webgpu.RealizeSampler(resource, { samplerKey: "main" }),
     /addressModeU has unsupported 1/i
   );
   const missing = { ...selected };
   delete missing.addressModeW;
-  assert.throws(() => stage.prepare(missing), /must provide addressModeW/i);
+  resource.payload = missing;
+  assert.throws(() => webgpu.RealizeSampler(resource, { samplerKey: "main" }), /must provide addressModeW/i);
+  resource.payload = { ...selected, maxAnisotropy: 2 };
   assert.throws(
-    () => stage.prepare({ ...selected, maxAnisotropy: 2 }),
+    () => webgpu.RealizeSampler(resource, { samplerKey: "main" }),
     /anisotropy requires linear/i
   );
-  assert.throws(() => webgpu.CreateSamplerPrepareStage(), /samplerKey must be a non-empty string/i);
+  resource.payload = selected;
+  assert.throws(() => webgpu.RealizeSampler(resource), /samplerKey must be a non-empty string/i);
   assert.throws(
-    () => webgpu.CreateSamplerPrepareStage({ samplerKey: "main", bundleLabel: "" }),
+    () => webgpu.RealizeSampler(resource, { samplerKey: "main", bundleLabel: "" }),
     /bundleLabel must be a non-empty string/i
   );
   assert.throws(
-    () => webgpu.CreateSamplerPreparePipeline({ samplerKey: "main", unknown: true }),
+    () => webgpu.RealizeSampler(resource, { samplerKey: "main", unknown: true }),
     /unsupported unknown/i
   );
+  nearest.Destroy();
+  comparison.Destroy();
 });
 
-test("CjsWebGPUDevice maps canonical RGBA8 through an ordered publication pipeline", async () =>
+test("CjsWebGPUDevice maps and realizes a published canonical RGBA8 payload", async () =>
 {
-  const fake = fakeDevice("rgba8-prepare-pipeline");
+  const fake = fakeDevice("rgba8-realization");
   const webgpu = new CjsWebGPUDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
   });
-  const pipeline = webgpu.CreateRgba8TexturePreparePipeline({
-    textureKey: "sampled-resource:0:0",
-    bundleLabel: "prepared albedo",
-    mappingStageName: "map-albedo-rgba8",
-    publicationStageName: "publish-albedo-webgpu",
-    adapterKey: "webgpu:albedo"
-  });
-
-  assert.equal(Object.isFrozen(pipeline), true);
-  assert.equal(Object.isFrozen(pipeline.stages), true);
-  assert.deepEqual(pipeline.stages.map((stage) => stage.name), [
-    "map-albedo-rgba8",
-    "publish-albedo-webgpu"
-  ]);
-
   const pixels = decodedRgba8Inputs({
     strideBytes: 12,
     data: new Uint8Array([
@@ -1540,42 +1547,32 @@ test("CjsWebGPUDevice maps canonical RGBA8 through an ordered publication pipeli
       0, 0, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0
     ])
   });
-  const callsBeforeMapping = fake.device.calls.length;
-  const mapped = pipeline.stages[0].prepare(pixels, {});
-  assert.equal(fake.device.calls.length, callsBeforeMapping);
-  assert.equal(Object.isFrozen(mapped), true);
-  assert.equal(Object.isFrozen(mapped.textures), true);
-  assert.equal(Object.isFrozen(mapped.textures["sampled-resource:0:0"]), true);
-  assert.equal(mapped.label, "prepared albedo");
-  assert.deepEqual(mapped.textures["sampled-resource:0:0"], {
-    width: 2,
-    height: 2,
-    format: "rgba8unorm-srgb",
-    bytesPerRow: 12,
-    data: pixels.data
-  });
-
   const resource = adapterResourceSlot();
-  assert.equal(await pipeline.stages[1].prepare(mapped, { resource }), undefined);
-  const bundle = resource.GetAdapterResource("webgpu:albedo");
+  resource.payload = pixels;
+  const bundle = await webgpu.RealizeRgba8Texture(resource, {
+    textureKey: "sampled-resource:0:0",
+    bundleLabel: "prepared albedo",
+    adapterKey: "webgpu:albedo"
+  });
+  assert.equal(resource.state, "prepared");
+  assert.equal(resource.GetAdapterResource("webgpu:albedo"), bundle);
   assert.equal(bundle.textures["sampled-resource:0:0"].format, "rgba8unorm-srgb");
   assert.equal(bundle.textures["sampled-resource:0:0"].isSRGB, true);
   bundle.Destroy();
 });
 
-test("CjsWebGPUDevice RGBA8 mapper preserves linear bytes and fails closed on unsupported payloads", () =>
+test("CjsWebGPUDevice RGBA8 realization preserves linear bytes and fails closed on unsupported payloads", async () =>
 {
-  const fake = fakeDevice("rgba8-prepare-validation");
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
-  const stage = webgpu.CreateRgba8TexturePrepareStage({
+  const fake = fakeDevice("rgba8-realization-validation");
+  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE, textureUsage: TEXTURE_USAGE });
+  const resource = adapterResourceSlot();
+  const linear = decodedRgba8Inputs({ colorSpace: "linear", alphaMode: "opaque" });
+  resource.payload = linear;
+  const mapped = await webgpu.RealizeRgba8Texture(resource, {
     textureKey: "main",
     bundleLabel: "linear texture"
   });
-  const linear = decodedRgba8Inputs({ colorSpace: "linear", alphaMode: "opaque" });
-  const mapped = stage.prepare(linear);
   assert.equal(mapped.textures.main.format, "rgba8unorm");
-  assert.equal(mapped.textures.main.data, linear.data);
-  assert.equal(stage.textureKey, "main");
 
   const without = (key) =>
   {
@@ -1601,18 +1598,24 @@ test("CjsWebGPUDevice RGBA8 mapper preserves linear bytes and fails closed on un
     [ decodedRgba8Inputs({ alphaMode: "premultiplied" }), /alphaMode must be straight or opaque/i ],
     [ { ...decodedRgba8Inputs(), faces: [] }, /unsupported faces/i ]
   ];
-  for (const [ value, pattern ] of cases) assert.throws(() => stage.prepare(value), pattern);
+  for (const [ value, pattern ] of cases)
+  {
+    resource.payload = value;
+    assert.throws(() => webgpu.RealizeRgba8Texture(resource, { textureKey: "main" }), pattern);
+  }
 
-  assert.throws(() => webgpu.CreateRgba8TexturePrepareStage(), /textureKey must be a non-empty string/i);
-  assert.throws(() => webgpu.CreateRgba8TexturePrepareStage(new Date()), /must be a plain object/i);
+  resource.payload = linear;
+  assert.throws(() => webgpu.RealizeRgba8Texture(resource), /textureKey must be a non-empty string/i);
+  assert.throws(() => webgpu.RealizeRgba8Texture(resource, new Date()), /must be a plain object/i);
   assert.throws(
-    () => webgpu.CreateRgba8TexturePrepareStage({ textureKey: "main", bundleLabel: "" }),
+    () => webgpu.RealizeRgba8Texture(resource, { textureKey: "main", bundleLabel: "" }),
     /bundleLabel must be a non-empty string/i
   );
   assert.throws(
-    () => webgpu.CreateRgba8TexturePreparePipeline({ textureKey: "main", unknown: true }),
+    () => webgpu.RealizeRgba8Texture(resource, { textureKey: "main", unknown: true }),
     /unsupported unknown/i
   );
+  mapped.Destroy();
 });
 
 test("CjsWebGPUDevice atomically realizes and owns keyed prepared resource bundles", async () =>
@@ -1765,95 +1768,97 @@ test("CjsWebGPUDevice resource bundles reject mixed generations and clean old an
 
 test("CjsWebGPUDevice publishes prepared bundles through one guarded adapter slot", async () =>
 {
-  const fake = fakeDevice("resource-prepare-stage");
+  const fake = fakeDevice("resource-realization");
   const webgpu = new CjsWebGPUDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
   });
-  const stage = webgpu.CreateResourcePrepareStage({
-    name: "publish-webgpu-texture",
-    adapterKey: "webgpu:test"
-  });
   const resource = adapterResourceSlot();
+  resource.payload = { retained: "CPU payload" };
   const firstPayload = { textures: { main: textureInputs() } };
-  assert.equal(Object.isFrozen(stage), true);
-  assert.equal(stage.name, "publish-webgpu-texture");
-  assert.equal(stage.adapterKey, "webgpu:test");
-  assert.equal(await stage.prepare(firstPayload, { resource }), undefined);
+  const firstResult = await webgpu.RealizeResource(resource, firstPayload, { adapterKey: "webgpu:test" });
   const first = resource.GetAdapterResource("webgpu:test");
+  assert.equal(firstResult, first);
   assert.equal(first.textures.main.width, 2);
   assert.equal(resource.history.length, 1);
+  assert.equal(resource.state, "prepared");
 
-  assert.equal(await stage.prepare({ textures: { main: textureInputs() } }, { resource }), undefined);
+  await webgpu.RealizeResource(resource, { textures: { main: textureInputs() } }, { adapterKey: "webgpu:test" });
   const second = resource.GetAdapterResource("webgpu:test");
   assert.notEqual(second, first);
   assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 1);
   second.Destroy();
 
   const failingResource = adapterResourceSlot();
+  failingResource.payload = { retained: "still loaded" };
   failingResource.setError = new Error("adapter publication failed");
   await assert.rejects(
-    stage.prepare({ textures: { main: textureInputs() } }, { resource: failingResource }),
+    webgpu.RealizeResource(
+      failingResource,
+      { textures: { main: textureInputs() } },
+      { adapterKey: "webgpu:test" }
+    ),
     /adapter publication failed/i
   );
   assert.equal(failingResource.GetAdapterResource("webgpu:test"), null);
+  assert.equal(failingResource.state, "loaded");
+  assert.deepEqual(failingResource.GetPayload(), { retained: "still loaded" });
   assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 3);
 });
 
-test("CjsWebGPUDevice prepare-stage commits destroy the bundle actually displaced", async () =>
+test("CjsWebGPUDevice shares one in-flight realization per resource and adapter key", async () =>
 {
-  const fake = fakeDevice("resource-prepare-concurrent");
+  const fake = fakeDevice("resource-realization-concurrent");
   const webgpu = new CjsWebGPUDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
   });
-  const stage = webgpu.CreateResourcePrepareStage();
   const resource = adapterResourceSlot();
-  const firstPrepare = stage.prepare({
-    label: "first concurrent bundle",
+  const firstRealization = webgpu.RealizeResource(resource, {
+    label: "shared concurrent bundle",
     textures: { main: textureInputs() }
-  }, { resource });
-  const secondPrepare = stage.prepare({
-    label: "second concurrent bundle",
+  });
+  const secondRealization = webgpu.RealizeResource(resource, {
+    label: "ignored while shared",
     textures: { main: textureInputs() }
-  }, { resource });
-  await Promise.all([ firstPrepare, secondPrepare ]);
+  });
+  assert.equal(secondRealization, firstRealization);
+  const [ first, second ] = await Promise.all([ firstRealization, secondRealization ]);
+  assert.equal(second, first);
 
   const publications = resource.history.filter(([ key ]) => key === "webgpu");
-  assert.equal(publications.length, 2);
-  assert.notEqual(publications[0][1], publications[1][1]);
-  assert.equal(resource.GetAdapterResource("webgpu"), publications[1][1]);
-  assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 1);
-  publications[1][1].Destroy();
-  assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 2);
+  assert.equal(publications.length, 1);
+  assert.equal(resource.GetAdapterResource("webgpu"), first);
+  assert.equal(fake.device.calls.filter(([ kind ]) => kind === "createTexture").length, 1);
+  first.Destroy();
 });
 
-test("CjsWebGPUDevice prepare-stage failures restore an existing adapter bundle", async () =>
+test("CjsWebGPUDevice realization failures restore an existing adapter bundle", async () =>
 {
-  const fake = fakeDevice("resource-prepare-rollback");
+  const fake = fakeDevice("resource-realization-rollback");
   const webgpu = new CjsWebGPUDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
   });
-  const stage = webgpu.CreateResourcePrepareStage();
   const resource = adapterResourceSlot();
-  await stage.prepare({ textures: { main: textureInputs() } }, { resource });
+  await webgpu.RealizeResource(resource, { textures: { main: textureInputs() } });
   const previous = resource.GetAdapterResource("webgpu");
 
   resource.setThenError = new Error("setter failed after mutation");
   await assert.rejects(
-    stage.prepare({ textures: { main: textureInputs() } }, { resource }),
+    webgpu.RealizeResource(resource, { textures: { main: textureInputs() } }),
     /setter failed after mutation/i
   );
   assert.equal(resource.GetAdapterResource("webgpu"), previous);
+  assert.equal(resource.state, "prepared");
   assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 1);
 
   resource.ignoreSet = true;
   await assert.rejects(
-    stage.prepare({ textures: { main: textureInputs() } }, { resource }),
+    webgpu.RealizeResource(resource, { textures: { main: textureInputs() } }),
     /did not publish the candidate bundle/i
   );
   assert.equal(resource.GetAdapterResource("webgpu"), previous);
@@ -1862,30 +1867,62 @@ test("CjsWebGPUDevice prepare-stage failures restore an existing adapter bundle"
   assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 3);
 });
 
-test("CjsWebGPUDevice prepare stage replaces and cleans a stale-generation bundle", async () =>
+test("CjsWebGPUDevice reruns realization after device recreation while CPU data remains resident", async () =>
 {
-  const first = fakeDevice("resource-stage-generation-one");
-  const second = fakeDevice("resource-stage-generation-two");
+  const first = fakeDevice("resource-realization-generation-one");
+  const second = fakeDevice("resource-realization-generation-two");
   const webgpu = new CjsWebGPUDevice({
     gpu: { requestAdapter: async () => ({ requestDevice: async () => second.device }) },
     device: first.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
   });
-  const stage = webgpu.CreateResourcePrepareStage();
   const resource = adapterResourceSlot();
-  await stage.prepare({ textures: { main: textureInputs() } }, { resource });
+  resource.payload = { textures: { main: textureInputs() } };
+  await webgpu.RealizeResource(resource);
   const stale = resource.GetAdapterResource("webgpu");
   assert.equal(stale.generation, 1);
 
   await webgpu.Recreate();
-  await stage.prepare({ textures: { main: textureInputs() } }, { resource });
+  await webgpu.RealizeResource(resource);
   const current = resource.GetAdapterResource("webgpu");
   assert.equal(current.generation, 2);
   assert.notEqual(current, stale);
   assert.equal(first.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 1);
   current.Destroy();
   assert.equal(second.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 1);
+});
+
+test("CjsWebGPUDevice destroys a candidate when its resource becomes stale during realization", async () =>
+{
+  const fake = fakeDevice("resource-realization-stale-target");
+  const webgpu = new CjsWebGPUDevice({
+    device: fake.device,
+    shaderStage: SHADER_STAGE,
+    textureUsage: TEXTURE_USAGE
+  });
+  const resource = adapterResourceSlot();
+  resource.payload = { retained: true };
+  const release = deferred();
+  const createResourceBundle = webgpu.CreateResourceBundle.bind(webgpu);
+  webgpu.CreateResourceBundle = async (value) =>
+  {
+    const candidate = await createResourceBundle(value);
+    await release.promise;
+    return candidate;
+  };
+
+  const realization = webgpu.RealizeResource(resource, { textures: { main: textureInputs() } });
+  await Promise.resolve();
+  resource.current = false;
+  release.resolve();
+  await assert.rejects(
+    realization,
+    error => error.code === "CJS_WEBGPU_STALE_RESOURCE_REALIZATION"
+  );
+  assert.equal(resource.GetAdapterResource("webgpu"), null);
+  assert.equal(resource.state, "preparing");
+  assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 1);
 });
 
 test("CjsWebGPUDevice resource publication descriptors and ownership fail closed", async () =>
@@ -1905,18 +1942,21 @@ test("CjsWebGPUDevice resource publication descriptors and ownership fail closed
   await assert.rejects(owner.CreateResourceBundle({ textures: null }), /textures must be a plain object/i);
   await assert.rejects(owner.CreateResourceBundle({ textures: new Date() }), /textures must be a plain object/i);
   await assert.rejects(owner.CreateResourceBundle({ textures: { "": textureInputs() } }), /keys must be non-empty/i);
-  assert.throws(() => owner.CreateResourcePrepareStage(new Date()), /must be a plain object/i);
-  assert.throws(() => owner.CreateResourcePrepareStage({ unknown: true }), /unsupported unknown/i);
-  assert.throws(() => owner.CreateResourcePrepareStage({ adapterKey: "" }), /adapterKey must be a non-empty string/i);
+  const resource = adapterResourceSlot();
+  assert.throws(() => owner.RealizeResource(resource, {}, new Date()), /must be a plain object/i);
+  assert.throws(() => owner.RealizeResource(resource, {}, { unknown: true }), /unsupported unknown/i);
+  assert.throws(() => owner.RealizeResource(resource, {}, { adapterKey: "" }), /adapterKey must be a non-empty string/i);
 
   const bundle = await owner.CreateResourceBundle({ textures: { main: textureInputs() } });
   assert.throws(() => foreign.DestroyResourceBundle(bundle), /belongs to another device/i);
-  const stage = owner.CreateResourcePrepareStage();
-  await assert.rejects(stage.prepare({ textures: { main: textureInputs() } }, {}), /prepare context must provide a resource/i);
+  assert.throws(
+    () => owner.RealizeResource({}, { textures: { main: textureInputs() } }),
+    /requires a current CPU resource/i
+  );
   const occupied = adapterResourceSlot();
   occupied.values.set("webgpu", { Destroy() {} });
   await assert.rejects(
-    stage.prepare({ textures: { main: textureInputs() } }, { resource: occupied }),
+    owner.RealizeResource(occupied, { textures: { main: textureInputs() } }),
     /is not an engine-owned resource bundle/i
   );
   bundle.Destroy();

@@ -32,7 +32,7 @@ The browser acquires, prepares, realizes, encodes, and submits through
 `CjsWebGPUDevice`. The portable probe uploads its packed triangle and sampler
 through an atomic `CreateResourceBundle(...)`. Its 1x1 pixel instead starts as
 the canonical decoded RGBA record, passes through
-`CreateRgba8TexturePreparePipeline(...)`, and enters a separate atomic adapter
+`RealizeRgba8Texture(...)`, and enters a separate guarded adapter
 slot before the draw samples the opaque texture handle. The resulting geometry
 layout is used for pipeline creation.
 Fixture creation and pixel expectations remain harness responsibilities, so
@@ -104,8 +104,8 @@ body index `4` with all seven expected selections, including
 `CjsLibrary -> CjsResMan -> CjsFormatWebgpu`. The launcher registers explicit
 `webgpu: true` capability and the default `webgpu_eve_space_object_main`
 behavior; each file request supplies only its source option. The behavior
-selects the format/requirement and registered `webgpu_package` prepare stage,
-which returns a `CjsWebGPUPackage`.
+selects the format and declared JSON output. ResMan publishes that JSON, and
+the engine consumer constructs `CjsWebGPUPackage` after the fetch.
 
 The CEWGPU packages therefore enter through the real resource path, while the
 browser harness supplies one packed indexed quad, three 1x1 CPU texture
@@ -120,11 +120,11 @@ vertex layout, validates draw capacity and device generation, and releases
 both buffers idempotently. `CjsWebGPUDevice.CreateTexture(...)` snapshots and
 uploads each `rgba8unorm`/`rgba8unorm-srgb` payload, exposes only a generation-
 bound handle, unwraps its private view at the canonical texture binding, and
-releases the native texture idempotently. The phase-zero sampler first passes
-through `CreateSamplerPreparePipeline(...)`: its complete already-selected
-`webgpu-sampler` record is mapped synchronously into the exact bundle shape and
-atomically published through a separate structural adapter slot. The publisher
-then calls `CreateSampler(...)`, which normalizes and caches the immutable
+releases the native texture idempotently. The phase-zero sampler passes through
+`RealizeSampler(...)`: its complete already-selected `webgpu-sampler` resource
+payload is mapped into the exact bundle shape and published through a guarded
+structural adapter slot. The operation then calls `CreateSampler(...)`, which
+normalizes and caches the immutable
 native sampler separately, returns a logical generation-bound handle, and
 unwraps it only at a compatible sampler binding. The bundle
 owns all three handle categories, while binding sets own none of them.

@@ -20,27 +20,15 @@ export function createEveSpaceObjectMainResourceBehavior(options = {})
   }
   const {
     format,
-    requirement = "webgpu-package",
-    emit = "json",
-    preparePipeline = "webgpu_package"
+    emit = "json"
   } = options;
-  if (typeof requirement !== "string" || requirement.trim() === "")
-  {
-    throw new TypeError("Eve space-object Main behavior requirement must be a non-empty string");
-  }
   if (typeof emit !== "string" || emit.trim() === "")
   {
     throw new TypeError("Eve space-object Main behavior emit must be a non-empty string");
   }
-  if (typeof preparePipeline !== "string" || preparePipeline.trim() === "")
-  {
-    throw new TypeError("Eve space-object Main behavior preparePipeline must be a non-empty string");
-  }
 
   const request = {
-    requirement,
-    emit,
-    preparePipeline
+    emit
   };
   if (format !== undefined)
   {

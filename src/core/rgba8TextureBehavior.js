@@ -1,5 +1,4 @@
 export const WEBGPU_RGBA8_TEXTURE_RESOURCE_BEHAVIOR = "webgpu_rgba8_texture";
-export const WEBGPU_RGBA8_TEXTURE_PREPARE_PIPELINE = "webgpu_rgba8_texture";
 
 function assertPlainObject(value, label)
 {
@@ -42,7 +41,7 @@ export function createWebGPURgba8TextureResourceBehavior(options = {})
 {
   assertPlainObject(options, "WebGPU RGBA8 texture behavior options");
   const allowed = new Set([
-    "format", "matchPath", "resolvePath", "requirement", "emit", "preparePipeline"
+    "format", "matchPath", "resolvePath", "requirement", "emit"
   ]);
   for (const key of Object.keys(options))
   {
@@ -54,12 +53,10 @@ export function createWebGPURgba8TextureResourceBehavior(options = {})
     matchPath,
     resolvePath,
     requirement = "image",
-    emit = "rgba",
-    preparePipeline = WEBGPU_RGBA8_TEXTURE_PREPARE_PIPELINE
+    emit = "rgba"
   } = options;
   assertNonEmptyString(requirement, "WebGPU RGBA8 texture behavior requirement");
   assertNonEmptyString(emit, "WebGPU RGBA8 texture behavior emit");
-  assertNonEmptyString(preparePipeline, "WebGPU RGBA8 texture behavior preparePipeline");
   if (format !== undefined
     && typeof format !== "function"
     && (typeof format !== "string" || format.trim() === ""))
@@ -77,8 +74,7 @@ export function createWebGPURgba8TextureResourceBehavior(options = {})
 
   const request = {
     requirement,
-    emit,
-    preparePipeline
+    emit
   };
   if (format !== undefined) request.format = format;
 

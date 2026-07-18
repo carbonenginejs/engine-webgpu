@@ -52,20 +52,17 @@ The current engine slice implements:
 - `CjsWebGPUDevice.CreateSampler(...)` normalizes explicit WebGPU sampler
   state, caches equivalent native samplers per device generation, and returns
   independently releasable opaque handles
-- `CjsWebGPUDevice.CreateSamplerPrepareStage(...)` maps one complete,
-  already-selected `webgpu-sampler` record into an exact sampler-bundle
-  descriptor; `CreateSamplerPreparePipeline(...)` orders that mapper before
-  the atomic publisher
+- `CjsWebGPUDevice.RealizeSampler(...)` maps one complete, already-selected
+  `webgpu-sampler` CPU payload and publishes its engine-owned bundle through a
+  guarded adapter slot
 - `CjsWebGPUDevice.CreateResourceBundle(...)` atomically realizes keyed plain
   geometry/texture/sampler payloads, rolls back every fulfilled child when any
   sibling fails, and returns one opaque owner for the completed collection
-- `CjsWebGPUDevice.CreateResourcePrepareStage(...)` creates a final
-  CjsResMan-compatible prepare stage that retains the CPU payload and swaps a
-  complete bundle into one guarded adapter-resource slot
-- `CjsWebGPUDevice.CreateRgba8TexturePrepareStage(...)` strictly maps one
-  canonical decoded RGBA8 payload into an exact texture-bundle descriptor;
-  `CreateRgba8TexturePreparePipeline(...)` orders that mapper before the
-  atomic publisher as a ready-to-register two-stage pipeline
+- `CjsWebGPUDevice.RealizeResource(...)` owns one explicit post-publication
+  backend operation, sharing it per resource/adapter key and destroying stale
+  or failed candidates without discarding the CPU payload
+- `CjsWebGPUDevice.RealizeRgba8Texture(...)` strictly maps one canonical
+  decoded RGBA8 CPU payload and publishes its engine-owned texture bundle
 - `createWebGPURgba8TextureResourceBehavior(...)` supplies the corresponding
   fail-closed CjsLibrary recipe; the application injects its path matcher and
   optional fallback rewrite while the behavior requires registered WebGPU
@@ -121,8 +118,8 @@ adapter slot, and is sampled from the published opaque texture handle. The
 harness also renders the generated copyblit
 vertex/fragment pair with engine-owned t0/s0 handles realized from fixture
 pixel/sampler state plus a fixture cb0 buffer through `CjsWebGPUDevice`. Its
-packed geometry, decoded pixels, and selected sampler state enter one atomic
-prepare-stage adapter slot before the draw consumes the resulting bundle. It
+packed geometry, decoded pixels, and selected sampler state enter one explicit
+renderer-owned realization operation before the draw consumes the resulting bundle. It
 also prepares the real QuadV5
 DX11/DX12 `Main.pass0`
 modules and nine-binding canonical layout without inventing geometry or
@@ -146,7 +143,6 @@ import {
   CjsWebGPUDevice,
   CjsWebGPUPackage,
   EVE_SPACE_OBJECT_MAIN_RESOURCE_BEHAVIOR,
-  WEBGPU_RGBA8_TEXTURE_PREPARE_PIPELINE,
   WEBGPU_RGBA8_TEXTURE_RESOURCE_BEHAVIOR,
   buildEveSpaceObjectMainUniformData,
   createEveSpaceObjectMainResourceBehavior,
@@ -228,8 +224,8 @@ const compiledPath = toCompiledEffectPath("res:/graphics/effect/space/quadv5.fx"
 });
 ```
 
-`await CreateGeometry(...)` consumes an explicit plain payload that a prepared
-`TriGeometryRes`, CMF preparation stage, test fixture, or direct caller can
+`await CreateGeometry(...)` consumes an explicit plain payload that a loaded
+`TriGeometryRes`, CMF format output, renderer mapper, test fixture, or direct caller can
 produce. Each vertex buffer must provide `slot`, binary `data`, and a complete
 `layout` with a positive `arrayStride`, optional `stepMode`, and attributes.
 Zero-stride/empty WebGPU layouts are outside this packed Carbon subset. An
@@ -278,22 +274,15 @@ The exported `CjsWebGPUSampler` class remains a reflected package-binding
 descriptor. It is distinct from the opaque live handle returned by
 `CreateSampler(...)`; no parallel live-resource DTO was added.
 
-`CreateSamplerPrepareStage({ name, samplerKey, bundleLabel })` is the strict
-pre-upload boundary for already-selected sampler state. Its input must carry
+`await RealizeSampler(resource, { samplerKey, bundleLabel, adapterKey })` is
+the strict renderer boundary for already-selected sampler state stored in the
+resource's published CPU payload. The payload must carry
 `payloadType: "webgpu-sampler"` and explicitly provide address U/V/W, mag/min/
 mipmap filters, LOD min/max, and anisotropy. Optional `label` and `compare` are
-accepted. The stage rejects missing fields, unknown keys, raw numeric Carbon/
-D3D enums, and invalid effective WebGPU combinations. It strips only the
-payload discriminator, preserves the caller's `samplerKey`, canonicalizes
-through the same sampler validator used by `CreateSampler(...)`, and performs
-no GPU calls.
-
-`CreateSamplerPreparePipeline(...)` returns frozen
-`{ stages: [mappingStage, publicationStage] }`. The mapping stage returns the
-exact sampler-bundle descriptor and the publisher returns `undefined`, keeping
-that GPU-recreatable mapped payload. Sampler override precedence, Carbon/D3D
-conversion, texture pairing, path policy, and capability selection remain
-upstream responsibilities.
+accepted. Missing fields, unknown keys, raw numeric Carbon/D3D enums, and
+invalid effective WebGPU combinations fail closed. Sampler override precedence,
+Carbon/D3D conversion, texture pairing, path policy, and capability selection
+remain upstream responsibilities.
 
 `await CreateResourceBundle(...)` accepts only keyed plain records whose child
 values already satisfy the explicit `CreateGeometry`, `CreateTexture`, or
@@ -307,8 +296,9 @@ Caller keys are preserved verbatim, and the device does not infer CEWGPU
 identities, paths, format conversion, packing, texture/sampler pairing, or
 override policy.
 
-`CreateRgba8TexturePrepareStage({ name, textureKey, bundleLabel })` consumes
-the exact canonical decoded-raster keys: `payloadType: "rgba"`, non-empty
+`await RealizeRgba8Texture(resource, { textureKey, bundleLabel, adapterKey })`
+consumes the exact canonical decoded-raster payload already published on the
+resource: `payloadType: "rgba"`, non-empty
 `sourceFormat`, positive `width`/`height`, `pixelFormat: "rgba8unorm"`,
 `Uint8Array data`, `strideBytes`, top-left `origin`, `colorSpace: "srgb" |
 "linear"`, and `alphaMode: "straight" | "opaque"`, plus required
@@ -316,46 +306,33 @@ the exact canonical decoded-raster keys: `payloadType: "rgba"`, non-empty
 Optional `rgbaDecodeSupported` must be true. Rows must contain `width * 4`
 active bytes, align to four bytes, and total exactly `strideBytes * height`.
 Color space selects `rgba8unorm-srgb` for sRGB or `rgba8unorm` for linear;
-the stage does not decode, convert, flip, repack, or copy the bytes.
+the renderer does not decode, convert, flip, repack, or copy the bytes.
 Unsupported float, premultiplied, unknown-color-space, mip, array, cube, or
 compressed payloads fail rather than losing information. The explicit
 `textureKey` is preserved verbatim; it is not inferred from an effect binding.
 `CreateTexture(...)` remains the upload snapshot boundary.
 
-`CreateRgba8TexturePreparePipeline(...)` returns the frozen structural shape
-`{ stages: [mappingStage, publicationStage] }`. Stage 1 returns the mapped
-bundle descriptor, and Stage 2 returns `undefined`, so CjsResMan retains the
-GPU-recreatable mapped CPU payload after publication.
+`await RealizeResource(resource, bundleInput, { adapterKey })` is the common
+explicit operation. Concurrent calls share one in-flight operation per device
+session, resource handle, and adapter key. The engine creates a complete
+candidate, rechecks `resource.IsCurrent()` immediately before synchronous
+attachment, marks the resource `PREPARED`, and destroys the displaced bundle.
+A stale or failed candidate is destroyed. If the resource remains current, a
+failure restores a usable previous adapter or returns the resource to `LOADED`
+without releasing its CPU payload. Calling the operation again after device
+recreation realizes a fresh generation even when that CPU payload was already
+resident.
 
-`CreateResourcePrepareStage({ name, adapterKey })` returns a frozen structural
-stage with the ResMan `prepare(value, context)` signature. The final stage
-builds a bundle, synchronously installs it through
-`context.resource.SetAdapterResource(adapterKey, bundle)`, verifies the slot,
-and can restore/remove a failed commit through `GetAdapterResource` and
-`DestroyAdapterResource`, then destroys the displaced bundle. Returning
-`undefined` deliberately keeps
-the prepared CPU payload as the resource value for recreation. CjsLibrary (or
-a direct request) still chooses which named pipeline contains this stage; any
-reader, geometry packer, raster conversion, sampler-state selection, or
-capability fallback must run earlier and remains outside CjsResMan policy.
 The default `adapterKey: "webgpu"` is appropriate for the ordinary one-backend-
-per-library model. Applications deliberately sharing resources or a resource
-manager across renderer sessions must assign one distinct stable key per
-logical device, such as `engine-webgpu:primary`; the stage refuses to replace
-a bundle owned by another device. Do not include the device generation in the
-key because recreation replaces the same logical session slot.
+per-library model. Applications deliberately sharing a resource manager across
+renderer sessions must assign one distinct stable key per logical device, such
+as `engine-webgpu:primary`. Do not include the device generation in the key;
+recreation replaces the same logical session slot.
 
 ```js
 // Application-owned/injected. It must emit the exact canonical RGBA record
 // accepted above; wiring such a real reader is still the open production gate.
 const canonicalRgbaFormat = applicationFormats.png;
-const rgba8Pipeline = webgpu.CreateRgba8TexturePreparePipeline({
-  textureKey: "main",
-  bundleLabel: "decoded albedo",
-  mappingStageName: "map-decoded-albedo",
-  publicationStageName: "publish-webgpu-albedo",
-  adapterKey: "engine-webgpu:primary"
-});
 const rgba8Behavior = createWebGPURgba8TextureResourceBehavior({
   format: canonicalRgbaFormat,
   matchPath: ({ path }) => /\.png(?:[?#].*)?$/iu.test(path)
@@ -371,17 +348,17 @@ library.Register({
     }
   },
   resMan: {
-    formats: [canonicalRgbaFormat],
-    preparePipelines: {
-      [WEBGPU_RGBA8_TEXTURE_PREPARE_PIPELINE]: rgba8Pipeline
-    }
+    formats: [canonicalRgbaFormat]
   }
 });
 
 const textureResource = await library.FetchResource("res:/texture/albedo.png");
-const texture = textureResource
-  .GetAdapterResource("engine-webgpu:primary")
-  .textures.main;
+const textureBundle = await webgpu.RealizeRgba8Texture(textureResource, {
+  textureKey: "main",
+  bundleLabel: "decoded albedo",
+  adapterKey: "engine-webgpu:primary"
+});
+const texture = textureBundle.textures.main;
 ```
 
 The injected matcher prevents this behavior from claiming every image path.
@@ -389,8 +366,8 @@ An optional synchronous `resolvePath` can combine a configured fallback such
 as DDS-to-PNG rewriting with this presentation recipe because CjsLibrary
 selects one behavior, not a behavior chain. Explicit `behavior: "name"`
 selection remains the caller's intentional force override; `behavior: false`
-opts out. Caller request options still win and must keep `emit` and
-`preparePipeline` coherent. Sampler selection and mapping `textures.main` to a
+opts out. Caller request options still win and must keep `emit` coherent with
+the declared format output. Sampler selection and mapping `textures.main` to a
 shader binding remain renderer/policy work outside this texture resource.
 
 An application preset can register the resource recipe once and let ordinary
@@ -411,16 +388,14 @@ library.Register({
     }
   },
   resMan: {
-    formats: [CjsFormatWebgpu],
-    preparePipelines: {
-      webgpu_package: { stages: webgpuPackageStages }
-    }
+    formats: [CjsFormatWebgpu]
   }
 });
 
-const pkg = await library.FetchObject("res:/effect/ship.cewgpu", {
+const packageJson = await library.FetchObject("res:/effect/ship.cewgpu", {
   formatOptions: { source: sourcePath }
 });
+const pkg = CjsWebGPUPackage.from(packageJson);
 const material = extractTr2EffectConstantValues(
   meshArea.effect,
   mainBehavior.GetMaterialConstants(pkg)
@@ -431,10 +406,11 @@ const uniformData = mainBehavior.BuildUniformData(pkg, {
 });
 ```
 
-The behavior is synchronous request policy only. `CjsResMan` sees its
-`requirement`, `format`, `emit`, and `preparePipeline` recipe; it never sees or
-invokes `BuildUniformData`, because material/frame/object values change after
-the package has been loaded and cached.
+The behavior is synchronous request policy only. `CjsResMan` sees its `format`
+and `emit: "json"` recipe and publishes that declared CPU result. The engine
+consumer then constructs `CjsWebGPUPackage`; ResMan never sees or invokes
+`BuildUniformData`, because material/frame/object values change after the
+package has been loaded and cached.
 
 Exports:
 
@@ -449,7 +425,6 @@ Exports:
 - `CjsWebGPUSampler`
 - `EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES`
 - `EVE_SPACE_OBJECT_MAIN_RESOURCE_BEHAVIOR`
-- `WEBGPU_RGBA8_TEXTURE_PREPARE_PIPELINE`
 - `WEBGPU_RGBA8_TEXTURE_RESOURCE_BEHAVIOR`
 - `buildEveSpaceObjectMainUniformData(...)`
 - `createEveSpaceObjectMainResourceBehavior(...)`

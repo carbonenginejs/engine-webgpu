@@ -169,18 +169,7 @@ async function ReadQuadV5Packages(paths)
                     return readFile(filePath);
                 }
             },
-            formats: [ CjsFormatWebgpu ],
-            preparePipelines: {
-                webgpu_package: {
-                    stages: [ {
-                        name: "engine-webgpu-package",
-                        prepare(value)
-                        {
-                            return CjsWebGPUPackage.from(value);
-                        }
-                    } ]
-                }
-            }
+            formats: [ CjsFormatWebgpu ]
         }
     });
 
@@ -202,14 +191,15 @@ async function ReadQuadV5Packages(paths)
         {
             throw new Error(`${request.resourcePath} did not retain one MotherLode resource handle`);
         }
-        const pkg = await library.FetchObject(request.resourcePath, options);
+        const json = await library.FetchObject(request.resourcePath, options);
+        const pkg = CjsWebGPUPackage.from(json);
         if (!(pkg instanceof CjsWebGPUPackage))
         {
             throw new Error(`${request.filePath} did not prepare as CjsWebGPUPackage`);
         }
-        if (await resource.Ready() !== pkg)
+        if (await resource.Ready() !== json)
         {
-            throw new Error(`${request.resourcePath} readiness did not retain the prepared package`);
+            throw new Error(`${request.resourcePath} readiness did not retain the published JSON payload`);
         }
         if (sourceReads.get(request.resourcePath) !== 1)
         {

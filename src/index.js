@@ -17,7 +17,6 @@ export {
   createEveSpaceObjectMainResourceBehavior
 } from "./core/spaceObjectMainBehavior.js";
 export {
-  WEBGPU_RGBA8_TEXTURE_PREPARE_PIPELINE,
   WEBGPU_RGBA8_TEXTURE_RESOURCE_BEHAVIOR,
   createWebGPURgba8TextureResourceBehavior
 } from "./core/rgba8TextureBehavior.js";

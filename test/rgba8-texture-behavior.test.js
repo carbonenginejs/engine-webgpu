@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  WEBGPU_RGBA8_TEXTURE_PREPARE_PIPELINE,
   WEBGPU_RGBA8_TEXTURE_RESOURCE_BEHAVIOR,
   createWebGPURgba8TextureResourceBehavior
 } from "../src/index.js";
@@ -19,11 +18,9 @@ test("RGBA8 texture behavior carries a fail-closed CjsLibrary request recipe", (
   assert.equal(Object.isFrozen(behavior), true);
   assert.equal(Object.isFrozen(behavior.request), true);
   assert.equal(behavior.id, WEBGPU_RGBA8_TEXTURE_RESOURCE_BEHAVIOR);
-  assert.equal(WEBGPU_RGBA8_TEXTURE_PREPARE_PIPELINE, "webgpu_rgba8_texture");
   assert.deepEqual(behavior.request, {
     requirement: "image",
     emit: "rgba",
-    preparePipeline: "webgpu_rgba8_texture",
     format: Format
   });
   assert.equal(behavior.CanResolveResourceRequest({
@@ -48,7 +45,6 @@ test("RGBA8 texture behavior combines an application path fallback with presenta
 {
   const behavior = createWebGPURgba8TextureResourceBehavior({
     requirement: "decoded-image",
-    preparePipeline: "webgpu_rgba8_texture_srgb",
     matchPath: ({ path, capabilities }) => path.endsWith(".dds") && capabilities.dds === false,
     resolvePath: ({ path }) => path.replace(/\.dds$/u, ".png")
   });
@@ -63,8 +59,7 @@ test("RGBA8 texture behavior combines an application path fallback with presenta
   });
   assert.deepEqual(behavior.request, {
     requirement: "decoded-image",
-    emit: "rgba",
-    preparePipeline: "webgpu_rgba8_texture_srgb"
+    emit: "rgba"
   });
 });
 
@@ -93,8 +88,7 @@ test("RGBA8 texture behavior resolves through CjsLibrary with normal override se
   assert.deepEqual(resolved.options, {
     payload: "texture",
     requirement: "image",
-    emit: "rgba",
-    preparePipeline: "webgpu_rgba8_texture"
+    emit: "rgba"
   });
   assert.equal(Object.isFrozen(resolved.options), true);
 

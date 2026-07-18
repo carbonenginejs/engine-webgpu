@@ -537,62 +537,60 @@ function normalizeResourceBundle(options)
   return Object.freeze({ label, definitions: Object.freeze(definitions) });
 }
 
-function normalizeResourcePrepareStage(options)
+function normalizeResourceRealizationOptions(options)
 {
-  assertPlainObject(options, "resource prepare-stage options");
-  assertKeys(options, new Set([ "name", "adapterKey" ]), "resource prepare stage");
-  const name = options.name ?? "engine-webgpu-resource-bundle";
+  assertPlainObject(options, "resource realization options");
+  assertKeys(options, new Set([ "adapterKey" ]), "resource realization");
   const adapterKey = options.adapterKey ?? "webgpu";
-  if (typeof name !== "string" || name.trim() === "") fail("resource prepare-stage name must be a non-empty string");
   if (typeof adapterKey !== "string" || adapterKey.trim() === "")
   {
-    fail("resource prepare-stage adapterKey must be a non-empty string");
+    fail("resource realization adapterKey must be a non-empty string");
   }
-  return Object.freeze({ name, adapterKey });
+  return Object.freeze({ adapterKey });
 }
 
-function normalizeRgba8TexturePrepareStage(options)
+function normalizeRgba8TextureRealizationOptions(options)
 {
-  assertPlainObject(options, "RGBA8 texture prepare-stage options");
-  assertKeys(options, new Set([ "name", "textureKey", "bundleLabel" ]), "RGBA8 texture prepare stage");
-  const name = options.name ?? "engine-webgpu-map-rgba8-texture";
+  assertPlainObject(options, "RGBA8 texture realization options");
+  assertKeys(options, new Set([ "textureKey", "bundleLabel", "adapterKey" ]), "RGBA8 texture realization");
   const textureKey = options.textureKey;
   const bundleLabel = options.bundleLabel ?? "prepared RGBA8 texture";
-  if (typeof name !== "string" || name.trim() === "")
-  {
-    fail("RGBA8 texture prepare-stage name must be a non-empty string");
-  }
+  const adapterKey = options.adapterKey ?? "webgpu";
   if (typeof textureKey !== "string" || textureKey.trim() === "")
   {
-    fail("RGBA8 texture prepare-stage textureKey must be a non-empty string");
+    fail("RGBA8 texture realization textureKey must be a non-empty string");
   }
   if (typeof bundleLabel !== "string" || bundleLabel.trim() === "")
   {
-    fail("RGBA8 texture prepare-stage bundleLabel must be a non-empty string");
+    fail("RGBA8 texture realization bundleLabel must be a non-empty string");
   }
-  return Object.freeze({ name, textureKey, bundleLabel });
+  if (typeof adapterKey !== "string" || adapterKey.trim() === "")
+  {
+    fail("RGBA8 texture realization adapterKey must be a non-empty string");
+  }
+  return Object.freeze({ name: "RGBA8 texture realization", textureKey, bundleLabel, adapterKey });
 }
 
-function normalizeSamplerPrepareStage(options)
+function normalizeSamplerRealizationOptions(options)
 {
-  assertPlainObject(options, "sampler prepare-stage options");
-  assertKeys(options, new Set([ "name", "samplerKey", "bundleLabel" ]), "sampler prepare stage");
-  const name = options.name ?? "engine-webgpu-map-sampler";
+  assertPlainObject(options, "sampler realization options");
+  assertKeys(options, new Set([ "samplerKey", "bundleLabel", "adapterKey" ]), "sampler realization");
   const samplerKey = options.samplerKey;
   const bundleLabel = options.bundleLabel ?? "prepared WebGPU sampler";
-  if (typeof name !== "string" || name.trim() === "")
-  {
-    fail("sampler prepare-stage name must be a non-empty string");
-  }
+  const adapterKey = options.adapterKey ?? "webgpu";
   if (typeof samplerKey !== "string" || samplerKey.trim() === "")
   {
-    fail("sampler prepare-stage samplerKey must be a non-empty string");
+    fail("sampler realization samplerKey must be a non-empty string");
   }
   if (typeof bundleLabel !== "string" || bundleLabel.trim() === "")
   {
-    fail("sampler prepare-stage bundleLabel must be a non-empty string");
+    fail("sampler realization bundleLabel must be a non-empty string");
   }
-  return Object.freeze({ name, samplerKey, bundleLabel });
+  if (typeof adapterKey !== "string" || adapterKey.trim() === "")
+  {
+    fail("sampler realization adapterKey must be a non-empty string");
+  }
+  return Object.freeze({ name: "sampler realization", samplerKey, bundleLabel, adapterKey });
 }
 
 function mapRgba8TexturePayload(value, plan)
@@ -687,18 +685,18 @@ function mapSamplerPayload(value, plan)
   });
 }
 
-function resourceFromPrepareContext(context, stageName)
+function assertRealizationResource(resource)
 {
-  if (!context || typeof context !== "object" || Array.isArray(context))
-  {
-    fail(`${stageName} prepare context must be an object`);
-  }
-  const resource = context.resource;
   if (!resource || typeof resource.GetAdapterResource !== "function"
     || typeof resource.SetAdapterResource !== "function"
-    || typeof resource.DestroyAdapterResource !== "function")
+    || typeof resource.DestroyAdapterResource !== "function"
+    || typeof resource.GetPayload !== "function"
+    || typeof resource.IsCurrent !== "function"
+    || typeof resource.MarkLoaded !== "function"
+    || typeof resource.MarkPreparing !== "function"
+    || typeof resource.MarkPrepared !== "function")
   {
-    fail(`${stageName} prepare context must provide a resource with GetAdapterResource, SetAdapterResource, and DestroyAdapterResource`);
+    fail("resource realization requires a current CPU resource with payload, state, and adapter methods");
   }
   return resource;
 }
@@ -990,6 +988,7 @@ export class CjsWebGPUDevice
     this._bufferUsage = options.bufferUsage || globalThis.GPUBufferUsage || null;
     this._textureUsage = options.textureUsage || globalThis.GPUTextureUsage || null;
     this._samplerCache = new Map();
+    this._resourceRealizations = new WeakMap();
     this._onLost = typeof options.onLost === "function" ? options.onLost : null;
     this._generation = 1;
     this._state = "ready";
@@ -1600,135 +1599,149 @@ export class CjsWebGPUDevice
   }
 
   /**
-   * Create a synchronous prepare stage that maps the canonical decoded RGBA8
-   * payload into the exact plain texture-bundle input consumed below.
+   * Realize the already-published RGBA8 CPU payload attached to one resource.
+   * Mapping remains synchronous and GPU-free; allocation and guarded adapter
+   * publication are delegated to {@link CjsWebGPUDevice#RealizeResource}.
+   * Concurrent calls for the same resource and adapter key share one operation.
+   *
+   * @param {object} resource Current loaded resource exposing `GetPayload()`.
+   * @param {object} options Texture key, bundle label, and adapter slot.
+   * @param {string} options.textureKey Binding/resource identity for the texture.
+   * @param {string} [options.bundleLabel="prepared RGBA8 texture"] Diagnostic bundle label.
+   * @param {string} [options.adapterKey="webgpu"] Resource adapter slot.
+   * @returns {Promise<object>} Engine-owned prepared resource bundle.
    */
-  CreateRgba8TexturePrepareStage(options = {})
+  RealizeRgba8Texture(resource, options = {})
   {
-    const plan = normalizeRgba8TexturePrepareStage(options);
-    return Object.freeze({
-      name: plan.name,
-      textureKey: plan.textureKey,
-      prepare(value)
+    assertRealizationResource(resource);
+    const plan = normalizeRgba8TextureRealizationOptions(options);
+    const input = mapRgba8TexturePayload(resource.GetPayload(), plan);
+    return this.RealizeResource(resource, input, { adapterKey: plan.adapterKey });
+  }
+
+  /**
+   * Realize already-selected WebGPU sampler state from a published CPU payload.
+   * Selection and texture pairing remain caller policy; this method only maps,
+   * allocates, and commits the selected sampler under the requested adapter key.
+   *
+   * @param {object} resource Current loaded resource exposing `GetPayload()`.
+   * @param {object} options Sampler key, bundle label, and adapter slot.
+   * @param {string} options.samplerKey Binding/resource identity for the sampler.
+   * @param {string} [options.bundleLabel="prepared WebGPU sampler"] Diagnostic bundle label.
+   * @param {string} [options.adapterKey="webgpu"] Resource adapter slot.
+   * @returns {Promise<object>} Engine-owned prepared resource bundle.
+   */
+  RealizeSampler(resource, options = {})
+  {
+    assertRealizationResource(resource);
+    const plan = normalizeSamplerRealizationOptions(options);
+    const input = mapSamplerPayload(resource.GetPayload(), plan);
+    return this.RealizeResource(resource, input, { adapterKey: plan.adapterKey });
+  }
+
+  /**
+   * Realize one already-published CPU resource as an engine-owned WebGPU bundle.
+   *
+   * The in-flight boundary is this device session plus resource handle and
+   * adapter key. Candidate allocation completes before a synchronous current-
+   * target check and adapter commit. A stale or failed candidate is destroyed;
+   * a current failure restores any usable prior adapter and otherwise returns
+   * the resource to `LOADED` without discarding its CPU payload.
+   *
+   * @param {object} resource Current loaded resource receiving the adapter.
+   * @param {object} value Plain geometry/texture/sampler bundle input. When omitted, the resource payload is used.
+   * @param {object} [options={}] Adapter publication options.
+   * @param {string} [options.adapterKey="webgpu"] Resource adapter slot.
+   * @returns {Promise<object>} Engine-owned prepared resource bundle.
+   */
+  RealizeResource(resource, value, options = {})
+  {
+    assertRealizationResource(resource);
+    const plan = normalizeResourceRealizationOptions(options);
+    let operations = this._resourceRealizations.get(resource);
+    if (!operations)
+    {
+      operations = new Map();
+      this._resourceRealizations.set(resource, operations);
+    }
+    const existing = operations.get(plan.adapterKey);
+    if (existing) return existing;
+
+    const input = value === undefined ? resource.GetPayload() : value;
+    const promise = this._RealizeResource(resource, input, plan);
+    operations.set(plan.adapterKey, promise);
+    const remove = () =>
+    {
+      if (operations.get(plan.adapterKey) === promise) operations.delete(plan.adapterKey);
+    };
+    promise.then(remove, remove);
+    return promise;
+  }
+
+  async _RealizeResource(resource, value, plan)
+  {
+    const stale = () =>
+    {
+      const error = new Error(`CjsWebGPUDevice: resource realization target ${plan.adapterKey} is stale`);
+      error.code = "CJS_WEBGPU_STALE_RESOURCE_REALIZATION";
+      error.adapterKey = plan.adapterKey;
+      return error;
+    };
+    const assertOwned = (bundle, label) =>
+    {
+      if (bundle === undefined || bundle === null) return null;
+      const record = RESOURCE_BUNDLES.get(bundle);
+      if (!record || record.owner !== this)
       {
-        return mapRgba8TexturePayload(value, plan);
+        fail(`${label} adapter slot ${plan.adapterKey} is not an engine-owned resource bundle`);
       }
-    });
-  }
+      return record;
+    };
+    const isUsable = (bundle) =>
+    {
+      const record = bundle ? RESOURCE_BUNDLES.get(bundle) : null;
+      return Boolean(record
+        && record.owner === this
+        && record.generation === this._generation
+        && record.destroyed !== true);
+    };
 
-  /**
-   * Compose the bounded RGBA8 mapper and atomic adapter-slot publisher as one
-   * ready-to-register CjsResMan prepare-pipeline definition.
-   */
-  CreateRgba8TexturePreparePipeline(options = {})
-  {
-    assertPlainObject(options, "RGBA8 texture prepare-pipeline options");
-    assertKeys(options, new Set([
-      "textureKey", "bundleLabel", "mappingStageName", "publicationStageName", "adapterKey"
-    ]), "RGBA8 texture prepare pipeline");
-    const mapping = this.CreateRgba8TexturePrepareStage({
-      textureKey: options.textureKey,
-      ...(own(options, "bundleLabel") ? { bundleLabel: options.bundleLabel } : {}),
-      ...(own(options, "mappingStageName") ? { name: options.mappingStageName } : {})
-    });
-    const publication = this.CreateResourcePrepareStage({
-      ...(own(options, "publicationStageName") ? { name: options.publicationStageName } : {}),
-      ...(own(options, "adapterKey") ? { adapterKey: options.adapterKey } : {})
-    });
-    return Object.freeze({ stages: Object.freeze([ mapping, publication ]) });
-  }
+    if (!resource.IsCurrent()) throw stale();
+    let displaced = resource.GetAdapterResource(plan.adapterKey);
+    assertOwned(displaced, "existing");
+    resource.MarkPreparing();
+    if (!resource.IsCurrent()) throw stale();
 
-  /**
-   * Create a synchronous prepare stage for already-selected WebGPU sampler
-   * state. Selection and texture pairing remain upstream policy.
-   */
-  CreateSamplerPrepareStage(options = {})
-  {
-    const plan = normalizeSamplerPrepareStage(options);
-    return Object.freeze({
-      name: plan.name,
-      samplerKey: plan.samplerKey,
-      prepare(value)
+    let candidate = null;
+    let committed = false;
+    try
+    {
+      candidate = await this.CreateResourceBundle(value);
+      if (!resource.IsCurrent()) throw stale();
+
+      displaced = resource.GetAdapterResource(plan.adapterKey);
+      assertOwned(displaced, "current");
+      resource.SetAdapterResource(plan.adapterKey, candidate);
+      if (resource.GetAdapterResource(plan.adapterKey) !== candidate)
       {
-        return mapSamplerPayload(value, plan);
+        fail(`resource realization adapter slot ${plan.adapterKey} did not publish the candidate bundle`);
       }
-    });
-  }
-
-  /**
-   * Compose normalized sampler mapping and atomic adapter-slot publication as
-   * one ready-to-register/directly-run structural prepare pipeline.
-   */
-  CreateSamplerPreparePipeline(options = {})
-  {
-    assertPlainObject(options, "sampler prepare-pipeline options");
-    assertKeys(options, new Set([
-      "samplerKey", "bundleLabel", "mappingStageName", "publicationStageName", "adapterKey"
-    ]), "sampler prepare pipeline");
-    const mapping = this.CreateSamplerPrepareStage({
-      samplerKey: options.samplerKey,
-      ...(own(options, "bundleLabel") ? { bundleLabel: options.bundleLabel } : {}),
-      ...(own(options, "mappingStageName") ? { name: options.mappingStageName } : {})
-    });
-    const publication = this.CreateResourcePrepareStage({
-      ...(own(options, "publicationStageName") ? { name: options.publicationStageName } : {}),
-      ...(own(options, "adapterKey") ? { adapterKey: options.adapterKey } : {})
-    });
-    return Object.freeze({ stages: Object.freeze([ mapping, publication ]) });
-  }
-
-  /**
-   * Create a CjsResMan-compatible final prepare stage. The stage retains the
-   * current CPU payload by returning undefined and atomically replaces one
-   * opaque adapter slot only after the complete GPU bundle is ready.
-   */
-  CreateResourcePrepareStage(options = {})
-  {
-    const plan = normalizeResourcePrepareStage(options);
-    const owner = this;
-    return Object.freeze({
-      name: plan.name,
-      adapterKey: plan.adapterKey,
-      async prepare(value, context)
+      resource.MarkPrepared();
+      if (!resource.IsCurrent()) throw stale();
+      committed = true;
+      if (displaced && displaced !== candidate) displaced.Destroy();
+      return candidate;
+    }
+    catch (error)
+    {
+      if (!committed)
       {
-        const resource = resourceFromPrepareContext(context, plan.name);
-        const initial = resource.GetAdapterResource(plan.adapterKey);
-        if (initial !== undefined && initial !== null)
-        {
-          const initialRecord = RESOURCE_BUNDLES.get(initial);
-          if (!initialRecord || initialRecord.owner !== owner)
-          {
-            fail(`${plan.name} adapter slot ${plan.adapterKey} is not an engine-owned resource bundle`);
-          }
-        }
-        const candidate = await owner.CreateResourceBundle(value);
-        let displaced = null;
-        let commitStarted = false;
         try
         {
-          displaced = resource.GetAdapterResource(plan.adapterKey);
-          if (displaced !== undefined && displaced !== null)
-          {
-            const displacedRecord = RESOURCE_BUNDLES.get(displaced);
-            if (!displacedRecord || displacedRecord.owner !== owner)
-            {
-              fail(`${plan.name} adapter slot ${plan.adapterKey} changed to a foreign resource bundle`);
-            }
-          }
-          commitStarted = true;
-          resource.SetAdapterResource(plan.adapterKey, candidate);
-          if (resource.GetAdapterResource(plan.adapterKey) !== candidate)
-          {
-            fail(`${plan.name} adapter slot ${plan.adapterKey} did not publish the candidate bundle`);
-          }
-          if (displaced && displaced !== candidate) displaced.Destroy();
-        }
-        catch (error)
-        {
-          try
+          if (resource.IsCurrent())
           {
             const current = resource.GetAdapterResource(plan.adapterKey);
-            if (commitStarted && current !== displaced)
+            if (current === candidate)
             {
               if (displaced !== undefined && displaced !== null)
               {
@@ -1739,18 +1752,26 @@ export class CjsWebGPUDevice
                 resource.DestroyAdapterResource(plan.adapterKey);
               }
             }
+            if (isUsable(resource.GetAdapterResource(plan.adapterKey))) resource.MarkPrepared();
+            else resource.MarkLoaded();
           }
-          catch
-          {
-            // Preserve the publication error. Candidate cleanup remains
-            // idempotent even when the resource already destroyed it.
-          }
-          candidate.Destroy();
-          throw error;
         }
-        return undefined;
+        catch
+        {
+          // Preserve the realization error. The candidate is still destroyed
+          // below, and a detached resource must not receive further mutation.
+        }
+        try
+        {
+          candidate?.Destroy();
+        }
+        catch
+        {
+          // Preserve the realization error after best-effort candidate cleanup.
+        }
       }
-    });
+      throw error;
+    }
   }
 
   CreateBindingSet(livePipeline, options = {})

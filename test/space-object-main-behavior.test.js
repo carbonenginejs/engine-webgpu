@@ -19,9 +19,7 @@ test("space-object Main behavior carries the CjsLibrary recipe and live builder"
   assert.equal(Object.isFrozen(behavior.request), true);
   assert.equal(behavior.id, EVE_SPACE_OBJECT_MAIN_RESOURCE_BEHAVIOR);
   assert.deepEqual(behavior.request, {
-    requirement: "webgpu-package",
     emit: "json",
-    preparePipeline: "webgpu_package",
     format: Format
   });
   assert.equal(behavior.GetMaterialConstants, getEveSpaceObjectMainMaterialConstants);
@@ -57,8 +55,8 @@ test("space-object Main behavior matches CEWGPU paths and registered WebGPU supp
 test("space-object Main behavior validates its request recipe", () =>
 {
   assert.throws(
-    () => createEveSpaceObjectMainResourceBehavior({ preparePipeline: "" }),
-    /preparePipeline must be a non-empty string/u
+    () => createEveSpaceObjectMainResourceBehavior({ emit: "" }),
+    /emit must be a non-empty string/u
   );
   assert.throws(
     () => createEveSpaceObjectMainResourceBehavior({ format: null }),
