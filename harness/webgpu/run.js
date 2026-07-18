@@ -57,6 +57,62 @@ function Assert(condition, message)
     }
 }
 
+function ScopeFixtureBindingValues(pipeline, values, label)
+{
+    Assert(values instanceof Map, `${label} must be a Map`);
+    const expected = new Map();
+    const scopeCounts = new Map();
+    for (const group of Array.isArray(pipeline?.bindGroups) ? pipeline.bindGroups : [])
+    {
+        for (const binding of Array.isArray(group?.bindings) ? group.bindings : [])
+        {
+            const identity = typeof binding.identity === "string" && binding.identity
+                ? binding.identity
+                : `${binding.resourceKind}:${binding.registerSpace}:${binding.registerIndex}`;
+            const scopeIdentity = typeof binding.scopeIdentity === "string" && binding.scopeIdentity
+                ? binding.scopeIdentity
+                : identity;
+            Assert(!expected.has(scopeIdentity), `${label} duplicates pipeline scope ${scopeIdentity}`);
+            expected.set(scopeIdentity, identity);
+            scopeCounts.set(identity, (scopeCounts.get(identity) || 0) + 1);
+        }
+    }
+
+    const result = new Map();
+    const consumed = new Set();
+    for (const [ scopeIdentity, identity ] of expected)
+    {
+        let sourceIdentity = null;
+        if (values.has(scopeIdentity))
+        {
+            sourceIdentity = scopeIdentity;
+        }
+        else if (values.has(identity))
+        {
+            Assert(
+                scopeCounts.get(identity) === 1,
+                `${label} base identity ${identity} is ambiguous across stage-scoped bindings`
+            );
+            sourceIdentity = identity;
+        }
+        if (sourceIdentity === null)
+        {
+            continue;
+        }
+        Assert(
+            !consumed.has(sourceIdentity),
+            `${label} base identity ${sourceIdentity} is ambiguous across stage-scoped bindings`
+        );
+        consumed.add(sourceIdentity);
+        result.set(scopeIdentity, values.get(sourceIdentity));
+    }
+    for (const identity of values.keys())
+    {
+        Assert(consumed.has(identity), `${label} has unexpected identity ${identity}`);
+    }
+    return result;
+}
+
 function AssertPixels(bytes, expectedPixel = EXPECTED_PIXEL)
 {
     for (let y = 0; y < HEIGHT; y += 1)
@@ -399,11 +455,11 @@ async function CreateGeneratedDraw(webgpu)
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
         device.queue.writeBuffer(uniformBuffer, 0, constants);
-        const fixtureResources = new Map([
+        const fixtureResources = ScopeFixtureBindingValues(pipeline, new Map([
             [ "uniform-buffer:0:0", { buffer: uniformBuffer } ],
             [ "sampled-resource:0:0", sampledTexture ],
             [ "sampler:0:0", sampler ]
-        ]);
+        ]), "generated copyblit resources");
         const draw = webgpu.CreateDraw(livePipeline, {
             resources: fixtureResources,
             geometry,
@@ -556,7 +612,16 @@ async function RunQuadV5Comparison(webgpu)
         {
             const behavior = RESOURCE_BEHAVIORS.get(record.resourceBehavior);
             Assert(behavior, `Unknown QuadV5 resource behavior ${record.resourceBehavior || "<missing>"}`);
-            const uniformData = behavior.BuildUniformData(record, fixture.bindingValues);
+            const uniformData = ScopeFixtureBindingValues(
+                record.pipeline,
+                new Map(Object.entries(behavior.BuildUniformData(record, fixture.bindingValues))),
+                `QuadV5 ${record.label} uniform data`
+            );
+            const resources = ScopeFixtureBindingValues(
+                record.pipeline,
+                fixture.resources,
+                `QuadV5 ${record.label} resources`
+            );
             const prepared = await webgpu.PreparePipeline(record.pipeline, { warningsAsErrors: true });
             warningCount += prepared.diagnostics.filter((entry) => entry.type === "warning").length;
             const livePipeline = await webgpu.CreateRenderPipeline(prepared, {
@@ -572,7 +637,7 @@ async function RunQuadV5Comparison(webgpu)
             {
                 bindingSet = webgpu.CreateBindingSet(livePipeline, {
                     uniformData,
-                    resources: fixture.resources
+                    resources
                 });
                 const draw = webgpu.CreateDraw(livePipeline, {
                     bindingSet,

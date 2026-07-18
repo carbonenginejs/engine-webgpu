@@ -24,9 +24,9 @@ function validateReadyWgsl(variant)
   const passKey = `${variant.techniqueName}.pass${variant.passIndex}`;
   if (variant.passKey !== passKey) fail(`${variant.id} pass key does not match its technique/pass`);
   const wgsl = variant.wgsl;
-  if (wgsl?.format !== "CJS_WGSL_SET" || wgsl.formatVersion !== 1)
+  if (wgsl?.format !== "CJS_WGSL_SET" || (wgsl.formatVersion !== 1 && wgsl.formatVersion !== 2))
   {
-    fail(`${passKey} ready variant is not a version 1 CJS_WGSL_SET`);
+    fail(`${passKey} ready variant is not a version 1 or 2 CJS_WGSL_SET`);
   }
   const shaders = Array.isArray(wgsl.shaders) ? wgsl.shaders : [];
   if (shaders.length !== 2) fail(`${passKey} does not contain exactly vertex+pixel WGSL`);

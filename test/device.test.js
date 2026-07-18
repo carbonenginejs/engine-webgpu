@@ -208,6 +208,36 @@ function pipelineDescriptor(overrides = {})
   };
 }
 
+function stageScopedStructuredPipelineDescriptor()
+{
+  const descriptor = pipelineDescriptor();
+  descriptor.shaderModules[0].wgsl = "@group(0) @binding(4) var<storage, read> t0: array<u32>; @vertex fn vsMain() -> @builtin(position) vec4f { return vec4f(); }";
+  descriptor.shaderModules[1].wgsl = "@group(0) @binding(5) var t0: texture_2d<f32>; @fragment fn psMain() -> @location(0) vec4f { return vec4f(1); }";
+  const uniform = descriptor.bindGroups[0].bindings[0];
+  uniform.identity = "uniform-buffer:0:1";
+  uniform.scopeIdentity = "uniform-buffer:0:1@vertex";
+  const texture = descriptor.bindGroups[0].bindings[1];
+  texture.identity = "sampled-resource:0:0";
+  texture.scopeIdentity = "sampled-resource:0:0@fragment";
+  const sampler = descriptor.bindGroups[0].bindings[2];
+  sampler.identity = "sampler:0:0";
+  sampler.scopeIdentity = "sampler:0:0@fragment";
+  descriptor.bindGroups[0].bindings.splice(1, 0, {
+    sourceTruth: "wgsl-layout",
+    resourceKind: "sampled-resource",
+    identity: "sampled-resource:0:0",
+    scopeIdentity: "sampled-resource:0:0@vertex",
+    registerSpace: 0,
+    registerIndex: 0,
+    group: 0,
+    binding: 4,
+    visibility: [ "vertex" ],
+    dynamic: false,
+    layout: { buffer: { type: "read-only-storage", hasDynamicOffset: false, minBindingSize: 48 } }
+  });
+  return descriptor;
+}
+
 function renderRecipe()
 {
   return {
@@ -239,6 +269,18 @@ function bindingSetInputs(data = new Float32Array(16))
     resources: new Map([
       [ "sampled-resource:0:0", { kind: "textureView" } ],
       [ "sampler:0:0", { kind: "sampler" } ]
+    ])
+  };
+}
+
+function stageScopedBindingSetInputs(data = new Float32Array(16))
+{
+  return {
+    uniformData: new Map([ [ "uniform-buffer:0:1@vertex", data ] ]),
+    resources: new Map([
+      [ "sampled-resource:0:0@vertex", { buffer: { kind: "structuredBuffer" } } ],
+      [ "sampled-resource:0:0@fragment", { kind: "textureView" } ],
+      [ "sampler:0:0@fragment", { kind: "sampler" } ]
     ])
   };
 }
@@ -1926,6 +1968,55 @@ test("CjsWebGPUDevice owns validated uniform buffers through opaque binding sets
   assert.equal(typeof inputs.resources.get("sampled-resource:0:0").destroy, "undefined");
 });
 
+test("CjsWebGPUDevice consumes stage-scoped structured and texture t0 resources", async () =>
+{
+  const fake = fakeDevice("stage-scoped-bindings");
+  const webgpu = new CjsWebGPUDevice({
+    device: fake.device,
+    shaderStage: SHADER_STAGE,
+    bufferUsage: BUFFER_USAGE
+  });
+  const descriptor = stageScopedStructuredPipelineDescriptor();
+  const prepared = await webgpu.PreparePipeline(descriptor);
+  const layout = fake.device.calls.find(([ kind ]) => kind === "createBindGroupLayout")[1];
+  const structuredLayout = layout.entries.find((entry) => entry.binding === 4);
+  const textureLayout = layout.entries.find((entry) => entry.binding === 5);
+  assert.deepEqual(structuredLayout.buffer, {
+    type: "read-only-storage",
+    hasDynamicOffset: false,
+    minBindingSize: 48
+  });
+  assert.equal(structuredLayout.visibility, SHADER_STAGE.VERTEX);
+  assert.equal(textureLayout.visibility, SHADER_STAGE.FRAGMENT);
+
+  const live = await webgpu.CreateRenderPipeline(prepared, renderRecipe());
+  const inputs = stageScopedBindingSetInputs();
+  const bindingSet = webgpu.CreateBindingSet(live, inputs);
+  assert.equal(fake.device.calls.filter(([ kind ]) => kind === "createBuffer").length, 1);
+  const bindGroup = fake.device.calls.filter(([ kind ]) => kind === "createBindGroup").at(-1)[1];
+  assert.equal(
+    bindGroup.entries.find((entry) => entry.binding === 4).resource,
+    inputs.resources.get("sampled-resource:0:0@vertex")
+  );
+  assert.equal(
+    bindGroup.entries.find((entry) => entry.binding === 5).resource,
+    inputs.resources.get("sampled-resource:0:0@fragment")
+  );
+
+  const missing = stageScopedBindingSetInputs();
+  missing.resources.delete("sampled-resource:0:0@vertex");
+  assert.throws(() => webgpu.CreateBindingSet(live, missing), /missing caller resource sampled-resource:0:0@vertex/u);
+  const malformed = stageScopedBindingSetInputs();
+  malformed.resources.set("sampled-resource:0:0@vertex", { kind: "rawBuffer" });
+  assert.throws(() => webgpu.CreateBindingSet(live, malformed), /requires a GPUBufferBinding resource/u);
+
+  const direct = new Map(inputs.resources);
+  direct.set("uniform-buffer:0:1@vertex", { buffer: { kind: "uniformBuffer" } });
+  const draw = webgpu.CreateDraw(live, { resources: direct, draw: { vertexCount: 3 } });
+  assert.equal(Object.isFrozen(draw), true);
+  bindingSet.Destroy();
+});
+
 test("CjsWebGPUDevice binding sets fail closed and clean partial allocations", async () =>
 {
   const fake = fakeDevice("binding-set-errors");
@@ -1997,6 +2088,14 @@ test("CjsWebGPUDevice rejects incomplete or non-canonical live recipes", async (
   duplicateIdentity.bindGroups[0].bindings[1].resourceKind = "uniform-buffer";
   duplicateIdentity.bindGroups[0].bindings[1].registerIndex = 1;
   await assert.rejects(webgpu.PreparePipeline(duplicateIdentity), /duplicates uniform-buffer:0:1/i);
+
+  const malformedScope = stageScopedStructuredPipelineDescriptor();
+  malformedScope.bindGroups[0].bindings[1].scopeIdentity = "sampled-resource:0:0@fragment";
+  await assert.rejects(webgpu.PreparePipeline(malformedScope), /invalid scope identity/i);
+
+  const mixedForms = stageScopedStructuredPipelineDescriptor();
+  mixedForms.bindGroups[0].bindings[1].scopeIdentity = "sampled-resource:0:0";
+  await assert.rejects(webgpu.PreparePipeline(mixedForms), /mixes shared and stage-scoped forms/i);
 
   const prepared = await webgpu.PreparePipeline(pipelineDescriptor());
   const live = await webgpu.CreateRenderPipeline(prepared, renderRecipe());

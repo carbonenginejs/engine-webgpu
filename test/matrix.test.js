@@ -20,7 +20,7 @@ function matrixVariant()
     ],
     wgsl: {
       format: "CJS_WGSL_SET",
-      formatVersion: 1,
+      formatVersion: 2,
       shaders: [
         {
           key: "Main.pass0.vertex",
@@ -166,6 +166,14 @@ test("effect matrix conversion prepares each ready variant once while preserving
   assert.equal(result.coveredOccurrences, 2);
   assert.equal(result.pipelines[0].id, "dx11:variant-a");
   assert.equal(result.pipelines[0].pipeline.shaderModules.length, 2);
+
+  const legacy = qualifiedMatrix();
+  legacy.backends.dx11.passVariants[0].wgsl.formatVersion = 1;
+  assert.equal(buildMatrixPipelines(legacy).uniquePipelines, 1);
+
+  const unsupported = qualifiedMatrix();
+  unsupported.backends.dx11.passVariants[0].wgsl.formatVersion = 3;
+  assert.throws(() => buildMatrixPipelines(unsupported), /version 1 or 2 CJS_WGSL_SET/u);
 });
 
 test("effect matrix conversion rejects malformed ready records", () =>

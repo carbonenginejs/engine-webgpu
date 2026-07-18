@@ -24,17 +24,24 @@ The current engine slice implements:
   `format-webgpu` output
 - `CjsWebGPUPackage.fromBytes(...)` accepts an injected reader such as
   `CjsFormatWebgpu.read`
-- optional `CJS_WGSL_SET.layouts` records own numeric bind groups and exact
-  WebGPU buffer/texture/sampler layouts; ANLS metadata is reconciled by D3D
-  resource class, register space, and register index
+- optional `CJS_WGSL_SET` version-1/version-2 `layouts` records own numeric
+  bind groups and exact WebGPU buffer/texture/sampler layouts; version 2 keeps
+  a required base D3D `identity` plus a required stage-aware `scopeIdentity`;
+  every unshared binding is stage-qualified, a bare scope is reserved for an
+  explicitly shared multi-stage binding, mixed forms reject, and ANLS metadata
+  is reconciled only from the binding's declared stage visibility
+- when a structured WGSL set and duplicated top-level `shaders`/`layouts`
+  arrays are both present, the validated nested set is authoritative
 - translated `code`, entry points, and DXBC source maps survive on immutable
   shader-module descriptors; ANLS-only packages retain their legacy fallback
 - Carbon-style effect path helpers keep authored `.fx` names and rewrite only
   the `/effect/` root plus the compiled `.sm_*` suffix
 - `CjsWebGPUDevice` requests an explicitly configured adapter/device, prepares
   WGSL modules and canonical layouts, realizes an explicit caller-supplied
-  render-pipeline recipe, resolves live resources by D3D identity, and encodes
-  indexed or non-indexed draws
+  render-pipeline recipe, resolves live resources by canonical scope identity
+  (version-1 and unversioned layouts normalize missing scopes to their base D3D
+  key), and encodes indexed or
+  non-indexed draws
 - `CjsWebGPUDevice.CreateGeometry(...)` uploads explicit packed CPU vertex and
   optional index payloads into opaque, generation-bound device geometry; it
   exposes frozen caller-provided vertex layouts without defining another
@@ -64,9 +71,10 @@ The current engine slice implements:
   optional fallback rewrite while the behavior requires registered WebGPU
   support for automatic selection
 - opaque device-owned binding sets validate canonical CPU uniform payloads,
-  allocate/upload their uniform buffers, reuse native bind groups across draws,
-  support validated updates, and clean partial buffers when synchronous native
-  calls throw
+  allocate/upload their uniform buffers, consume caller-owned read-only storage
+  buffer bindings and external texture/sampler resources, reuse native bind
+  groups across draws, support validated updates, and clean partial owned
+  buffers when synchronous native calls throw
 - `buildEveSpaceObjectMainUniformData(...)` serializes the proven Carbon
   space-scene/space-object `Main.pass0` structs and package-reflected stage-local
   material `cb0` into canonical binding identities
@@ -78,8 +86,9 @@ The current engine slice implements:
 - device generations reject stale pipelines, geometry, textures, samplers,
   binding sets, and draws after loss or explicit recreation; stale bundles
   remain destroyable so their old-generation children can be reclaimed
-- binding sets retain but never own opaque texture/sampler handles, while legacy raw
-  buffers/textures/samplers remain caller-owned
+- binding sets retain but never own opaque texture/sampler handles or external
+  storage buffers, while legacy raw buffers/textures/samplers remain
+  caller-owned
 
 Non-goals for this slice:
 

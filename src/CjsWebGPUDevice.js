@@ -75,7 +75,27 @@ function bindingIdentity(binding)
   {
     fail("canonical binding has an invalid D3D identity");
   }
-  return `${binding.resourceKind}:${binding.registerSpace}:${binding.registerIndex}`;
+  const identity = `${binding.resourceKind}:${binding.registerSpace}:${binding.registerIndex}`;
+  if (binding.identity !== undefined && binding.identity !== identity)
+  {
+    fail(`canonical binding has inconsistent D3D identity ${binding.identity}`);
+  }
+  if (binding.scopeIdentity !== undefined
+    && (typeof binding.scopeIdentity !== "string" || !binding.scopeIdentity))
+  {
+    fail(`canonical binding has invalid scope identity ${binding.scopeIdentity || "<empty>"}`);
+  }
+  const scopeIdentity = binding.scopeIdentity === undefined ? identity : binding.scopeIdentity;
+  const visibility = Array.isArray(binding.visibility)
+    ? Array.from(new Set(binding.visibility.map(normalizeStageName)))
+    : [];
+  if (typeof scopeIdentity !== "string"
+    || (scopeIdentity !== identity
+      && (visibility.length !== 1 || scopeIdentity !== `${identity}@${visibility[0]}`)))
+  {
+    fail(`canonical binding has invalid scope identity ${scopeIdentity || "<empty>"}`);
+  }
+  return scopeIdentity;
 }
 
 function own(value, key)
@@ -741,6 +761,7 @@ function normalizePipeline(pipeline, shaderStage)
   groups.sort((left, right) => left.group - right.group);
   const slots = new Set();
   const identities = new Set();
+  const baseScopes = new Map();
   const normalizedGroups = groups.map((group, groupIndex) =>
   {
     if (group?.group !== groupIndex) fail("canonical bind groups must be contiguous from group 0");
@@ -760,6 +781,15 @@ function normalizePipeline(pipeline, shaderStage)
         const identity = bindingIdentity(binding);
         if (identities.has(identity)) fail(`canonical layout duplicates ${identity}`);
         identities.add(identity);
+        const baseIdentity = `${binding.resourceKind}:${binding.registerSpace}:${binding.registerIndex}`;
+        if (!baseScopes.has(baseIdentity)) baseScopes.set(baseIdentity, new Set());
+        const scopes = baseScopes.get(baseIdentity);
+        if ((identity === baseIdentity && Array.from(scopes).some((scope) => scope !== baseIdentity))
+          || (identity !== baseIdentity && scopes.has(baseIdentity)))
+        {
+          fail(`canonical layout mixes shared and stage-scoped forms for ${baseIdentity}`);
+        }
+        scopes.add(identity);
         return Object.freeze({
           binding: binding.binding,
           identity,
@@ -891,18 +921,25 @@ function resolveBindingResource(owner, entry, resource)
     return { resource: textureRecord.view, adapterRecord: textureRecord };
   }
   const samplerRecord = SAMPLERS.get(resource);
-  if (!samplerRecord) return { resource, adapterRecord: null };
-  assertSampler(owner, resource);
-  const layout = entry.descriptor.sampler;
-  if (!layout) fail(`${entry.identity} cannot bind an engine sampler`);
-  const type = layout.type ?? "filtering";
-  const compatible = type === "filtering"
-    ? !samplerRecord.isComparison
-    : type === "non-filtering"
-      ? !samplerRecord.isComparison && !samplerRecord.isFiltering
-      : type === "comparison" && samplerRecord.isComparison;
-  if (!compatible) fail(`${entry.identity} is incompatible with the ${type} sampler layout`);
-  return { resource: samplerRecord.sampler, adapterRecord: samplerRecord };
+  if (samplerRecord)
+  {
+    assertSampler(owner, resource);
+    const layout = entry.descriptor.sampler;
+    if (!layout) fail(`${entry.identity} cannot bind an engine sampler`);
+    const type = layout.type ?? "filtering";
+    const compatible = type === "filtering"
+      ? !samplerRecord.isComparison
+      : type === "non-filtering"
+        ? !samplerRecord.isComparison && !samplerRecord.isFiltering
+        : type === "comparison" && samplerRecord.isComparison;
+    if (!compatible) fail(`${entry.identity} is incompatible with the ${type} sampler layout`);
+    return { resource: samplerRecord.sampler, adapterRecord: samplerRecord };
+  }
+  if (entry.descriptor.buffer && (!resource || typeof resource !== "object" || !resource.buffer))
+  {
+    fail(`${entry.identity} requires a GPUBufferBinding resource`);
+  }
+  return { resource, adapterRecord: null };
 }
 
 function assertAdapterResources(records, label)
@@ -1720,15 +1757,7 @@ export class CjsWebGPUDevice
   {
     const record = assertLive(this, livePipeline);
     const usage = this._bufferUsage;
-    if (!usage || !Number.isInteger(usage.UNIFORM) || !Number.isInteger(usage.COPY_DST))
-    {
-      fail("GPUBufferUsage constants are required to create binding sets");
-    }
     const device = this.GetDevice();
-    if (typeof device.createBuffer !== "function" || typeof device.queue?.writeBuffer !== "function")
-    {
-      fail("GPUDevice buffer creation and queue.writeBuffer are required to create binding sets");
-    }
 
     const uniformInputs = new Map(resourceEntries(options.uniformData, "binding-set uniformData"));
     const externalInputs = new Map(resourceEntries(options.resources, "binding-set resources"));
@@ -1739,9 +1768,9 @@ export class CjsWebGPUDevice
       for (const entry of group.entries)
       {
         const buffer = entry.descriptor.buffer;
-        if (buffer)
+        if (buffer?.type === "uniform")
         {
-          if (buffer.type !== "uniform" || buffer.hasDynamicOffset)
+          if (buffer.hasDynamicOffset)
           {
             fail(`${entry.identity} is not a supported non-dynamic uniform binding`);
           }
@@ -1774,6 +1803,16 @@ export class CjsWebGPUDevice
     for (const identity of externalInputs.keys())
     {
       if (!externalPlans.has(identity)) fail(`binding set has unexpected caller resource ${identity}`);
+    }
+    if (uniformPlans.size
+      && (!usage || !Number.isInteger(usage.UNIFORM) || !Number.isInteger(usage.COPY_DST)))
+    {
+      fail("GPUBufferUsage constants are required to create binding sets");
+    }
+    if (uniformPlans.size
+      && (typeof device.createBuffer !== "function" || typeof device.queue?.writeBuffer !== "function"))
+    {
+      fail("GPUDevice buffer creation and queue.writeBuffer are required to create binding sets");
     }
 
     const buffers = [];

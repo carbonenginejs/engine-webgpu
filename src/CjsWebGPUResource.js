@@ -11,6 +11,15 @@ export class CjsWebGPUResource
    */
   constructor(values = {})
   {
+    if (values.identity !== undefined && (typeof values.identity !== "string" || !values.identity))
+    {
+      throw new TypeError("CjsWebGPUResource identity must be a non-empty string when provided");
+    }
+    if (values.scopeIdentity !== undefined
+      && (typeof values.scopeIdentity !== "string" || !values.scopeIdentity))
+    {
+      throw new TypeError("CjsWebGPUResource scopeIdentity must be a non-empty string when provided");
+    }
     this.key = String(values.key || "");
     this.name = String(values.name || "");
     this.techniqueName = String(values.techniqueName || "");
@@ -32,10 +41,13 @@ export class CjsWebGPUResource
     this.sourceTruth = String(values.sourceTruth || "unknown");
     this.stages = deepFreeze(cloneJson(values.stages || []));
     this.resourceKind = String(values.resourceKind || "");
+    this.identity = values.identity === undefined ? "" : values.identity;
+    this.scopeIdentity = values.scopeIdentity === undefined ? this.identity : values.scopeIdentity;
     this.group = Number.isInteger(values.group) ? values.group : null;
     this.binding = Number.isInteger(values.binding) ? values.binding : null;
     this.visibility = deepFreeze(cloneJson(values.visibility || []));
     this.layout = deepFreeze(cloneJson(values.layout || null));
+    this.structureStride = Number.isInteger(values.structureStride) ? values.structureStride : null;
     if (new.target === CjsWebGPUResource)
     {
       Object.freeze(this);
@@ -69,10 +81,13 @@ export class CjsWebGPUResource
       sourceTruth: this.sourceTruth,
       stages: this.stages,
       resourceKind: this.resourceKind,
+      ...(this.identity ? { identity: this.identity } : {}),
+      ...(this.scopeIdentity ? { scopeIdentity: this.scopeIdentity } : {}),
       group: this.group,
       binding: this.binding,
       visibility: this.visibility,
-      layout: this.layout
+      layout: this.layout,
+      ...(this.structureStride !== null ? { structureStride: this.structureStride } : {})
     });
   }
 }

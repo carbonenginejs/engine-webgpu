@@ -187,10 +187,13 @@ The Node launcher reads the package through `format-webgpu` and
 `CjsWebGPUPackage`, then serves only the validated pipeline descriptor. The
 `CjsWebGPUDevice` creates explicit bind-group and pipeline layouts from numeric
 groups, bindings, visibility, and nested buffer/texture/sampler layouts.
-Fixture resources are selected by D3D identity (`cb0`, `t0`, and `s0` in
-register space 0); descriptor slots are never hardcoded or renumbered. This
-bounded gate rejects missing WGSL, unsupported render states/resources,
-dynamic offsets, layout holes, and non-canonical binding provenance before GPU
+Fixture resources are selected by canonical scope identity. Version-2
+unshared bindings use `@vertex` / `@fragment` keys even when the tuple occurs in
+only one stage; a bare base key is reserved for a confirmed shared multi-stage
+binding. Version-1 and unversioned layouts may still normalize a missing scope
+to the base D3D key. Descriptor slots are never hardcoded or renumbered. This
+bounded gate rejects missing WGSL, unsupported render states/resources, dynamic
+offsets, layout holes, and non-canonical binding provenance before GPU
 submission.
 
 The real copyblit pass's replacement blend state is translated exactly to

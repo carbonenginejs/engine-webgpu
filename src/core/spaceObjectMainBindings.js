@@ -317,13 +317,14 @@ export function getEveSpaceObjectMainMaterialConstants(record)
   return Object.freeze(constants.map((constant) => Object.freeze({ ...constant })));
 }
 
-function canonicalUniformSizes(pipeline)
+function canonicalUniformBindings(pipeline)
 {
   if (pipeline?.techniqueName !== "Main" || pipeline.passIndex !== 0)
   {
     fail("package pipeline must be Main.pass0");
   }
   const result = new Map();
+  const scopeIdentities = new Set();
   const groupIndices = new Set();
   const slots = new Set();
   for (const group of Array.isArray(pipeline.bindGroups) ? pipeline.bindGroups : [])
@@ -342,7 +343,7 @@ function canonicalUniformSizes(pipeline)
       const slot = `${binding.group}:${binding.binding}`;
       if (slots.has(slot)) fail(`package duplicates canonical binding slot ${slot}`);
       slots.add(slot);
-      if (binding?.layout?.buffer)
+      if (binding?.layout?.buffer?.type === "uniform")
       {
         if (binding.resourceKind !== "uniform-buffer"
           || !Number.isInteger(binding.registerSpace) || binding.registerSpace < 0
@@ -353,16 +354,35 @@ function canonicalUniformSizes(pipeline)
         const identity = `${binding.resourceKind}:${binding.registerSpace}:${binding.registerIndex}`;
         if (result.has(identity)) fail(`package duplicates canonical uniform ${identity}`);
         const expectedVisibility = VISIBILITY[identity];
+        if (binding.identity !== undefined && binding.identity !== identity)
+        {
+          fail(`package uniform ${identity} has an inconsistent D3D identity`);
+        }
+        if (binding.scopeIdentity !== undefined
+          && (typeof binding.scopeIdentity !== "string" || !binding.scopeIdentity))
+        {
+          fail(`package uniform ${identity} has an invalid scope identity`);
+        }
+        const scopeIdentity = binding.scopeIdentity === undefined ? identity : binding.scopeIdentity;
         if (binding.sourceTruth !== "wgsl-layout" || binding.layout.buffer.type !== "uniform"
           || binding.dynamic !== false || binding.layout.buffer.hasDynamicOffset !== false
           || !expectedVisibility || !Array.isArray(binding.visibility)
           || binding.visibility.length !== 1 || binding.visibility[0] !== expectedVisibility
+          || (scopeIdentity !== identity && scopeIdentity !== `${identity}@${expectedVisibility}`)
           || !Number.isInteger(binding.layout.buffer.minBindingSize)
           || binding.layout.buffer.minBindingSize < 1 || binding.layout.buffer.minBindingSize % 4 !== 0)
         {
           fail(`package uniform ${identity} is not canonical`);
         }
-        result.set(identity, binding.layout.buffer.minBindingSize);
+        if (scopeIdentities.has(scopeIdentity))
+        {
+          fail(`package duplicates canonical uniform scope ${scopeIdentity}`);
+        }
+        scopeIdentities.add(scopeIdentity);
+        result.set(identity, {
+          scopeIdentity,
+          minBindingSize: binding.layout.buffer.minBindingSize
+        });
       }
     }
   }
@@ -372,34 +392,39 @@ function canonicalUniformSizes(pipeline)
 /**
  * Serialize the proven Carbon space-scene/space-object Main-pass structs and
  * the package-reflected stage-local material constants into canonical binding
- * identities. The caller (normally a CjsLibrary-selected behavior) owns policy;
- * this function owns only the byte ABI.
+ * scope identities. The caller (normally a CjsLibrary-selected behavior) owns
+ * policy; this function owns only the byte ABI.
  *
  * @param {object} record Loaded CjsWebGPUPackage or record with analysis and pipeline.
  * @param {object} values Plain semantic values for the five constant buffers.
- * @returns {object} Frozen identity-to-Uint8Array uniform data.
+ * @returns {object} Frozen scope-identity-to-Uint8Array uniform data.
  */
 export function buildEveSpaceObjectMainUniformData(record, values = {})
 {
   const { analysis, pipeline } = resolvePackageRecord(record);
   const material = packMaterial(findMaterialBinding(analysis), values.material);
-  const uniformData = {
+  const packedData = {
     [IDENTITIES.material]: material,
     [IDENTITIES.perFrameVS]: packStruct(values.perFrameVS, BUFFER_SIZES.perFrameVS, PER_FRAME_VS_FIELDS, "perFrameVS"),
     [IDENTITIES.perFramePS]: packStruct(values.perFramePS, BUFFER_SIZES.perFramePS, PER_FRAME_PS_FIELDS, "perFramePS"),
     [IDENTITIES.perObjectVS]: packStruct(values.perObjectVS, BUFFER_SIZES.perObjectVS, PER_OBJECT_VS_FIELDS, "perObjectVS"),
     [IDENTITIES.perObjectPS]: packStruct(values.perObjectPS, BUFFER_SIZES.perObjectPS, PER_OBJECT_PS_FIELDS, "perObjectPS")
   };
-  const canonical = canonicalUniformSizes(pipeline);
+  const canonical = canonicalUniformBindings(pipeline);
+  const uniformData = {};
   for (const [ role, identity ] of Object.entries(IDENTITIES))
   {
-    const minimum = canonical.get(identity);
-    const data = uniformData[identity];
-    if (!Number.isInteger(minimum)) fail(`package is missing canonical ${role} binding ${identity}`);
-    if (data.byteLength < minimum)
+    const canonicalBinding = canonical.get(identity);
+    const data = packedData[identity];
+    if (!canonicalBinding)
     {
-      fail(`${role} ABI is ${data.byteLength} bytes but package requires at least ${minimum}`);
+      fail(`package is missing canonical ${role} binding ${identity}`);
     }
+    if (data.byteLength < canonicalBinding.minBindingSize)
+    {
+      fail(`${role} ABI is ${data.byteLength} bytes but package requires at least ${canonicalBinding.minBindingSize}`);
+    }
+    uniformData[canonicalBinding.scopeIdentity] = data;
   }
   if (canonical.size !== Object.keys(IDENTITIES).length)
   {

@@ -44,20 +44,30 @@ export function normalizePackageShape(value)
 
   const analysis = value.analysis && typeof value.analysis === "object" ? cloneJson(value.analysis) : null;
   const wgsl = value.wgsl && typeof value.wgsl === "object" ? cloneJson(value.wgsl) : null;
+  if (wgsl && (wgsl.format !== "CJS_WGSL_SET"
+    || (wgsl.formatVersion !== 1 && wgsl.formatVersion !== 2)))
+  {
+    throw new Error("CjsWebGPUPackage.from: wgsl must be a CJS_WGSL_SET version 1 or 2 document");
+  }
+  if (wgsl && ((wgsl.shaders !== undefined && !Array.isArray(wgsl.shaders))
+    || (wgsl.layouts !== undefined && !Array.isArray(wgsl.layouts))))
+  {
+    throw new Error("CjsWebGPUPackage.from: structured wgsl shaders and layouts must be arrays when provided");
+  }
   const stages = Array.isArray(value.stages)
     ? cloneJson(value.stages)
     : Array.isArray(analysis?.stages)
       ? cloneJson(analysis.stages)
       : [];
-  const shaders = Array.isArray(value.shaders)
-    ? cloneJson(value.shaders)
-    : Array.isArray(wgsl?.shaders)
-      ? cloneJson(wgsl.shaders)
+  const shaders = wgsl
+    ? cloneJson(wgsl.shaders || [])
+    : Array.isArray(value.shaders)
+      ? cloneJson(value.shaders)
       : [];
-  const layouts = Array.isArray(value.layouts)
-    ? cloneJson(value.layouts)
-    : Array.isArray(wgsl?.layouts)
-      ? cloneJson(wgsl.layouts)
+  const layouts = wgsl
+    ? cloneJson(wgsl.layouts || [])
+    : Array.isArray(value.layouts)
+      ? cloneJson(value.layouts)
       : [];
 
   return {
@@ -153,7 +163,7 @@ export function buildPipelines(normalized, shaderModules)
   {
     const canonicalLayout = normalized.layouts.find((entry) => entry?.key === buildPassKey(pass)) || null;
     const passBindGroups = canonicalLayout
-      ? buildCanonicalBindGroups(pass, canonicalLayout)
+      ? buildCanonicalBindGroups(pass, canonicalLayout, normalized.wgsl?.formatVersion ?? null)
       : [ new CjsWebGPUBindGroup({
         key: `${buildPassKey(pass)}.bindings`,
         techniqueName: pass.techniqueName,
@@ -211,10 +221,26 @@ const RESOURCE_KIND_TO_CARBON = Object.freeze({
   "storage-resource": "uav"
 });
 
-function buildCanonicalBindGroups(pass, layout)
+function normalizeCanonicalStage(value)
+{
+  if (value === "pixel" || value === "fragment") return "fragment";
+  if (value === "vertex") return "vertex";
+  return "";
+}
+
+function canonicalVisibility(value)
+{
+  const values = Array.isArray(value) ? value : value ? [ value ] : [];
+  const visibility = Array.from(new Set(values.map(normalizeCanonicalStage)));
+  if (visibility.some((stage) => !stage)) throw new Error("Canonical layout binding has invalid visibility");
+  return visibility.sort((left, right) => [ "vertex", "fragment" ].indexOf(left) - [ "vertex", "fragment" ].indexOf(right));
+}
+
+function buildCanonicalBindGroups(pass, layout, formatVersion)
 {
   const slots = new Set();
   const identities = new Map();
+  const baseScopes = new Map();
   return (layout.bindGroups || []).map((groupRecord) =>
   {
     if (!Number.isInteger(groupRecord.group)) throw new Error(`Canonical layout ${layout.key} has an invalid group`);
@@ -227,8 +253,24 @@ function buildCanonicalBindGroups(pass, layout)
       const slot = `${binding.group}:${binding.binding}`;
       if (slots.has(slot)) throw new Error(`Canonical layout ${layout.key} duplicates group/binding ${slot}`);
       slots.add(slot);
-      const identity = canonicalIdentity(binding);
+      const identity = canonicalIdentity(binding, formatVersion);
+      const scopeIdentity = canonicalScopeIdentity(binding, formatVersion);
+      const visibility = canonicalVisibility(binding.visibility);
+      if (formatVersion === 2 && scopeIdentity === identity && visibility.length < 2)
+      {
+        throw new Error(`Canonical layout ${layout.key} shared identity ${identity} does not cover multiple stages`);
+      }
+      if (!baseScopes.has(identity)) baseScopes.set(identity, new Set());
+      const scopes = baseScopes.get(identity);
+      if ((scopeIdentity === identity && Array.from(scopes).some((scope) => scope !== identity))
+        || (scopeIdentity !== identity && scopes.has(identity)))
+      {
+        throw new Error(`Canonical layout ${layout.key} mixes shared and stage-scoped forms for ${identity}`);
+      }
+      scopes.add(scopeIdentity);
       const fingerprint = JSON.stringify({
+        identity,
+        scopeIdentity,
         group: binding.group,
         binding: binding.binding,
         type: binding.type || null,
@@ -236,11 +278,11 @@ function buildCanonicalBindGroups(pass, layout)
         texture: binding.texture || null,
         sampler: binding.sampler || null
       });
-      if (identities.has(identity) && identities.get(identity) !== fingerprint)
+      if (identities.has(scopeIdentity) && identities.get(scopeIdentity) !== fingerprint)
       {
-        throw new Error(`Canonical layout ${layout.key} conflicts for ${identity}`);
+        throw new Error(`Canonical layout ${layout.key} conflicts for ${scopeIdentity}`);
       }
-      identities.set(identity, fingerprint);
+      identities.set(scopeIdentity, fingerprint);
       return createCanonicalDescriptor(pass, binding);
     });
     return new CjsWebGPUBindGroup({
@@ -253,7 +295,7 @@ function buildCanonicalBindGroups(pass, layout)
   });
 }
 
-function canonicalIdentity(binding)
+function canonicalIdentity(binding, formatVersion = null)
 {
   if (!RESOURCE_KIND_TO_CARBON[binding.resourceKind]
     || !Number.isInteger(binding.registerIndex)
@@ -261,21 +303,55 @@ function canonicalIdentity(binding)
   {
     throw new Error("Canonical layout binding has an invalid D3D identity");
   }
-  return `${binding.resourceKind}:${binding.registerSpace}:${binding.registerIndex}`;
+  const identity = `${binding.resourceKind}:${binding.registerSpace}:${binding.registerIndex}`;
+  if (formatVersion === 2 && binding.identity === undefined)
+  {
+    throw new Error(`Canonical layout version 2 binding ${identity} requires an explicit D3D identity`);
+  }
+  if (binding.identity !== undefined && binding.identity !== identity)
+  {
+    throw new Error(`Canonical layout binding has inconsistent D3D identity ${binding.identity}`);
+  }
+  return identity;
+}
+
+function canonicalScopeIdentity(binding, formatVersion = null)
+{
+  const identity = canonicalIdentity(binding, formatVersion);
+  if (formatVersion === 2 && binding.scopeIdentity === undefined)
+  {
+    throw new Error(`Canonical layout version 2 binding ${identity} requires an explicit scope identity`);
+  }
+  if (binding.scopeIdentity !== undefined
+    && (typeof binding.scopeIdentity !== "string" || !binding.scopeIdentity))
+  {
+    throw new Error(`Canonical layout binding has invalid scope identity ${binding.scopeIdentity || "<empty>"}`);
+  }
+  const scopeIdentity = binding.scopeIdentity === undefined ? identity : binding.scopeIdentity;
+  const visibility = canonicalVisibility(binding.visibility);
+  if (typeof scopeIdentity !== "string"
+    || (scopeIdentity !== identity
+      && (visibility.length !== 1 || scopeIdentity !== `${identity}@${visibility[0]}`)))
+  {
+    throw new Error(`Canonical layout binding has invalid scope identity ${scopeIdentity || "<empty>"}`);
+  }
+  return scopeIdentity;
 }
 
 function createCanonicalDescriptor(pass, binding)
 {
   const carbonKind = RESOURCE_KIND_TO_CARBON[binding.resourceKind];
-  const candidates = pass.stages.flatMap((module) => module.bindings
+  const allCandidates = pass.stages.flatMap((module) => module.bindings
     .filter((entry) => entry.kind === carbonKind
       && entry.registerIndex === binding.registerIndex
       && (Number.isInteger(entry.registerSpace) ? entry.registerSpace : 0) === binding.registerSpace)
     .map((entry) => ({ module, entry })));
+  const declaredVisibility = canonicalVisibility(binding.visibility);
+  const visibility = declaredVisibility.length
+    ? declaredVisibility
+    : Array.from(new Set(allCandidates.map(({ module }) => normalizeCanonicalStage(module.stageName)))).filter(Boolean);
+  const candidates = allCandidates.filter(({ module }) => visibility.includes(normalizeCanonicalStage(module.stageName)));
   const metadata = candidates[0]?.entry || null;
-  const visibility = Array.from(new Set(Array.isArray(binding.visibility)
-    ? binding.visibility
-    : binding.visibility ? [ binding.visibility ] : candidates.map(({ module }) => module.stageName))).sort();
   const bindingStages = candidates.length
     ? candidates.map(({ module }) => ({
       key: module.key,
@@ -299,6 +375,8 @@ function createCanonicalDescriptor(pass, binding)
     generatedSymbol: binding.generatedSymbol || "",
     bindingKind: carbonKind,
     resourceKind: binding.resourceKind,
+    identity: canonicalIdentity(binding),
+    scopeIdentity: canonicalScopeIdentity(binding),
     registerIndex: binding.registerIndex,
     registerSpace: binding.registerSpace,
     registerCount: 1,
@@ -313,6 +391,7 @@ function createCanonicalDescriptor(pass, binding)
     group: binding.group,
     binding: binding.binding,
     visibility,
+    structureStride: Number.isInteger(binding.structureStride) ? binding.structureStride : null,
     layout: {
       type: binding.type || null,
       buffer: cloneJson(binding.buffer || null),
@@ -320,11 +399,22 @@ function createCanonicalDescriptor(pass, binding)
       sampler: cloneJson(binding.sampler || null)
     }
   };
-  if (binding.resourceKind === "uniform-buffer")
+  if (binding.buffer)
   {
-    return new CjsWebGPUBuffer({ ...base, access: "uniform", bufferKind: "constantBuffer" });
+    if (binding.buffer.type !== "uniform" && binding.buffer.type !== "read-only-storage")
+    {
+      throw new Error(`Canonical layout binding has unsupported buffer type ${binding.buffer.type || "unknown"}`);
+    }
+    const uniform = binding.buffer.type === "uniform";
+    return new CjsWebGPUBuffer({
+      ...base,
+      access: uniform ? "uniform" : "readOnly",
+      bufferKind: uniform
+        ? "constantBuffer"
+        : BUFFER_RESOURCE_TYPES.get(metadata?.carbon?.type) || "structuredBuffer"
+    });
   }
-  if (binding.resourceKind === "sampled-resource")
+  if (binding.texture)
   {
     return new CjsWebGPUTexture({
       ...base,

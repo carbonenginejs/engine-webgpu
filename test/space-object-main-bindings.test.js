@@ -25,9 +25,10 @@ function matrix(first)
   return Float32Array.from({ length: 16 }, (_, index) => first + index);
 }
 
-function uniformBinding(registerIndex, minBindingSize)
+function uniformBinding(registerIndex, minBindingSize, scoped = false)
 {
   const visibility = registerIndex === 1 || registerIndex === 3 ? "vertex" : "fragment";
+  const identity = `uniform-buffer:0:${registerIndex}`;
   return {
     sourceTruth: "wgsl-layout",
     resourceKind: "uniform-buffer",
@@ -37,13 +38,14 @@ function uniformBinding(registerIndex, minBindingSize)
     binding: registerIndex,
     visibility: [ visibility ],
     dynamic: false,
+    ...(scoped ? { identity, scopeIdentity: `${identity}@${visibility}` } : {}),
     layout: {
       buffer: { type: "uniform", hasDynamicOffset: false, minBindingSize }
     }
   };
 }
 
-function packageRecord()
+function packageRecord(scoped = false)
 {
   const constants = MATERIAL_NAMES.map((name, index) => ({
     name,
@@ -77,11 +79,11 @@ function packageRecord()
       bindGroups: [ {
         group: 0,
         bindings: [
-          uniformBinding(0, 160),
-          uniformBinding(1, 656),
-          uniformBinding(2, 352),
-          uniformBinding(3, 128),
-          uniformBinding(4, 208)
+          uniformBinding(0, 160, scoped),
+          uniformBinding(1, 656, scoped),
+          uniformBinding(2, 352, scoped),
+          uniformBinding(3, 128, scoped),
+          uniformBinding(4, 208, scoped)
         ]
       } ]
     }
@@ -178,6 +180,39 @@ test("space-object Main serializer emits full Carbon buffers at canonical identi
   assert.equal(floatAt(result["uniform-buffer:0:4"], 416), 12);
 });
 
+test("space-object Main serializer emits exact v2 stage-scoped identities", () =>
+{
+  const record = packageRecord(true);
+  record.pipeline.bindGroups[0].bindings.push({
+    sourceTruth: "wgsl-layout",
+    resourceKind: "sampled-resource",
+    identity: "sampled-resource:0:0",
+    scopeIdentity: "sampled-resource:0:0@vertex",
+    registerSpace: 0,
+    registerIndex: 0,
+    group: 0,
+    binding: 5,
+    visibility: [ "vertex" ],
+    dynamic: false,
+    layout: {
+      buffer: { type: "read-only-storage", hasDynamicOffset: false, minBindingSize: 48 }
+    }
+  });
+  const result = buildEveSpaceObjectMainUniformData(record, bindingValues());
+  assert.deepEqual(Object.keys(result), [
+    "uniform-buffer:0:0@fragment",
+    "uniform-buffer:0:1@vertex",
+    "uniform-buffer:0:2@fragment",
+    "uniform-buffer:0:3@vertex",
+    "uniform-buffer:0:4@fragment"
+  ]);
+  assert.equal(floatAt(result["uniform-buffer:0:0@fragment"], 16), 0.25);
+  assert.equal(floatAt(result["uniform-buffer:0:1@vertex"], 64), 101);
+  assert.equal(floatAt(result["uniform-buffer:0:2@fragment"], 272), 4);
+  assert.equal(floatAt(result["uniform-buffer:0:3@vertex"], 128), 601);
+  assert.equal(floatAt(result["uniform-buffer:0:4@fragment"], 416), 12);
+});
+
 test("space-object Main exposes detached reflected material constants", () =>
 {
   const record = packageRecord();
@@ -265,6 +300,20 @@ test("space-object Main serializer rejects incomplete semantics and ABI expansio
   assert.throws(
     () => buildEveSpaceObjectMainUniformData(expanded, bindingValues()),
     /perFramePS ABI is 1888 bytes but package requires at least 1892/u
+  );
+
+  const inconsistentIdentity = packageRecord(true);
+  inconsistentIdentity.pipeline.bindGroups[0].bindings[1].identity = "uniform-buffer:0:99";
+  assert.throws(
+    () => buildEveSpaceObjectMainUniformData(inconsistentIdentity, bindingValues()),
+    /uniform-buffer:0:1 has an inconsistent D3D identity/u
+  );
+
+  const inconsistentScope = packageRecord(true);
+  inconsistentScope.pipeline.bindGroups[0].bindings[1].scopeIdentity = "uniform-buffer:0:1@fragment";
+  assert.throws(
+    () => buildEveSpaceObjectMainUniformData(inconsistentScope, bindingValues()),
+    /uniform-buffer:0:1 is not canonical/u
   );
 });
 
