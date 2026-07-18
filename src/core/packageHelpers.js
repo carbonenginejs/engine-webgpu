@@ -276,6 +276,19 @@ function createCanonicalDescriptor(pass, binding)
   const visibility = Array.from(new Set(Array.isArray(binding.visibility)
     ? binding.visibility
     : binding.visibility ? [ binding.visibility ] : candidates.map(({ module }) => module.stageName))).sort();
+  const bindingStages = candidates.length
+    ? candidates.map(({ module }) => ({
+      key: module.key,
+      stageName: module.stageName,
+      stageType: module.stageType
+    }))
+    : pass.stages
+      .filter((module) => visibility.includes(module.stageName === "pixel" ? "fragment" : module.stageName))
+      .map((module) => ({
+        key: module.key,
+        stageName: module.stageName,
+        stageType: module.stageType
+      }));
   const base = {
     key: `group${binding.group}:binding${binding.binding}`,
     name: metadata?.metadataName || binding.generatedSymbol || "",
@@ -296,11 +309,7 @@ function createCanonicalDescriptor(pass, binding)
     carbon: cloneJson(metadata?.carbon || null),
     annotations: cloneJson(metadata?.annotations || []),
     sourceTruth: "wgsl-layout",
-    stages: uniqueStages(candidates.map(({ module }) => ({
-      key: module.key,
-      stageName: module.stageName,
-      stageType: module.stageType
-    }))),
+    stages: uniqueStages(bindingStages),
     group: binding.group,
     binding: binding.binding,
     visibility,

@@ -1,8 +1,8 @@
 {
   "name": "@carbonenginejs/engine-webgpu",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
-  "description": "CarbonEngineJS WebGPU descriptor and effect-path helpers for CEWGPU package consumption.",
+  "description": "CarbonEngineJS WebGPU package consumption, resource realization, and draw execution.",
   "type": "module",
   "main": "src/index.js",
   "exports": {
@@ -17,7 +17,7 @@
     "test": "node --test",
     "test:webgpu": "node scripts/run-webgpu-harness.js",
     "test:webgpu:required": "node scripts/run-webgpu-harness.js --required",
-    "lint": "node --check src/index.js && node --check src/CjsWebGPUPackage.js && node --check src/CjsWebGPUPipeline.js && node --check src/CjsWebGPUShaderModule.js && node --check src/CjsWebGPUBindGroup.js && node --check src/CjsWebGPUResource.js && node --check src/CjsWebGPUBuffer.js && node --check src/CjsWebGPUTexture.js && node --check src/CjsWebGPUSampler.js && node --check src/core/packageHelpers.js && node --check src/core/packageDraw.js && node --check src/core/freeze.js && node --check src/utils/effectPaths.js && node --check test/package.test.js && node --check scripts/run-webgpu-harness.js && node --check harness/webgpu/run.js"
+    "lint": "node --check src/index.js && node --check src/CjsWebGPUPackage.js && node --check src/CjsWebGPUDevice.js && node --check src/CjsWebGPUPipeline.js && node --check src/CjsWebGPUShaderModule.js && node --check src/CjsWebGPUBindGroup.js && node --check src/CjsWebGPUResource.js && node --check src/CjsWebGPUBuffer.js && node --check src/CjsWebGPUTexture.js && node --check src/CjsWebGPUSampler.js && node --check src/core/packageHelpers.js && node --check src/core/packageDraw.js && node --check src/core/matrixPipelines.js && node --check src/core/rgba8TextureBehavior.js && node --check src/core/spaceObjectMainBindings.js && node --check src/core/spaceObjectMainBehavior.js && node --check src/core/freeze.js && node --check src/utils/effectPaths.js && node --check test/package.test.js && node --check test/device.test.js && node --check test/matrix.test.js && node --check test/quadv5-fixture.test.js && node --check test/rgba8-texture-behavior.test.js && node --check test/space-object-main-bindings.test.js && node --check test/space-object-main-behavior.test.js && node --check scripts/run-webgpu-harness.js && node --check harness/webgpu/quadV5Fixture.js && node --check harness/webgpu/run.js"
   },
   "keywords": [
     "carbonenginejs",

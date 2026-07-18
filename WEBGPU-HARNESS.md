@@ -1,12 +1,14 @@
 # WebGPU Harness
 
-The phase-zero harness is plain JavaScript. Node launches a headless Chromium
-page through Playwright; the page compiles WGSL, renders a full-screen triangle
+The portable probe in the maintained plain-JavaScript harness launches a
+headless Chromium page through Playwright. The page compiles WGSL, renders a full-screen triangle
 into a 4x4 offscreen `rgba8unorm` texture, copies the result through a
 256-byte-row-padded buffer, maps it, and verifies all pixels.
 
-It does not use Deno, TypeScript, a canvas, Carbon assets, network access, or
-another CarbonEngineJS package.
+The portable probe does not use Deno, TypeScript, a canvas, Carbon assets,
+network access, or another CarbonEngineJS package. The CEWGPU integration
+commands documented below intentionally consume sibling CarbonEngineJS
+packages.
 
 Install the package development dependency and run the portable probe:
 
@@ -26,6 +28,17 @@ The required command fails when WebGPU is unavailable. A portable-probe skip
 does not close phase zero; at least one documented runner must pass the required
 command. Ordinary `npm.cmd test` descriptor tests remain GPU-free.
 
+The browser acquires, prepares, realizes, encodes, and submits through
+`CjsWebGPUDevice`. The portable probe uploads its packed triangle and sampler
+through an atomic `CreateResourceBundle(...)`. Its 1x1 pixel instead starts as
+the canonical decoded RGBA record, passes through
+`CreateRgba8TexturePreparePipeline(...)`, and enters a separate atomic adapter
+slot before the draw samples the opaque texture handle. The resulting geometry
+layout is used for pipeline creation.
+Fixture creation and pixel expectations remain harness responsibilities, so
+the reusable engine class does not acquire resource paths or infer format/
+geometry policy.
+
 To compile a candidate module while preserving the existing render/readback
 gate, pass WGSL text by file path:
 
@@ -38,8 +51,9 @@ or depend on a compiler package. Compilation diagnostics include severity,
 line/column, byte offset/length, and message; validation remains inside the
 same WebGPU error scope.
 
-To build and render a generated copyblit pair with fixture-owned vertex,
-uniform, texture, and sampler resources, pass both modules:
+To build and render a generated copyblit pair with engine-owned geometry,
+texture, and normalized/cached sampler plus a fixture-owned uniform resource,
+pass both modules:
 
 ```powershell
 npm.cmd run test:webgpu:required -- --draw-wgsl E:\path\vertex.wgsl E:\path\fragment.wgsl
@@ -48,6 +62,118 @@ npm.cmd run test:webgpu:required -- --draw-wgsl E:\path\vertex.wgsl E:\path\frag
 This path creates the canonical group-0 `cb0`/`t0`/`s0` layout, renders the
 generated pair into the same 4x4 target, and verifies the expected pixels. The
 fixtures are intentionally self-contained; runtime-resource is not involved.
+
+To prepare a real CEWGPU `Main.pass0` without pretending the package contains
+vertex-buffer strides, render-target policy, or live resources:
+
+```powershell
+npm.cmd run test:webgpu:required -- --prepare-cewgpu E:\path\quadv5-main.cewgpu
+```
+
+To prepare every distinct pass-ready pipeline from a full permutation-matrix
+report in one browser/device session:
+
+```powershell
+npm.cmd run test:webgpu:required -- --prepare-matrix E:\path\quadv5-all-permutations.json
+```
+
+The matrix report retains every permutation/pass occurrence. The harness first
+compiles every distinct independently emitted shader module, then prepares each
+exact pass-ready shader/layout variant once. It reports both covered stage and
+pass occurrences and treats every WGSL warning or WebGPU validation error as a
+failure. Unsupported matrix entries are qualification results rather than live
+pipeline candidates and are not silently reclassified as prepared.
+
+To perform the first actual QuadV5 draw, package the same explicitly selected
+PPT-on `Main.pass0` body from DX11 and DX12, then pass both CEWGPU files:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-quadv5 E:\path\quadv5-ppt-on-dx11.cewgpu E:\path\quadv5-ppt-on-dx12.cewgpu
+```
+
+Add `--capture-quadv5 E:\path\quadv5-ppt-on.png` to save a browser-rendered
+PNG visualization of the DX11 package's two 4x4 active-pixel MRT readbacks
+after the expected-pixel and byte-exact DX11/DX12 checks pass. DX12 is not
+pictured separately because it has already been required to match. This is a
+diagnostic view of readback bytes, not another GPU render or a production scene
+capture.
+
+The launcher rejects identical or misordered inputs and any package that is not
+body index `4` with all seven expected selections, including
+`SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`. It requests each file through
+`CjsLibrary -> CjsResMan -> CjsFormatWebgpu`. The launcher registers explicit
+`webgpu: true` capability and the default `webgpu_eve_space_object_main`
+behavior; each file request supplies only its source option. The behavior
+selects the format/requirement and registered `webgpu_package` prepare stage,
+which returns a `CjsWebGPUPackage`.
+
+The CEWGPU packages therefore enter through the real resource path, while the
+browser harness supplies one packed indexed quad, three 1x1 CPU texture
+payloads, and one explicit filtering-sampler descriptor. Those prepared plain
+inputs are atomically realized and published as one device resource bundle;
+the structural harness slot exercises the same `GetAdapterResource` /
+`SetAdapterResource` / `DestroyAdapterResource` contract expected from
+CjsResource without importing its implementation into the browser probe.
+`CjsWebGPUDevice.CreateGeometry(...)`
+owns the quad's native vertex/index buffers, exposes the exact frozen 40-byte
+vertex layout, validates draw capacity and device generation, and releases
+both buffers idempotently. `CjsWebGPUDevice.CreateTexture(...)` snapshots and
+uploads each `rgba8unorm`/`rgba8unorm-srgb` payload, exposes only a generation-
+bound handle, unwraps its private view at the canonical texture binding, and
+releases the native texture idempotently. The phase-zero sampler first passes
+through `CreateSamplerPreparePipeline(...)`: its complete already-selected
+`webgpu-sampler` record is mapped synchronously into the exact bundle shape and
+atomically published through a separate structural adapter slot. The publisher
+then calls `CreateSampler(...)`, which normalizes and caches the immutable
+native sampler separately, returns a logical generation-bound handle, and
+unwraps it only at a compatible sampler binding. The bundle
+owns all three handle categories, while binding sets own none of them.
+For each pipeline, `CjsWebGPUDevice.CreateBindingSet(...)` validates canonical
+identities, allocates/uploads five engine-owned uniform buffers, creates the
+native bind group, and destroys only those owned buffers. The two `Main.pass0`
+pipelines use the same four active vertex attributes, render into two
+`rgba8unorm` targets, check expected non-clear pixels, and then require
+byte-exact DX11/DX12 equality across the active bytes of both MRTs. That
+equality is measured after `rgba8unorm` target quantization; it is not a claim
+of unquantized floating-point shader-semantic equivalence. Every WGSL warning
+or WebGPU validation error fails the command.
+
+The harness now supplies semantic material, per-frame, and per-object values
+rather than hand-addressed constant-buffer rows. Each package record retains
+the selected behavior ID, and browser rendering fails closed unless that
+behavior exists before invoking its `BuildUniformData` method. The underlying
+`buildEveSpaceObjectMainUniformData(...)` reflects this package's stage-local
+material `cb0`, then packs Carbon's full `PerFrameVSData` (736 bytes),
+`PerFramePSData` (1888 bytes), `EveSpaceObjectVSData` (464 bytes), and
+`EveSpaceObjectPSData` (464 bytes). The package's WGSL minimum binding sizes
+remain 160, 656, 352, 128, and 208 bytes; WebGPU permits the full Carbon
+payloads because each is at least its canonical minimum. This proves the first
+bounded Carbon ABI serializer, Library policy selection, and engine-owned
+uniform upload path. Runtime-trinity now has GPU-free reflected-material and
+per-object extractors, but the harness still uses deterministic fixture values
+and the renderer must still supply complete per-frame values. The GPU geometry
+adapter deliberately begins after mesh packing and semantic-to-location
+mapping; it is not a `TriGeometryRes` loader or CMF conversion stage. The
+bounded decoded-RGBA8-to-texture mapping and complete selected-sampler mapping
+each have ready-to-register two-stage pipelines and are sampled by phase zero
+through separate adapter slots. Feeding the texture path from an actual
+reader/CjsResource request, geometry packing, authoritative sampler override
+selection/Carbon conversion, application registration, broader texture
+formats, a uniform scheduler, render-state translation, and full production
+resource lifetime remain outstanding. The final engine publication stage
+itself is implemented and exercised.
+
+The `--prepare-cewgpu` and `--prepare-matrix` modes read through
+`format-webgpu` and `CjsWebGPUPackage`, compile WGSL, create the canonical
+bind-group/pipeline layouts, and require zero warnings. Those preparation-only
+modes deliberately stop before render-pipeline creation and drawing; unlike
+`--draw-quadv5`, they require no geometry or live resource fixtures.
+
+The QuadV5 command is a monorepo integration gate. Node consumes the sibling
+`runtime-resource/npm/dist` build because the runtime source uses decorators,
+and the launcher rejects a build older than its corresponding source files.
+Build `runtime-resource` before running the command when that freshness check
+fails.
 
 To exercise the real package boundary, pass a CEWGPU package containing the
 generated `Main.pass0.vertex` and `Main.pass0.pixel` shaders plus its canonical
@@ -59,7 +185,7 @@ npm.cmd run test:webgpu:required -- --draw-cewgpu E:\path\copyblit.cewgpu
 
 The Node launcher reads the package through `format-webgpu` and
 `CjsWebGPUPackage`, then serves only the validated pipeline descriptor. The
-browser creates explicit bind-group and pipeline layouts from its numeric
+`CjsWebGPUDevice` creates explicit bind-group and pipeline layouts from numeric
 groups, bindings, visibility, and nested buffer/texture/sampler layouts.
 Fixture resources are selected by D3D identity (`cb0`, `t0`, and `s0` in
 register space 0); descriptor slots are never hardcoded or renumbered. This

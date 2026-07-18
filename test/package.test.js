@@ -380,6 +380,11 @@ test("canonical WGSL layouts own numeric bind groups and survive missing ANLS me
   assert.equal(group.GetBindingAt(0).metadataName, "$LocalConstants");
   assert.equal(group.GetBindingAt(2).sourceTruth, "wgsl-layout");
   assert.deepEqual(group.GetBindingAt(2).visibility, [ "fragment" ]);
+  assert.deepEqual(group.GetBindingAt(2).stages, [ {
+    key: "Main.pass0.pixel",
+    stageName: "pixel",
+    stageType: 1
+  } ]);
 
   const collision = structuredClone(canonicalBindings);
   collision[2].binding = 1;

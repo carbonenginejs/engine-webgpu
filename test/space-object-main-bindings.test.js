@@ -1,0 +1,289 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES,
+  buildEveSpaceObjectMainUniformData,
+  getEveSpaceObjectMainMaterialConstants
+} from "../src/core/spaceObjectMainBindings.js";
+import { createQuadV5MainBindingValues } from "../harness/webgpu/quadV5Fixture.js";
+
+const MATERIAL_NAMES = Object.freeze([
+  "GeneralGlowColor",
+  "Mtl1DiffuseColor",
+  "Mtl2DiffuseColor",
+  "Mtl3DiffuseColor",
+  "Mtl4DiffuseColor",
+  "Mtl1FresnelColor",
+  "Mtl2FresnelColor",
+  "Mtl3FresnelColor",
+  "Mtl4FresnelColor"
+]);
+
+function matrix(first)
+{
+  return Float32Array.from({ length: 16 }, (_, index) => first + index);
+}
+
+function uniformBinding(registerIndex, minBindingSize)
+{
+  const visibility = registerIndex === 1 || registerIndex === 3 ? "vertex" : "fragment";
+  return {
+    sourceTruth: "wgsl-layout",
+    resourceKind: "uniform-buffer",
+    registerSpace: 0,
+    registerIndex,
+    group: 0,
+    binding: registerIndex,
+    visibility: [ visibility ],
+    dynamic: false,
+    layout: {
+      buffer: { type: "uniform", hasDynamicOffset: false, minBindingSize }
+    }
+  };
+}
+
+function packageRecord()
+{
+  const constants = MATERIAL_NAMES.map((name, index) => ({
+    name,
+    offset: 16 + index * 16,
+    size: 16,
+    type: 0,
+    dimension: 4,
+    elements: 0
+  }));
+  return {
+    analysis: {
+      stages: [ {
+        techniqueName: "Main",
+        passIndex: 0,
+        stageName: "pixel",
+        bindings: [ {
+          kind: "constantBuffer",
+          registerSpace: 0,
+          registerIndex: 0,
+          carbon: {
+            hasLocalConstants: true,
+            constantValueSize: 160,
+            constants
+          }
+        } ]
+      } ]
+    },
+    pipeline: {
+      techniqueName: "Main",
+      passIndex: 0,
+      bindGroups: [ {
+        group: 0,
+        bindings: [
+          uniformBinding(0, 160),
+          uniformBinding(1, 656),
+          uniformBinding(2, 352),
+          uniformBinding(3, 128),
+          uniformBinding(4, 208)
+        ]
+      } ]
+    }
+  };
+}
+
+function bindingValues()
+{
+  return {
+    material: Object.fromEntries(MATERIAL_NAMES.map((name, index) => [
+      name,
+      [ index + 0.25, index + 0.5, index + 0.75, index + 1 ]
+    ])),
+    perFrameVS: {
+      ViewInverseTransposeMat: matrix(1),
+      ViewProjectionMat: matrix(101),
+      ViewProjectionLast: matrix(201),
+      Sun: { DirWorld: [ 301, 302, 303 ] }
+    },
+    perFramePS: {
+      TargetResolution: [ 4, 8 ],
+      ShadowQuality: 7,
+      SceneMipLodBias: 1.5,
+      GammaBrightness: 2,
+      FrameIndex: 9,
+      FroxelFogData: {
+        FogColor: [ 0.1, 0.2, 0.3 ],
+        planets: [ 11, 12, 13, 14, 15, 16, 17, 18 ]
+      }
+    },
+    perObjectVS: {
+      worldTransform: matrix(401),
+      worldTransformLast: matrix(501),
+      invWorldTransform: matrix(601),
+      shipData: [ 1, 2, 3, 4 ],
+      boneOffsets: [ 5, 6, 7, 0xffffffff ]
+    },
+    perObjectPS: {
+      worldTransform: matrix(701),
+      worldTransformLast: matrix(801),
+      invWorldTransform: matrix(901),
+      shipData: [ 8, 9, 10, 11 ],
+      customMaskClamps: [ 12, 13, 14, 15 ]
+    }
+  };
+}
+
+function floatAt(data, byteOffset)
+{
+  return new DataView(data.buffer, data.byteOffset, data.byteLength).getFloat32(byteOffset, true);
+}
+
+function uintAt(data, byteOffset)
+{
+  return new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(byteOffset, true);
+}
+
+test("space-object Main serializer emits full Carbon buffers at canonical identities", () =>
+{
+  const result = buildEveSpaceObjectMainUniformData(packageRecord(), bindingValues());
+  assert.equal(Object.isFrozen(result), true);
+  assert.deepEqual(EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES, {
+    perFrameVS: 736,
+    perFramePS: 1888,
+    perObjectVS: 464,
+    perObjectPS: 464
+  });
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(result).map(([ identity, data ]) => [ identity, data.byteLength ])),
+    {
+      "uniform-buffer:0:0": 160,
+      "uniform-buffer:0:1": 736,
+      "uniform-buffer:0:2": 1888,
+      "uniform-buffer:0:3": 464,
+      "uniform-buffer:0:4": 464
+    }
+  );
+
+  assert.equal(floatAt(result["uniform-buffer:0:0"], 16), 0.25);
+  assert.equal(floatAt(result["uniform-buffer:0:0"], 144), 8.25);
+  assert.equal(floatAt(result["uniform-buffer:0:1"], 64), 101);
+  assert.equal(floatAt(result["uniform-buffer:0:1"], 448), 201);
+  assert.equal(floatAt(result["uniform-buffer:0:1"], 640), 301);
+  assert.equal(floatAt(result["uniform-buffer:0:2"], 272), 4);
+  assert.equal(uintAt(result["uniform-buffer:0:2"], 316), 7);
+  assert.equal(floatAt(result["uniform-buffer:0:2"], 340), 1.5);
+  assert.equal(floatAt(result["uniform-buffer:0:2"], 348), 2);
+  assert.equal(uintAt(result["uniform-buffer:0:2"], 352), 9);
+  assert.equal(floatAt(result["uniform-buffer:0:2"], 1856), 11);
+  assert.equal(floatAt(result["uniform-buffer:0:3"], 128), 601);
+  assert.equal(floatAt(result["uniform-buffer:0:3"], 192), 1);
+  assert.equal(uintAt(result["uniform-buffer:0:3"], 428), 0xffffffff);
+  assert.equal(floatAt(result["uniform-buffer:0:4"], 192), 8);
+  assert.equal(floatAt(result["uniform-buffer:0:4"], 416), 12);
+});
+
+test("space-object Main exposes detached reflected material constants", () =>
+{
+  const record = packageRecord();
+  const constants = getEveSpaceObjectMainMaterialConstants(record);
+
+  assert.equal(Object.isFrozen(constants), true);
+  assert.equal(Object.isFrozen(constants[0]), true);
+  assert.deepEqual(constants.map(constant => constant.name), MATERIAL_NAMES);
+  record.analysis.stages[0].bindings[0].carbon.constants[0].name = "Changed";
+  assert.equal(constants[0].name, "GeneralGlowColor");
+});
+
+test("space-object Main serializer accepts package objects and the QuadV5 semantic fixture", () =>
+{
+  const record = packageRecord();
+  const packageObject = {
+    analysis: record.analysis,
+    GetPipeline(techniqueName, passIndex)
+    {
+      return techniqueName === "Main" && passIndex === 0 ? record.pipeline : null;
+    }
+  };
+  const result = buildEveSpaceObjectMainUniformData(
+    packageObject,
+    createQuadV5MainBindingValues(4, 4)
+  );
+  assert.equal(floatAt(result["uniform-buffer:0:0"], 16), 0.25);
+  assert.equal(floatAt(result["uniform-buffer:0:1"], 56), 5);
+  assert.equal(floatAt(result["uniform-buffer:0:1"], 64), 1);
+  assert.equal(floatAt(result["uniform-buffer:0:1"], 640 + 8), 1);
+  assert.equal(floatAt(result["uniform-buffer:0:2"], 272), 4);
+  assert.equal(floatAt(result["uniform-buffer:0:2"], 348), 2);
+  assert.equal(floatAt(result["uniform-buffer:0:4"], 196), 1);
+});
+
+test("space-object Main serializer fails closed on reflected material drift", () =>
+{
+  const missing = bindingValues();
+  delete missing.material.Mtl4FresnelColor;
+  assert.throws(
+    () => buildEveSpaceObjectMainUniformData(packageRecord(), missing),
+    /material\.Mtl4FresnelColor is required/u
+  );
+
+  const overlap = packageRecord();
+  overlap.analysis.stages[0].bindings[0].carbon.constants[1].offset = 16;
+  assert.throws(
+    () => buildEveSpaceObjectMainUniformData(overlap, bindingValues()),
+    /overlaps another reflected constant/u
+  );
+});
+
+test("space-object Main serializer rejects incomplete semantics and ABI expansion", () =>
+{
+  const incomplete = bindingValues();
+  delete incomplete.perFrameVS.ViewProjectionMat;
+  assert.throws(
+    () => buildEveSpaceObjectMainUniformData(packageRecord(), incomplete),
+    /perFrameVS\.ViewProjectionMat is required/u
+  );
+
+  const wrongType = bindingValues();
+  wrongType.perObjectVS.boneOffsets = [ 1, 2, 3, "4" ];
+  assert.throws(
+    () => buildEveSpaceObjectMainUniformData(packageRecord(), wrongType),
+    /boneOffsets\[3\] must be a uint32/u
+  );
+
+  const overflow = bindingValues();
+  overflow.material.GeneralGlowColor[0] = Number.MAX_VALUE;
+  assert.throws(
+    () => buildEveSpaceObjectMainUniformData(packageRecord(), overflow),
+    /GeneralGlowColor\[0\] must be a finite float32/u
+  );
+
+  const nonCanonical = packageRecord();
+  delete nonCanonical.pipeline.bindGroups[0].bindings[1].layout.buffer.hasDynamicOffset;
+  assert.throws(
+    () => buildEveSpaceObjectMainUniformData(nonCanonical, bindingValues()),
+    /uniform-buffer:0:1 is not canonical/u
+  );
+
+  const expanded = packageRecord();
+  expanded.pipeline.bindGroups[0].bindings[2].layout.buffer.minBindingSize = 1892;
+  assert.throws(
+    () => buildEveSpaceObjectMainUniformData(expanded, bindingValues()),
+    /perFramePS ABI is 1888 bytes but package requires at least 1892/u
+  );
+});
+
+test("space-object Main serializer rejects a non-pixel material cb0", () =>
+{
+  const record = packageRecord();
+  record.analysis.stages.push({
+    techniqueName: "Main",
+    passIndex: 0,
+    stageName: "vertex",
+    bindings: [ {
+      kind: "constantBuffer",
+      registerSpace: 0,
+      registerIndex: 0,
+      carbon: { hasLocalConstants: true }
+    } ]
+  });
+  assert.throws(
+    () => buildEveSpaceObjectMainUniformData(record, bindingValues()),
+    /only a pixel-local Main\.pass0 cb0 material binding is supported/u
+  );
+});

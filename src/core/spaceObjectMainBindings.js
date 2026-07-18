@@ -1,0 +1,409 @@
+const BUFFER_SIZES = Object.freeze({
+  perFrameVS: 736,
+  perFramePS: 1888,
+  perObjectVS: 464,
+  perObjectPS: 464
+});
+
+export const EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES = BUFFER_SIZES;
+
+const IDENTITIES = Object.freeze({
+  material: "uniform-buffer:0:0",
+  perFrameVS: "uniform-buffer:0:1",
+  perFramePS: "uniform-buffer:0:2",
+  perObjectVS: "uniform-buffer:0:3",
+  perObjectPS: "uniform-buffer:0:4"
+});
+
+const VISIBILITY = Object.freeze({
+  [IDENTITIES.material]: "fragment",
+  [IDENTITIES.perFrameVS]: "vertex",
+  [IDENTITIES.perFramePS]: "fragment",
+  [IDENTITIES.perObjectVS]: "vertex",
+  [IDENTITIES.perObjectPS]: "fragment"
+});
+
+const PER_FRAME_VS_FIELDS = Object.freeze([
+  [ "ViewInverseTransposeMat", 0, 16, true ],
+  [ "ViewProjectionMat", 64, 16, true ],
+  [ "ViewMat", 128, 16 ],
+  [ "ProjectionMat", 192, 16 ],
+  [ "ShadowViewMat", 256, 16 ],
+  [ "ShadowViewProjectionMat", 320, 16 ],
+  [ "EnvMapRotationMat", 384, 16 ],
+  [ "ViewProjectionLast", 448, 16, true ],
+  [ "ViewLast", 512, 16 ],
+  [ "ProjLast", 576, 16 ],
+  [ "Sun.DirWorld", 640, 3, true ],
+  [ "Sun.unused_pad0", 652, 1 ],
+  [ "Sun.DiffuseColor", 656, 4 ],
+  [ "FogFactors", 672, 3 ],
+  [ "pad", 684, 1 ],
+  [ "TargetResolution", 688, 2 ],
+  [ "FovXY", 696, 2 ],
+  [ "ViewportAdjustment", 704, 4 ],
+  [ "Time", 720, 1 ],
+  [ "Upscaling", 724, 1 ],
+  [ "ViewportSize", 728, 2 ]
+]);
+
+const PER_FRAME_PS_FIELDS = Object.freeze([
+  [ "ViewInverseTransposeMat", 0, 16 ],
+  [ "ViewMat", 64, 16 ],
+  [ "EnvMapRotationMat", 128, 16 ],
+  [ "Sun.DirWorld", 192, 3 ],
+  [ "Sun.unused_pad0", 204, 1 ],
+  [ "Sun.DiffuseColor", 208, 4 ],
+  [ "AmbientColor", 224, 3 ],
+  [ "ReflectionIntensity", 236, 1 ],
+  [ "FogColor", 240, 4 ],
+  [ "ViewportOffset", 256, 2 ],
+  [ "ViewportSize", 264, 2 ],
+  [ "TargetResolution", 272, 2, true ],
+  [ "DepthMapSampleCount", 280, 1 ],
+  [ "Debug", 284, 1 ],
+  [ "ShadowMapSettings", 288, 4 ],
+  [ "ShadowCameraRange", 304, 2 ],
+  [ "ShadowLightness", 312, 1 ],
+  [ "ShadowQuality", 316, 1, false, "uint" ],
+  [ "ProjectionToView", 320, 2 ],
+  [ "FovXY", 328, 2 ],
+  [ "Time", 336, 1 ],
+  [ "SceneMipLodBias", 340, 1, true ],
+  [ "Upscaling", 344, 1 ],
+  [ "GammaBrightness", 348, 1, true ],
+  [ "FrameIndex", 352, 1, false, "uint" ],
+  [ "Jittering", 356, 1, false, "uint" ],
+  [ "InverseShadowMapAtlasSize", 360, 1 ],
+  [ "ShadowMapAtlasEntryMinSizeLog2", 364, 1, false, "uint" ],
+  [ "VolumetricSlices", 368, 4 ],
+  [ "ShadowMapValues", 384, 16 ],
+  [ "ShadowMatrixVal", 448, 256 ],
+  [ "SplitInfo", 1472, 4 ],
+  [ "ProjectionInverseMat", 1488, 16 ],
+  [ "CascadeRanges", 1552, 64 ],
+  [ "FroxelFogData.FogColor", 1808, 3 ],
+  [ "FroxelFogData.BackgroundVisibility", 1820, 1 ],
+  [ "FroxelFogData.BaseDensity", 1824, 1 ],
+  [ "FroxelFogData.MaxDistance", 1828, 1 ],
+  [ "FroxelFogData.MaxDistanceVisibility", 1832, 1 ],
+  [ "FroxelFogData.EnvironmentIntensity", 1836, 1 ],
+  [ "FroxelFogData.EnvironmentG", 1840, 1 ],
+  [ "FroxelFogData._pad0", 1844, 1 ],
+  [ "FroxelFogData._pad1", 1848, 1 ],
+  [ "FroxelFogData._pad2", 1852, 1 ],
+  [ "FroxelFogData.planets", 1856, 8 ]
+]);
+
+const PER_OBJECT_VS_FIELDS = Object.freeze([
+  [ "worldTransform", 0, 16, true ],
+  [ "worldTransformLast", 64, 16, true ],
+  [ "invWorldTransform", 128, 16, true ],
+  [ "shipData", 192, 4, true ],
+  [ "clipData", 208, 4 ],
+  [ "ellpsoidRadii", 224, 4 ],
+  [ "ellpsoidCenter", 240, 4 ],
+  [ "customMaskMatrix", 256, 32 ],
+  [ "customMaskData", 384, 8 ],
+  [ "boneOffsets", 416, 4, false, "uint" ],
+  [ "morphTargetVertexDataOffset", 432, 1, false, "uint" ],
+  [ "morphTargetAnimationDataOffset", 436, 1, false, "uint" ],
+  [ "activeMorphTargetsCount", 440, 1, false, "uint" ],
+  [ "bakedMorphTargetVertexDataOffset", 444, 1, false, "uint" ],
+  [ "customData", 448, 4 ]
+]);
+
+const PER_OBJECT_PS_FIELDS = Object.freeze([
+  [ "worldTransform", 0, 16, true ],
+  [ "worldTransformLast", 64, 16, true ],
+  [ "invWorldTransform", 128, 16, true ],
+  [ "shipData", 192, 4, true ],
+  [ "clipSphereCenter", 208, 3 ],
+  [ "clipRadiusSq", 220, 1 ],
+  [ "clipRadius2Sq", 224, 1 ],
+  [ "impactDataOffset", 228, 1 ],
+  [ "clipSphereFactor2", 232, 1 ],
+  [ "clipSphereFactor", 236, 1 ],
+  [ "shLightingCoefficients", 240, 28 ],
+  [ "customMaskMaterialIDs", 352, 8 ],
+  [ "customMaskTargets", 384, 8 ],
+  [ "customMaskClamps", 416, 4 ],
+  [ "screenSize", 432, 4 ],
+  [ "customData", 448, 4 ]
+]);
+
+function fail(message)
+{
+  throw new Error(`Eve space-object Main bindings: ${message}`);
+}
+
+function getPath(source, path)
+{
+  let value = source;
+  for (const key of path.split("."))
+  {
+    if (value == null || !Object.prototype.hasOwnProperty.call(value, key)) return undefined;
+    value = value[key];
+  }
+  return value;
+}
+
+function flattenNumbers(value, output = [])
+{
+  if (ArrayBuffer.isView(value) || Array.isArray(value))
+  {
+    for (const entry of value) flattenNumbers(entry, output);
+  }
+  else
+  {
+    output.push(value);
+  }
+  return output;
+}
+
+function isFiniteFloat32(value)
+{
+  return typeof value === "number" && Number.isFinite(value) && Number.isFinite(Math.fround(value));
+}
+
+function writeField(view, source, descriptor, owner)
+{
+  const [ path, offset, count, required = false, kind = "float" ] = descriptor;
+  const value = getPath(source, path);
+  if (value == null)
+  {
+    if (required) fail(`${owner}.${path} is required`);
+    return;
+  }
+  const values = flattenNumbers(value);
+  if (values.length !== count) fail(`${owner}.${path} must contain exactly ${count} values`);
+  for (let index = 0; index < count; index += 1)
+  {
+    const item = values[index];
+    if (kind === "uint")
+    {
+      if (typeof item !== "number" || !Number.isInteger(item) || item < 0 || item > 0xffffffff)
+      {
+        fail(`${owner}.${path}[${index}] must be a uint32`);
+      }
+      view.setUint32(offset + index * 4, item, true);
+    }
+    else
+    {
+      if (!isFiniteFloat32(item)) fail(`${owner}.${path}[${index}] must be a finite float32`);
+      view.setFloat32(offset + index * 4, item, true);
+    }
+  }
+}
+
+function packStruct(source, size, fields, owner)
+{
+  if (!source || typeof source !== "object") fail(`${owner} is required`);
+  const buffer = new ArrayBuffer(size);
+  const view = new DataView(buffer);
+  for (const field of fields) writeField(view, source, field, owner);
+  return new Uint8Array(buffer);
+}
+
+function findMaterialBinding(analysis)
+{
+  const stages = analysis?.stages;
+  if (!Array.isArray(stages)) fail("package analysis stages are required");
+  const unsupported = stages.filter((stage) => stage?.techniqueName === "Main"
+    && stage.passIndex === 0 && stage.stageName !== "pixel")
+    .flatMap((stage) => Array.isArray(stage.bindings) ? stage.bindings : [])
+    .filter((binding) => binding?.kind === "constantBuffer"
+      && binding.registerSpace === 0 && binding.registerIndex === 0);
+  if (unsupported.length)
+  {
+    fail("only a pixel-local Main.pass0 cb0 material binding is supported");
+  }
+  const pixels = stages.filter((stage) => stage?.techniqueName === "Main"
+    && stage.passIndex === 0 && stage.stageName === "pixel");
+  if (pixels.length !== 1) fail("package must contain exactly one Main.pass0.pixel analysis stage");
+  const bindings = Array.isArray(pixels[0].bindings) ? pixels[0].bindings : [];
+  const matches = bindings.filter((binding) => binding?.kind === "constantBuffer"
+    && binding.registerSpace === 0 && binding.registerIndex === 0);
+  if (matches.length !== 1) fail("Main.pass0.pixel must contain one reflected cb0 material binding");
+  return matches[0];
+}
+
+function namedValue(values, name)
+{
+  if (values instanceof Map) return values.get(name);
+  if (values && typeof values === "object" && Object.prototype.hasOwnProperty.call(values, name))
+  {
+    return values[name];
+  }
+  return undefined;
+}
+
+function packMaterial(binding, values)
+{
+  if (!values || (typeof values !== "object" && !(values instanceof Map)))
+  {
+    fail("material values are required");
+  }
+  const carbon = binding.carbon;
+  const size = carbon?.constantValueSize;
+  const constants = carbon?.constants;
+  if (!carbon?.hasLocalConstants || !Number.isInteger(size) || size < 1 || size % 4 !== 0
+    || !Array.isArray(constants) || !constants.length)
+  {
+    fail("cb0 has no usable reflected local-constant layout");
+  }
+  const buffer = new ArrayBuffer(size);
+  const view = new DataView(buffer);
+  const names = new Set();
+  const ranges = [];
+  for (const constant of constants)
+  {
+    const name = constant?.name;
+    const offset = constant?.offset;
+    const byteSize = constant?.size;
+    const dimension = constant?.dimension;
+    if (typeof name !== "string" || !name || names.has(name)) fail("cb0 contains malformed or duplicate constant names");
+    if (constant.type !== 0 || constant.elements !== 0 || !Number.isInteger(dimension)
+      || dimension < 1 || dimension > 4 || !Number.isInteger(offset) || offset < 0 || offset % 4 !== 0
+      || !Number.isInteger(byteSize) || byteSize < dimension * 4 || offset + byteSize > size)
+    {
+      fail(`cb0 constant ${name} has an unsupported reflected layout`);
+    }
+    if (ranges.some(([ start, end ]) => offset < end && offset + byteSize > start))
+    {
+      fail(`cb0 constant ${name} overlaps another reflected constant`);
+    }
+    names.add(name);
+    ranges.push([ offset, offset + byteSize ]);
+    const value = namedValue(values, name);
+    if (value == null) fail(`material.${name} is required`);
+    const entries = flattenNumbers(value);
+    if (entries.length !== dimension) fail(`material.${name} must contain exactly ${dimension} values`);
+    for (let index = 0; index < dimension; index += 1)
+    {
+      const item = entries[index];
+      if (!isFiniteFloat32(item)) fail(`material.${name}[${index}] must be a finite float32`);
+      view.setFloat32(offset + index * 4, item, true);
+    }
+  }
+  return new Uint8Array(buffer);
+}
+
+function resolvePackageRecord(value)
+{
+  if (!value || typeof value !== "object") fail("package record is required");
+  const pipeline = value.pipeline || (typeof value.GetPipeline === "function"
+    ? value.GetPipeline("Main", 0)
+    : null);
+  return { analysis: value.analysis, pipeline };
+}
+
+/**
+ * Returns the reflected local material constants consumed by the bounded
+ * Eve space-object Main profile. The detached records are safe to pass to a
+ * runtime-trinity effect-value extractor.
+ *
+ * @param {object} record Loaded package or analysis/pipeline record.
+ * @returns {object[]} Frozen reflected constant records.
+ */
+export function getEveSpaceObjectMainMaterialConstants(record)
+{
+  const { analysis } = resolvePackageRecord(record);
+  const constants = findMaterialBinding(analysis)?.carbon?.constants;
+  if (!Array.isArray(constants) || constants.length === 0)
+  {
+    fail("Main.pass0.pixel cb0 reflected constants are required");
+  }
+  return Object.freeze(constants.map((constant) => Object.freeze({ ...constant })));
+}
+
+function canonicalUniformSizes(pipeline)
+{
+  if (pipeline?.techniqueName !== "Main" || pipeline.passIndex !== 0)
+  {
+    fail("package pipeline must be Main.pass0");
+  }
+  const result = new Map();
+  const groupIndices = new Set();
+  const slots = new Set();
+  for (const group of Array.isArray(pipeline.bindGroups) ? pipeline.bindGroups : [])
+  {
+    if (!Number.isInteger(group?.group) || group.group < 0 || groupIndices.has(group.group))
+    {
+      fail("package contains a malformed or duplicate canonical bind group");
+    }
+    groupIndices.add(group.group);
+    for (const binding of Array.isArray(group?.bindings) ? group.bindings : [])
+    {
+      if (binding?.group !== group.group || !Number.isInteger(binding.binding) || binding.binding < 0)
+      {
+        fail("package contains a malformed canonical binding slot");
+      }
+      const slot = `${binding.group}:${binding.binding}`;
+      if (slots.has(slot)) fail(`package duplicates canonical binding slot ${slot}`);
+      slots.add(slot);
+      if (binding?.layout?.buffer)
+      {
+        if (binding.resourceKind !== "uniform-buffer"
+          || !Number.isInteger(binding.registerSpace) || binding.registerSpace < 0
+          || !Number.isInteger(binding.registerIndex) || binding.registerIndex < 0)
+        {
+          fail("package contains a malformed canonical uniform identity");
+        }
+        const identity = `${binding.resourceKind}:${binding.registerSpace}:${binding.registerIndex}`;
+        if (result.has(identity)) fail(`package duplicates canonical uniform ${identity}`);
+        const expectedVisibility = VISIBILITY[identity];
+        if (binding.sourceTruth !== "wgsl-layout" || binding.layout.buffer.type !== "uniform"
+          || binding.dynamic !== false || binding.layout.buffer.hasDynamicOffset !== false
+          || !expectedVisibility || !Array.isArray(binding.visibility)
+          || binding.visibility.length !== 1 || binding.visibility[0] !== expectedVisibility
+          || !Number.isInteger(binding.layout.buffer.minBindingSize)
+          || binding.layout.buffer.minBindingSize < 1 || binding.layout.buffer.minBindingSize % 4 !== 0)
+        {
+          fail(`package uniform ${identity} is not canonical`);
+        }
+        result.set(identity, binding.layout.buffer.minBindingSize);
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Serialize the proven Carbon space-scene/space-object Main-pass structs and
+ * the package-reflected stage-local material constants into canonical binding
+ * identities. The caller (normally a CjsLibrary-selected behavior) owns policy;
+ * this function owns only the byte ABI.
+ *
+ * @param {object} record Loaded CjsWebGPUPackage or record with analysis and pipeline.
+ * @param {object} values Plain semantic values for the five constant buffers.
+ * @returns {object} Frozen identity-to-Uint8Array uniform data.
+ */
+export function buildEveSpaceObjectMainUniformData(record, values = {})
+{
+  const { analysis, pipeline } = resolvePackageRecord(record);
+  const material = packMaterial(findMaterialBinding(analysis), values.material);
+  const uniformData = {
+    [IDENTITIES.material]: material,
+    [IDENTITIES.perFrameVS]: packStruct(values.perFrameVS, BUFFER_SIZES.perFrameVS, PER_FRAME_VS_FIELDS, "perFrameVS"),
+    [IDENTITIES.perFramePS]: packStruct(values.perFramePS, BUFFER_SIZES.perFramePS, PER_FRAME_PS_FIELDS, "perFramePS"),
+    [IDENTITIES.perObjectVS]: packStruct(values.perObjectVS, BUFFER_SIZES.perObjectVS, PER_OBJECT_VS_FIELDS, "perObjectVS"),
+    [IDENTITIES.perObjectPS]: packStruct(values.perObjectPS, BUFFER_SIZES.perObjectPS, PER_OBJECT_PS_FIELDS, "perObjectPS")
+  };
+  const canonical = canonicalUniformSizes(pipeline);
+  for (const [ role, identity ] of Object.entries(IDENTITIES))
+  {
+    const minimum = canonical.get(identity);
+    const data = uniformData[identity];
+    if (!Number.isInteger(minimum)) fail(`package is missing canonical ${role} binding ${identity}`);
+    if (data.byteLength < minimum)
+    {
+      fail(`${role} ABI is ${data.byteLength} bytes but package requires at least ${minimum}`);
+    }
+  }
+  if (canonical.size !== Object.keys(IDENTITIES).length)
+  {
+    fail("package contains unsupported additional uniform bindings");
+  }
+  return Object.freeze(uniformData);
+}
