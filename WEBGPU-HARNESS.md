@@ -63,6 +63,29 @@ This path creates the canonical group-0 `cb0`/`t0`/`s0` layout, renders the
 generated pair into the same 4x4 target, and verifies the expected pixels. The
 fixtures are intentionally self-contained; runtime-resource is not involved.
 
+## Producing indexed CEWGPU inputs
+
+For normal EVE corpus packages, do not add resource acquisition or batch
+conversion to this harness. Build them through tools-core, then select the
+qualified CEWGPU file named by its exact `outputPath` entry in
+`build-report.json`:
+
+```powershell
+cd E:\carbonenginejs-org\tools-core
+npm.cmd run build:shader:webgpu -- --shader-target eve-webgpu --build latest --out <output>
+```
+
+Use `--diagnostic` when the purpose is compiler-coverage inspection and
+`--force --no-reuse` when an existing output must be transactionally rebuilt.
+The JSONL log retains every per-source failure even though terminal progress is
+throttled. The engine harness consumes selected output packages; it does not
+import tools-core at runtime.
+
+The specialized full-permutation matrix and paired DX11/DX12 QuadV5 commands
+below remain explicit compiler/engine qualification. The registered
+`eve-webgpu` target currently represents selected DX11 SM5.0 `.sm_hi` inputs,
+so do not mislabel those broader experiments as tools-core corpus output.
+
 To prepare a real CEWGPU `Main.pass0` without pretending the package contains
 vertex-buffer strides, render-target policy, or live resources:
 

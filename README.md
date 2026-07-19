@@ -110,6 +110,31 @@ constant values and the trustworthy object/shared portion of the space-object
 Main structs. The renderer still supplies complete per-frame values and
 explicit `shipData`.
 
+## Shader package inputs
+
+This engine consumes CEWGPU bytes produced either by the browser-safe
+`CjsFormatWebgpu` class or by an offline tools-core build. Agents needing an
+indexed EVE corpus, build report, harness input, or persistent resource overlay
+must use the canonical builder from `E:\carbonenginejs-org\tools-core`:
+
+```powershell
+npm.cmd run build:shader:webgpu -- --shader-target eve-webgpu --build latest --out <output>
+```
+
+Use `--diagnostic` to preserve unsupported and failed entries for audit. Use
+`--force --no-reuse` when the run must rebuild and transactionally replace an
+existing output. Read `build-report.json` and the JSONL/error artifacts before
+promoting packages into an engine gate. The current `eve-webgpu` target selects
+DX11 SM5.0 `.sm_hi` input, applies structural qualification, and records native
+comparison as `pending-audit`.
+
+Do not add tools-core as an engine/runtime dependency and do not duplicate its
+index acquisition, source validation, path rewriting, reporting, staging, or
+overlay policy here. Browser conversion continues to import the single
+`CjsFormatWebgpu` class. Explicit paired DX11/DX12 or permutation-matrix
+compiler fixtures remain format/harness qualification inputs when the
+registered tools-core target does not represent that experiment.
+
 A separate maintained browser harness now proves that the local JavaScript
 toolchain can acquire WebGPU, compile WGSL, render offscreen, copy to a padded
 readback buffer, and validate pixels. The phase-zero sampled pixel now enters
