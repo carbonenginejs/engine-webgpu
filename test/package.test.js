@@ -682,3 +682,46 @@ test("package copyblit draw preserves canonical numeric layouts and rejects unsu
   dynamicUniform.bindGroups[0].bindings[0].dynamic = true;
   assert.throws(() => buildCopyblitDrawDescriptor(dynamicUniform), /cannot use dynamic offsets/i);
 });
+
+test("read-write storage UAV bindings build readWrite buffers", () => {
+  const pkg = CjsWebGPUPackage.from({
+    format: "CEWGPU",
+    version: 1,
+    stages: [ {
+      key: "Main.pass0.pixel",
+      techniqueName: "Main",
+      passIndex: 0,
+      stageName: "pixel",
+      stageType: 1,
+      bindings: [ {
+        kind: "resource",
+        generatedSymbol: "u1",
+        registerIndex: 1,
+        registerSpace: 0,
+        metadataName: "OccluderCounters"
+      } ]
+    } ],
+    layouts: [ {
+      key: "Main.pass0",
+      bindGroups: [ { group: 0, bindings: [ {
+        identity: "storage-resource:0:1",
+        scopeIdentity: "storage-resource:0:1@fragment",
+        resourceKind: "storage-resource",
+        generatedSymbol: "u1",
+        registerSpace: 0,
+        registerIndex: 1,
+        group: 0,
+        binding: 0,
+        visibility: [ "fragment" ],
+        type: "array<atomic<u32>>",
+        buffer: { type: "storage", hasDynamicOffset: false, minBindingSize: 4 }
+      } ] } ]
+    } ]
+  });
+  const uav = pkg.pipelines[0].bindGroups[0].GetBindingAt(0);
+  assert(uav instanceof CjsWebGPUBuffer);
+  assert.equal(uav.access, "readWrite");
+  assert.equal(uav.bufferKind, "rwBuffer");
+  assert.equal(uav.scopeIdentity, "storage-resource:0:1@fragment");
+  assert.deepEqual(uav.layout.buffer, { type: "storage", hasDynamicOffset: false, minBindingSize: 4 });
+});

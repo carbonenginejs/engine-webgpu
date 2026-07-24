@@ -401,17 +401,19 @@ function createCanonicalDescriptor(pass, binding)
   };
   if (binding.buffer)
   {
-    if (binding.buffer.type !== "uniform" && binding.buffer.type !== "read-only-storage")
+    if (binding.buffer.type !== "uniform" && binding.buffer.type !== "read-only-storage"
+      && binding.buffer.type !== "storage")
     {
       throw new Error(`Canonical layout binding has unsupported buffer type ${binding.buffer.type || "unknown"}`);
     }
     const uniform = binding.buffer.type === "uniform";
+    const readWrite = binding.buffer.type === "storage";
     return new CjsWebGPUBuffer({
       ...base,
-      access: uniform ? "uniform" : "readOnly",
+      access: uniform ? "uniform" : readWrite ? "readWrite" : "readOnly",
       bufferKind: uniform
         ? "constantBuffer"
-        : BUFFER_RESOURCE_TYPES.get(metadata?.carbon?.type) || "structuredBuffer"
+        : BUFFER_RESOURCE_TYPES.get(metadata?.carbon?.type) || (readWrite ? "rwBuffer" : "structuredBuffer")
     });
   }
   if (binding.texture)
