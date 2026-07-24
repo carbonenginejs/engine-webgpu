@@ -102,8 +102,15 @@ npm.cmd run test:webgpu:required -- --prepare-matrix E:\path\quadv5-all-permutat
 
 The matrix report retains every permutation/pass occurrence. The harness first
 compiles every distinct independently emitted shader module, then prepares each
-exact pass-ready shader/layout variant once. It reports both covered stage and
-pass occurrences and treats every WGSL warning or WebGPU validation error as a
+exact pass-ready shader/layout variant once across both backend records.
+Backend, source, variant, example, and occurrence provenance remains attached
+to every deduplicated pipeline. Ready render variants must contain exactly one
+vertex and one pixel stage. Ready compute variants must contain exactly one
+compute stage, preserve the positive three-dimensional thread-group size, and
+agree with the independently qualified stage. The browser creates a native
+compute pipeline to validate the shader/layout interface but does not dispatch
+it. It reports unique render and compute pipeline counts plus covered stage and
+pass occurrences, and treats every WGSL warning or WebGPU validation error as a
 failure. Unsupported matrix entries are qualification results rather than live
 pipeline candidates and are not silently reclassified as prepared.
 
@@ -189,8 +196,12 @@ itself is implemented and exercised.
 The `--prepare-cewgpu` and `--prepare-matrix` modes read through
 `format-webgpu` and `CjsWebGPUPackage`, compile WGSL, create the canonical
 bind-group/pipeline layouts, and require zero warnings. Those preparation-only
-modes deliberately stop before render-pipeline creation and drawing; unlike
-`--draw-quadv5`, they require no geometry or live resource fixtures.
+modes deliberately stop before render-pipeline creation and drawing. The
+matrix mode additionally creates validation-only native compute pipelines
+through a harness-private helper served to the probe page; it performs no
+dispatch and does not widen the render-only public `CjsWebGPUDevice` API.
+Unlike `--draw-quadv5`, preparation requires no geometry or live resource
+fixtures.
 
 The QuadV5 command is a monorepo integration gate. Node consumes the sibling
 `runtime-resource/npm/dist` build because the runtime source uses decorators,
@@ -211,13 +222,13 @@ The Node launcher reads the package through `format-webgpu` and
 `CjsWebGPUDevice` creates explicit bind-group and pipeline layouts from numeric
 groups, bindings, visibility, and nested buffer/texture/sampler layouts.
 Fixture resources are selected by canonical scope identity. Version-2
-unshared bindings use `@vertex` / `@fragment` keys even when the tuple occurs in
-only one stage; a bare base key is reserved for a confirmed shared multi-stage
-binding. Version-1 and unversioned layouts may still normalize a missing scope
-to the base D3D key. Descriptor slots are never hardcoded or renumbered. This
-bounded gate rejects missing WGSL, unsupported render states/resources, dynamic
-offsets, layout holes, and non-canonical binding provenance before GPU
-submission.
+unshared bindings use `@vertex`, `@fragment`, or `@compute` keys even when the
+tuple occurs in only one stage; a bare base key is reserved for a confirmed
+shared multi-stage binding. Version-1 and unversioned layouts may still
+normalize a missing scope to the base D3D key. Descriptor slots are never
+hardcoded or renumbered. This bounded gate rejects missing WGSL, unsupported
+render states/resources, dynamic offsets, layout holes, and non-canonical
+binding provenance before GPU submission.
 
 The real copyblit pass's replacement blend state is translated exactly to
 WebGPU (`one`/`zero`, `add` for color and alpha). Other render-state

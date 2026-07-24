@@ -1,4 +1,5 @@
 import { buildCopyblitDrawDescriptor } from "/packageDraw.js";
+import { createHarnessComputePipeline } from "/computePipeline.js";
 import {
     QUADV5_EXPECTED_TARGETS,
     QUADV5_VERTEX_BUFFER_LAYOUT,
@@ -776,6 +777,8 @@ async function PrepareMatrix(webgpu)
     const matrix = await response.json();
     let warningCount = 0;
     let bindingCount = 0;
+    let renderPipelineCount = 0;
+    let computePipelineCount = 0;
     for (const record of matrix.shaderModules)
     {
         const module = webgpu.GetDevice().createShaderModule({
@@ -791,18 +794,38 @@ async function PrepareMatrix(webgpu)
     }
     for (const record of matrix.pipelines)
     {
-        const prepared = await webgpu.PreparePipeline(record.pipeline, { warningsAsErrors: true });
-        warningCount += prepared.diagnostics.filter((entry) => entry.type === "warning").length;
-        bindingCount += record.pipeline.bindGroups.reduce(
-            (count, group) => count + group.bindings.length,
-            0
-        );
+        if (record.pipelineKind === "compute")
+        {
+            const prepared = await createHarnessComputePipeline(
+                webgpu.GetDevice(),
+                record.pipeline,
+                GPUShaderStage
+            );
+            warningCount += prepared.warningCount;
+            bindingCount += prepared.bindingCount;
+            computePipelineCount += 1;
+        }
+        else
+        {
+            Assert(record.pipelineKind === "render", `Matrix pipeline ${record.id} has an invalid kind`);
+            const prepared = await webgpu.PreparePipeline(record.pipeline, { warningsAsErrors: true });
+            warningCount += prepared.diagnostics.filter((entry) => entry.type === "warning").length;
+            bindingCount += record.pipeline.bindGroups.reduce(
+                (count, group) => count + group.bindings.length,
+                0
+            );
+            renderPipelineCount += 1;
+        }
     }
+    Assert(renderPipelineCount === matrix.uniqueRenderPipelines, "Matrix render-pipeline count does not reconcile");
+    Assert(computePipelineCount === matrix.uniqueComputePipelines, "Matrix compute-pipeline count does not reconcile");
     return {
         label: CONFIG.prepareMatrixLabel,
         uniqueShaderModules: matrix.uniqueShaderModules,
         coveredShaderOccurrences: matrix.coveredShaderOccurrences,
         uniquePipelines: matrix.uniquePipelines,
+        uniqueRenderPipelines: matrix.uniqueRenderPipelines,
+        uniqueComputePipelines: matrix.uniqueComputePipelines,
         coveredOccurrences: matrix.coveredOccurrences,
         bindingCount,
         warningCount

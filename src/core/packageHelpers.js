@@ -96,6 +96,7 @@ export function buildShaderModules(normalized)
   return normalized.stages.map((stage) =>
   {
     const shader = matchShaderSource(stage, normalized.shaders);
+    const threadGroupSize = resolveThreadGroupSize(stage, shader);
     return new CjsWebGPUShaderModule({
       key: stage.key || buildStageKey(stage),
       techniqueName: stage.techniqueName || "",
@@ -103,7 +104,7 @@ export function buildShaderModules(normalized)
       stageName: stage.stageName || "",
       stageType: Number.isInteger(stage.stageType) ? stage.stageType : null,
       pipelineInputs: cloneJson(stage.pipelineInputs || []),
-      threadGroupSize: cloneJson(stage.threadGroupSize || null),
+      threadGroupSize: cloneJson(threadGroupSize),
       bindings: cloneJson(stage.bindings || []),
       dxbc: cloneJson(stage.dxbc || null),
       dxbcError: cloneJson(stage.dxbcError || null),
@@ -221,10 +222,64 @@ const RESOURCE_KIND_TO_CARBON = Object.freeze({
   "storage-resource": "uav"
 });
 
+const CANONICAL_STAGE_ORDER = Object.freeze([ "vertex", "fragment", "compute" ]);
+const CANONICAL_STAGE_TYPES = Object.freeze({
+  vertex: 0,
+  fragment: 1,
+  compute: 2
+});
+
+function validatedThreadGroupSize(value, label)
+{
+  const normalized = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? [ value.x, value.y, value.z ]
+      : null;
+  if (!normalized || normalized.length !== 3
+    || normalized.some((entry) => !Number.isSafeInteger(entry) || entry < 1))
+  {
+    throw new Error(`${label} requires a positive three-dimensional threadGroupSize`);
+  }
+  return [ ...normalized ];
+}
+
+function resolveThreadGroupSize(stage, shader)
+{
+  const canonicalStage = normalizeCanonicalStage(stage.stageName);
+  const analysisSize = stage.threadGroupSize ?? null;
+  const shaderSize = shader?.threadGroupSize ?? null;
+  if (canonicalStage !== "compute")
+  {
+    if (analysisSize !== null || shaderSize !== null)
+    {
+      throw new Error(`Shader stage ${stage.key || buildStageKey(stage)} cannot declare threadGroupSize`);
+    }
+    return null;
+  }
+  const validatedAnalysis = analysisSize === null
+    ? null
+    : validatedThreadGroupSize(analysisSize, `Compute stage ${stage.key || buildStageKey(stage)}`);
+  const validatedShader = shaderSize === null
+    ? null
+    : validatedThreadGroupSize(shaderSize, `Compute shader ${stage.key || buildStageKey(stage)}`);
+  if (shader && !validatedShader)
+  {
+    throw new Error(`Compute shader ${stage.key || buildStageKey(stage)} requires threadGroupSize metadata`);
+  }
+  if (validatedAnalysis && validatedShader
+    && validatedAnalysis.some((entry, index) => entry !== validatedShader[index]))
+  {
+    throw new Error(`Compute stage ${stage.key || buildStageKey(stage)} has inconsistent threadGroupSize metadata`);
+  }
+  return validatedShader || validatedAnalysis;
+}
+
 function normalizeCanonicalStage(value)
 {
   if (value === "pixel" || value === "fragment") return "fragment";
   if (value === "vertex") return "vertex";
+  if (value === "compute") return "compute";
   return "";
 }
 
@@ -233,7 +288,8 @@ function canonicalVisibility(value)
   const values = Array.isArray(value) ? value : value ? [ value ] : [];
   const visibility = Array.from(new Set(values.map(normalizeCanonicalStage)));
   if (visibility.some((stage) => !stage)) throw new Error("Canonical layout binding has invalid visibility");
-  return visibility.sort((left, right) => [ "vertex", "fragment" ].indexOf(left) - [ "vertex", "fragment" ].indexOf(right));
+  return visibility.sort((left, right) =>
+    CANONICAL_STAGE_ORDER.indexOf(left) - CANONICAL_STAGE_ORDER.indexOf(right));
 }
 
 function buildCanonicalBindGroups(pass, layout, formatVersion)
@@ -359,7 +415,7 @@ function createCanonicalDescriptor(pass, binding)
       stageType: module.stageType
     }))
     : pass.stages
-      .filter((module) => visibility.includes(module.stageName === "pixel" ? "fragment" : module.stageName))
+      .filter((module) => visibility.includes(normalizeCanonicalStage(module.stageName)))
       .map((module) => ({
         key: module.key,
         stageName: module.stageName,
@@ -549,14 +605,48 @@ function createBindingDescriptor(module, binding)
 
 function matchShaderSource(stage, shaders)
 {
-  return shaders.find((shader) =>
-    shader?.key === stage.key ||
+  const key = stage.key || buildStageKey(stage);
+  const techniqueName = stage.techniqueName || "Main";
+  const passIndex = Number.isInteger(stage.passIndex) ? stage.passIndex : 0;
+  const stageName = stage.stageName || "";
+  const candidates = shaders.filter((shader) =>
+    shader?.key === key ||
     (
-      shader?.techniqueName === stage.techniqueName &&
-      shader?.passIndex === stage.passIndex &&
-      shader?.stageName === stage.stageName
+      shader?.techniqueName === techniqueName &&
+      shader?.passIndex === passIndex &&
+      shader?.stageName === stageName
     )
-  ) || null;
+  );
+  if (candidates.length > 1)
+  {
+    throw new Error(`Shader stage ${key} has ambiguous WGSL source records`);
+  }
+  const shader = candidates[0] || null;
+  if (!shader) return null;
+
+  if ((shader.key !== undefined && shader.key !== key)
+    || (shader.techniqueName !== undefined && shader.techniqueName !== techniqueName)
+    || (shader.passIndex !== undefined && shader.passIndex !== passIndex)
+    || (shader.stageName !== undefined && shader.stageName !== stageName))
+  {
+    throw new Error(`Shader stage ${key} has inconsistent WGSL provenance`);
+  }
+  const canonicalStage = normalizeCanonicalStage(stageName);
+  if (!canonicalStage)
+  {
+    throw new Error(`Shader stage ${key} has unsupported WGSL stage ${stageName || "<empty>"}`);
+  }
+  if (shader.stage !== undefined && shader.stage !== canonicalStage)
+  {
+    throw new Error(`Shader stage ${key} has inconsistent WGSL stage ${shader.stage}`);
+  }
+  const expectedStageType = CANONICAL_STAGE_TYPES[canonicalStage];
+  if ((Number.isInteger(stage.stageType) && stage.stageType !== expectedStageType)
+    || (shader.stageType !== undefined && shader.stageType !== expectedStageType))
+  {
+    throw new Error(`Shader stage ${key} has inconsistent WGSL stage type`);
+  }
+  return shader;
 }
 
 function uniqueStages(stages)

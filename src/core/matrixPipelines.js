@@ -6,6 +6,26 @@ function fail(message)
 }
 
 const BACKEND_NAMES = Object.freeze([ "dx11", "dx12" ]);
+const WGSL_STAGE_METADATA = Object.freeze({
+  vertex: Object.freeze({ stage: "vertex", stageType: 0 }),
+  pixel: Object.freeze({ stage: "fragment", stageType: 1 }),
+  compute: Object.freeze({ stage: "compute", stageType: 2 })
+});
+
+function threadGroupSize(value, label)
+{
+  const normalized = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? [ value.x, value.y, value.z ]
+      : null;
+  if (!normalized || normalized.length !== 3
+    || normalized.some((entry) => !Number.isSafeInteger(entry) || entry < 1))
+  {
+    fail(`${label} requires a positive three-dimensional threadGroupSize`);
+  }
+  return [ ...normalized ];
+}
 
 function positiveInteger(value, label)
 {
@@ -19,7 +39,14 @@ function nonNegativeInteger(value, label)
   return value;
 }
 
-function validateReadyWgsl(variant)
+function readyPipelineKind(stageNames, label)
+{
+  if (stageNames.size === 1 && stageNames.has("compute")) return "compute";
+  if (stageNames.size === 2 && stageNames.has("vertex") && stageNames.has("pixel")) return "render";
+  fail(`${label} ready pass does not reference exactly compute or vertex+pixel`);
+}
+
+function validateReadyWgsl(variant, pipelineKind = null)
 {
   const passKey = `${variant.techniqueName}.pass${variant.passIndex}`;
   if (variant.passKey !== passKey) fail(`${variant.id} pass key does not match its technique/pass`);
@@ -29,15 +56,23 @@ function validateReadyWgsl(variant)
     fail(`${passKey} ready variant is not a version 1 or 2 CJS_WGSL_SET`);
   }
   const shaders = Array.isArray(wgsl.shaders) ? wgsl.shaders : [];
-  if (shaders.length !== 2) fail(`${passKey} does not contain exactly vertex+pixel WGSL`);
-  const expectedStages = new Map([
-    [ "vertex", { stage: "vertex", stageType: 0 } ],
-    [ "pixel", { stage: "fragment", stageType: 1 } ]
-  ]);
+  const kind = pipelineKind || readyPipelineKind(
+    new Set((variant.stageDigests || []).map((entry) => entry?.stageName)),
+    variant.id || passKey
+  );
+  const expectedStageNames = kind === "compute" ? [ "compute" ] : [ "vertex", "pixel" ];
+  if (shaders.length !== expectedStageNames.length)
+  {
+    fail(`${passKey} does not contain exactly ${kind === "compute" ? "compute" : "vertex+pixel"} WGSL`);
+  }
   const seen = new Set();
   for (const shader of shaders)
   {
-    const expected = expectedStages.get(shader?.stageName);
+    const expected = WGSL_STAGE_METADATA[shader?.stageName];
+    if (!expectedStageNames.includes(shader?.stageName))
+    {
+      fail(`${passKey} has duplicate or unsupported WGSL stages`);
+    }
     if (!expected || seen.has(shader.stageName)) fail(`${passKey} has duplicate or unsupported WGSL stages`);
     seen.add(shader.stageName);
     if (shader.key !== `${passKey}.${shader.stageName}`
@@ -54,8 +89,17 @@ function validateReadyWgsl(variant)
     {
       fail(`${passKey}.${shader.stageName} has malformed WGSL code metadata`);
     }
+    if (shader.stageName === "compute") threadGroupSize(shader.threadGroupSize, `${passKey}.compute`);
+    else if (shader.threadGroupSize !== undefined && shader.threadGroupSize !== null)
+    {
+      fail(`${passKey}.${shader.stageName} cannot declare threadGroupSize`);
+    }
   }
-  if (seen.size !== expectedStages.size) fail(`${passKey} does not contain exactly vertex+pixel WGSL`);
+  if (seen.size !== expectedStageNames.length
+    || expectedStageNames.some((stageName) => !seen.has(stageName)))
+  {
+    fail(`${passKey} does not contain exactly ${kind === "compute" ? "compute" : "vertex+pixel"} WGSL`);
+  }
   const layouts = Array.isArray(wgsl.layouts) ? wgsl.layouts : [];
   if (layouts.length !== 1) fail(`${passKey} must have exactly one canonical layout`);
   const layout = layouts[0];
@@ -71,7 +115,11 @@ function validateReadyWgsl(variant)
 
 function passAnalysis(variant)
 {
-  const shaders = validateReadyWgsl(variant);
+  const stageNames = new Set((variant.stageDigests || []).map((entry) => entry?.stageName));
+  const shaders = validateReadyWgsl(
+    variant,
+    readyPipelineKind(stageNames, variant.id || variant.passKey)
+  );
   return {
     passes: [ {
       techniqueName: variant.techniqueName,
@@ -85,6 +133,7 @@ function passAnalysis(variant)
       passIndex: shader.passIndex,
       stageName: shader.stageName,
       stageType: shader.stageType,
+      ...(shader.threadGroupSize ? { threadGroupSize: threadGroupSize(shader.threadGroupSize, shader.key) } : {}),
       bindings: []
     }))
   };
@@ -132,11 +181,20 @@ function validateBackendRecord(backend, record)
     if (variant.wgsl === "emitted")
     {
       const shader = variant.independentShader;
-      if (!shader || (shader.stage !== "vertex" && shader.stage !== "fragment")
+      const expected = WGSL_STAGE_METADATA[variant.stage];
+      if (!expected || !shader || shader.stage !== expected.stage
         || typeof shader.entryPoint !== "string" || !shader.entryPoint
         || typeof shader.code !== "string" || !shader.code)
       {
         fail(`${backend}:${variant.digest} has malformed independently emitted WGSL`);
+      }
+      if (variant.stage === "compute")
+      {
+        threadGroupSize(shader.threadGroupSize, `${backend}:${variant.digest}`);
+      }
+      else if (shader.threadGroupSize !== undefined && shader.threadGroupSize !== null)
+      {
+        fail(`${backend}:${variant.digest} render WGSL cannot declare threadGroupSize`);
       }
       emittedStageOccurrences += variant.occurrences;
       emittedStageVariants += 1;
@@ -191,11 +249,33 @@ function validateBackendRecord(backend, record)
     }
     if (variant.status === "ready")
     {
-      if (stageDigests.length !== 2 || !stageNames.has("vertex") || !stageNames.has("pixel"))
+      const pipelineKind = readyPipelineKind(stageNames, `${backend}:${variant.id}`);
+      const shaders = validateReadyWgsl(variant, pipelineKind);
+      const shadersByStage = new Map(shaders.map((shader) => [ shader.stageName, shader ]));
+      for (const reference of stageDigests)
       {
-        fail(`${backend}:${variant.id} ready pass does not reference exactly vertex+pixel`);
+        const stageVariant = stageVariants.get(reference.digest);
+        const shader = shadersByStage.get(reference.stageName);
+        const independent = stageVariant?.independentShader;
+        let mismatchedThreadGroup = false;
+        if (reference.stageName === "compute" && shader && independent)
+        {
+          const passSize = threadGroupSize(shader.threadGroupSize, `${backend}:${variant.id}.compute`);
+          const stageSize = threadGroupSize(
+            independent.threadGroupSize,
+            `${backend}:${reference.digest}`
+          );
+          mismatchedThreadGroup = passSize.some((entry, index) => entry !== stageSize[index]);
+        }
+        if (!shader || !independent
+          || shader.stage !== independent.stage
+          || shader.entryPoint !== independent.entryPoint
+          || shader.code !== independent.code
+          || mismatchedThreadGroup)
+        {
+          fail(`${backend}:${variant.id} WGSL does not match its qualified ${reference.stageName} stage`);
+        }
       }
-      validateReadyWgsl(variant);
       readyPassOccurrences += variant.occurrences;
       readyPassVariants += 1;
     }
@@ -249,7 +329,7 @@ function validateBackendRecord(backend, record)
 
 /**
  * Converts a format-webgpu exhaustive qualification report into validated
- * descriptor-only pipelines suitable for CjsWebGPUDevice.PreparePipeline.
+ * descriptor-only pipelines suitable for the browser preparation harness.
  * Repeated permutation occurrences remain coverage metadata and are not
  * redundantly compiled when their exact pass variant is identical.
  *
@@ -275,11 +355,13 @@ export function buildMatrixPipelines(matrix)
   }
   for (const backend of BACKEND_NAMES) validateBackendRecord(backend, matrix.backends[backend]);
 
-  const pipelines = [];
+  const pipelines = new Map();
   const ids = new Set();
   let coveredOccurrences = 0;
   const shaderModules = new Map();
   let coveredShaderOccurrences = 0;
+  let uniqueRenderPipelines = 0;
+  let uniqueComputePipelines = 0;
   for (const backend of BACKEND_NAMES)
   {
     const record = matrix.backends[backend];
@@ -291,7 +373,11 @@ export function buildMatrixPipelines(matrix)
       {
         fail(`${backend}:${variant.digest || "stage variant"} has malformed independently emitted WGSL`);
       }
-      const key = `${shader.stage}\u0000${shader.entryPoint}\u0000${shader.code}`;
+      const normalizedThreadGroupSize = shader.threadGroupSize == null
+        ? null
+        : threadGroupSize(shader.threadGroupSize, `${backend}:${variant.digest}`);
+      const key = `${shader.stage}\u0000${shader.entryPoint}\u0000`
+        + `${JSON.stringify(normalizedThreadGroupSize)}\u0000${shader.code}`;
       const occurrences = variant.occurrences;
       coveredShaderOccurrences += occurrences;
       if (!shaderModules.has(key))
@@ -301,6 +387,9 @@ export function buildMatrixPipelines(matrix)
           stage: shader.stage,
           entryPoint: shader.entryPoint,
           code: shader.code,
+          ...(normalizedThreadGroupSize
+            ? { threadGroupSize: normalizedThreadGroupSize }
+            : {}),
           occurrences: 0,
           sources: []
         });
@@ -316,6 +405,10 @@ export function buildMatrixPipelines(matrix)
       const id = `${backend}:${variant.id}`;
       if (ids.has(id)) fail(`duplicate ready variant ${id}`);
       ids.add(id);
+      const pipelineKind = readyPipelineKind(
+        new Set(variant.stageDigests.map((entry) => entry.stageName)),
+        id
+      );
       const pkg = CjsWebGPUPackage.from({
         sourcePath: record.sourcePath || backend,
         analysis: passAnalysis(variant),
@@ -325,18 +418,40 @@ export function buildMatrixPipelines(matrix)
       if (!pipeline?.HasCompleteWgsl()) fail(`${id} did not produce a complete engine pipeline`);
       const occurrences = variant.occurrences;
       coveredOccurrences += occurrences;
-      pipelines.push({
-        id,
+      const pipelineJson = pipeline.ToJSON();
+      const fingerprint = JSON.stringify({ pipelineKind, pipeline: pipelineJson });
+      const source = {
         backend,
+        sourcePath: record.sourcePath || backend,
         variantId: variant.id,
         passKey: variant.passKey,
         occurrences,
         exampleBodyIndex: variant.exampleBodyIndex,
-        exampleOptions: variant.exampleOptions || [],
-        pipeline: pipeline.ToJSON()
-      });
+        exampleOptions: variant.exampleOptions || []
+      };
+      if (!pipelines.has(fingerprint))
+      {
+        if (pipelineKind === "compute") uniqueComputePipelines += 1;
+        else uniqueRenderPipelines += 1;
+        pipelines.set(fingerprint, {
+          id,
+          backend,
+          variantId: variant.id,
+          passKey: variant.passKey,
+          occurrences: 0,
+          exampleBodyIndex: variant.exampleBodyIndex,
+          exampleOptions: variant.exampleOptions || [],
+          pipelineKind,
+          pipeline: pipelineJson,
+          sources: []
+        });
+      }
+      const prepared = pipelines.get(fingerprint);
+      prepared.occurrences += occurrences;
+      prepared.sources.push(source);
     }
   }
+  const uniquePipelines = Array.from(pipelines.values());
   return {
     format: "CJS_WEBGPU_PREPARE_MATRIX",
     formatVersion: 1,
@@ -344,8 +459,10 @@ export function buildMatrixPipelines(matrix)
     uniqueShaderModules: shaderModules.size,
     coveredShaderOccurrences,
     shaderModules: Array.from(shaderModules.values()),
-    uniquePipelines: pipelines.length,
+    uniquePipelines: uniquePipelines.length,
+    uniqueRenderPipelines,
+    uniqueComputePipelines,
     coveredOccurrences,
-    pipelines
+    pipelines: uniquePipelines
   };
 }

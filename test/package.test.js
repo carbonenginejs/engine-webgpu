@@ -306,6 +306,141 @@ test("CJS_WGSL_SET code records retain entry points and DXBC source maps", () =>
   assert.deepEqual(module.sourceMap, sourceMap);
 });
 
+test("compute-only packages retain canonical compute visibility and storage layouts", () =>
+{
+  const code = `
+@group(0) @binding(0) var<storage, read_write> values: array<u32>;
+@compute @workgroup_size(1)
+fn main()
+{
+  values[0] = values[0] + 1u;
+}`;
+  const pkg = CjsWebGPUPackage.from({
+    format: "CEWGPU",
+    version: 1,
+    stages: [ {
+      key: "Main.pass0.compute",
+      techniqueName: "Main",
+      passIndex: 0,
+      stageName: "compute",
+      stageType: 2,
+      bindings: [ {
+        kind: "uav",
+        generatedSymbol: "u0",
+        registerIndex: 0,
+        registerSpace: 0,
+        metadataName: "Values"
+      } ]
+    } ],
+    wgsl: {
+      format: "CJS_WGSL_SET",
+      formatVersion: 2,
+      shaders: [ {
+        key: "Main.pass0.compute",
+        techniqueName: "Main",
+        passIndex: 0,
+        stageName: "compute",
+        stage: "compute",
+        stageType: 2,
+        threadGroupSize: [ 1, 1, 1 ],
+        entryPoint: "main",
+        code,
+        sourceMap: []
+      } ],
+      layouts: [ {
+        key: "Main.pass0",
+        techniqueName: "Main",
+        passIndex: 0,
+        bindGroups: [ {
+          group: 0,
+          bindings: [ {
+            identity: "storage-resource:0:0",
+            scopeIdentity: "storage-resource:0:0@compute",
+            resourceKind: "storage-resource",
+            generatedSymbol: "u0",
+            registerSpace: 0,
+            registerIndex: 0,
+            group: 0,
+            binding: 0,
+            visibility: [ "compute" ],
+            type: "array<u32>",
+            buffer: { type: "storage", hasDynamicOffset: false, minBindingSize: 4 }
+          } ]
+        } ]
+      } ]
+    }
+  });
+
+  const pipeline = pkg.GetPipeline("Main", 0);
+  assert.equal(pipeline.HasCompleteWgsl(), true);
+  assert.equal(pipeline.shaderModules.length, 1);
+  assert.equal(pipeline.GetShaderModule("compute").stageType, 2);
+  assert.deepEqual(pipeline.GetShaderModule("compute").threadGroupSize, [ 1, 1, 1 ]);
+  const binding = pipeline.bindGroups[0].GetBindingAt(0);
+  assert(binding instanceof CjsWebGPUBuffer);
+  assert.equal(binding.access, "readWrite");
+  assert.equal(binding.scopeIdentity, "storage-resource:0:0@compute");
+  assert.deepEqual(binding.visibility, [ "compute" ]);
+  assert.deepEqual(binding.stages.map((entry) => entry.stageName), [ "compute" ]);
+});
+
+test("package shader matching rejects contradictory keyed stage provenance", () =>
+{
+  const value = {
+    stages: [ {
+      key: "Main.pass0.compute",
+      techniqueName: "Main",
+      passIndex: 0,
+      stageName: "compute",
+      stageType: 2
+    } ],
+    shaders: [ {
+      key: "Main.pass0.compute",
+      techniqueName: "Main",
+      passIndex: 0,
+      stageName: "pixel",
+      stage: "fragment",
+      stageType: 1,
+      code: "@fragment fn main() -> @location(0) vec4f { return vec4f(); }"
+    } ]
+  };
+  assert.throws(
+    () => CjsWebGPUPackage.from(value),
+    /inconsistent WGSL provenance/u
+  );
+
+  value.shaders[0].stageName = "compute";
+  assert.throws(
+    () => CjsWebGPUPackage.from(value),
+    /inconsistent WGSL stage fragment/u
+  );
+
+  value.shaders[0].stage = "compute";
+  value.shaders[0].stageType = 2;
+  value.shaders[0].threadGroupSize = [ 1, 1, 1 ];
+  value.stages[0].threadGroupSize = { x: 1, y: 1, z: 1 };
+  assert.deepEqual(
+    CjsWebGPUPackage.from(value).GetShaderModule("Main.pass0.compute").threadGroupSize,
+    [ 1, 1, 1 ]
+  );
+
+  value.stages[0].threadGroupSize = { x: 2, y: 1, z: 1 };
+  assert.throws(
+    () => CjsWebGPUPackage.from(value),
+    /inconsistent threadGroupSize metadata/u
+  );
+
+  value.stages[0].stageName = "pixel";
+  value.stages[0].stageType = 1;
+  value.shaders[0].stageName = "pixel";
+  value.shaders[0].stage = "fragment";
+  value.shaders[0].stageType = 1;
+  assert.throws(
+    () => CjsWebGPUPackage.from(value),
+    /cannot declare threadGroupSize/u
+  );
+});
+
 test("structured WGSL package input accepts only set versions 1 and 2", () =>
 {
   for (const formatVersion of [ 1, 2 ])

@@ -158,14 +158,83 @@ function qualifiedMatrix()
   };
 }
 
+function qualifiedComputeMatrix()
+{
+  const matrix = qualifiedMatrix();
+  const backend = matrix.backends.dx11;
+  const code = "@compute @workgroup_size(1) fn main() {}";
+  const ready = {
+    ...matrixVariant(),
+    id: "variant-compute",
+    stageDigests: [ { stageName: "compute", digest: "compute-a" } ],
+    wgsl: {
+      format: "CJS_WGSL_SET",
+      formatVersion: 2,
+      shaders: [ {
+        key: "Main.pass0.compute",
+        techniqueName: "Main",
+        passIndex: 0,
+        stageName: "compute",
+        stage: "compute",
+        stageType: 2,
+        threadGroupSize: [ 1, 1, 1 ],
+        entryPoint: "main",
+        code,
+        sourceMap: []
+      } ],
+      layouts: [ {
+        key: "Main.pass0",
+        techniqueName: "Main",
+        passIndex: 0,
+        bindGroups: []
+      } ]
+    }
+  };
+  backend.stageVariants = [
+    stageVariant("compute-a", "Main.pass0.compute", "compute", code)
+  ];
+  backend.stageVariants[0].independentShader.threadGroupSize = { x: 1, y: 1, z: 1 };
+  backend.stages = {
+    occurrences: 2,
+    frontEndQualifiedOccurrences: 2,
+    frontEndFailedOccurrences: 0,
+    emittedWgslOccurrences: 2,
+    unsupportedWgslOccurrences: 0,
+    uniquePrograms: 1,
+    uniqueFrontEndQualifiedPrograms: 1,
+    uniqueFrontEndFailedPrograms: 0,
+    uniqueEmittedWgslPrograms: 1,
+    uniqueUnsupportedWgslPrograms: 0
+  };
+  backend.passVariants = [ ready ];
+  backend.passes = {
+    occurrences: 2,
+    readyOccurrences: 2,
+    unsupportedOccurrences: 0,
+    failedOccurrences: 0,
+    uniqueVariants: 1,
+    uniqueReadyVariants: 1,
+    uniqueUnsupportedVariants: 0,
+    uniqueFailedVariants: 0
+  };
+  backend.bodyResults.forEach((body) =>
+  {
+    body.passes = [ { passKey: ready.passKey, variantId: ready.id, status: ready.status } ];
+  });
+  return matrix;
+}
+
 test("effect matrix conversion prepares each ready variant once while preserving occurrence coverage", () =>
 {
   const result = buildMatrixPipelines(qualifiedMatrix());
   assert.equal(result.uniqueShaderModules, 2);
   assert.equal(result.coveredShaderOccurrences, 4);
   assert.equal(result.uniquePipelines, 1);
+  assert.equal(result.uniqueRenderPipelines, 1);
+  assert.equal(result.uniqueComputePipelines, 0);
   assert.equal(result.coveredOccurrences, 2);
   assert.equal(result.pipelines[0].id, "dx11:variant-a");
+  assert.equal(result.pipelines[0].pipelineKind, "render");
   assert.equal(result.pipelines[0].pipeline.shaderModules.length, 2);
 
   const legacy = qualifiedMatrix();
@@ -235,6 +304,59 @@ test("effect matrix conversion validates and skips unsupported geometry pass var
   assert.equal(result.uniqueShaderModules, 2);
 });
 
+test("effect matrix conversion accepts one-stage compute-ready variants", () =>
+{
+  const result = buildMatrixPipelines(qualifiedComputeMatrix());
+  assert.equal(result.uniqueShaderModules, 1);
+  assert.equal(result.coveredShaderOccurrences, 2);
+  assert.equal(result.uniquePipelines, 1);
+  assert.equal(result.uniqueRenderPipelines, 0);
+  assert.equal(result.uniqueComputePipelines, 1);
+  assert.equal(result.coveredOccurrences, 2);
+  assert.equal(result.pipelines[0].pipelineKind, "compute");
+  assert.deepEqual(
+    result.pipelines[0].pipeline.shaderModules.map((entry) => entry.stageName),
+    [ "compute" ]
+  );
+  assert.deepEqual(result.shaderModules[0].threadGroupSize, [ 1, 1, 1 ]);
+});
+
+test("effect matrix conversion globally deduplicates self-paired compute pipelines", () =>
+{
+  const matrix = qualifiedComputeMatrix();
+  matrix.backends.dx12 = structuredClone(matrix.backends.dx11);
+  matrix.backends.dx12.sourcePath = "dx11-self-pair.sm_lo";
+
+  const result = buildMatrixPipelines(matrix);
+  assert.equal(result.uniqueShaderModules, 1);
+  assert.equal(result.coveredShaderOccurrences, 4);
+  assert.equal(result.uniquePipelines, 1);
+  assert.equal(result.uniqueRenderPipelines, 0);
+  assert.equal(result.uniqueComputePipelines, 1);
+  assert.equal(result.coveredOccurrences, 4);
+  assert.equal(result.pipelines[0].occurrences, 4);
+  assert.deepEqual(result.pipelines[0].sources, [
+    {
+      backend: "dx11",
+      sourcePath: "dx11.sm_lo",
+      variantId: "variant-compute",
+      passKey: "Main.pass0",
+      occurrences: 2,
+      exampleBodyIndex: 0,
+      exampleOptions: [ { name: "QUALITY", value: "LOW" } ]
+    },
+    {
+      backend: "dx12",
+      sourcePath: "dx11-self-pair.sm_lo",
+      variantId: "variant-compute",
+      passKey: "Main.pass0",
+      occurrences: 2,
+      exampleBodyIndex: 0,
+      exampleOptions: [ { name: "QUALITY", value: "LOW" } ]
+    }
+  ]);
+});
+
 test("effect matrix conversion rejects malformed ready records", () =>
 {
   assert.throws(() => buildMatrixPipelines({}), /version 1/u);
@@ -258,6 +380,24 @@ test("effect matrix conversion rejects malformed ready records", () =>
   const mismatchedStage = qualifiedMatrix();
   mismatchedStage.backends.dx11.passVariants[0].stageDigests[0].stageName = "geometry";
   assert.throws(() => buildMatrixPipelines(mismatchedStage), /invalid qualified stage references/u);
+
+  const mismatchedCode = qualifiedMatrix();
+  mismatchedCode.backends.dx11.passVariants[0].wgsl.shaders[0].code += "\n";
+  assert.throws(() => buildMatrixPipelines(mismatchedCode), /does not match its qualified vertex stage/u);
+
+  const mixedCompute = qualifiedComputeMatrix();
+  mixedCompute.backends.dx11.passVariants[0].stageDigests.push({
+    stageName: "vertex",
+    digest: "compute-a"
+  });
+  assert.throws(() => buildMatrixPipelines(mixedCompute), /invalid qualified stage references/u);
+
+  const mismatchedWorkgroup = qualifiedComputeMatrix();
+  mismatchedWorkgroup.backends.dx11.passVariants[0].wgsl.shaders[0].threadGroupSize = [ 2, 1, 1 ];
+  assert.throws(
+    () => buildMatrixPipelines(mismatchedWorkgroup),
+    /does not match its qualified compute stage/u
+  );
 
   const failedPass = qualifiedMatrix();
   failedPass.backends.dx11.passVariants[0].status = "failed";

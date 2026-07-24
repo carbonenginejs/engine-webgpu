@@ -245,6 +245,7 @@ const ASSETS = new Map([
     [ "/", { path: new URL("../harness/webgpu/index.html", import.meta.url), type: "text/html; charset=utf-8" } ],
     [ "/index.html", { path: new URL("../harness/webgpu/index.html", import.meta.url), type: "text/html; charset=utf-8" } ],
     [ "/run.js", { path: new URL("../harness/webgpu/run.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/computePipeline.js", { path: new URL("../harness/webgpu/computePipeline.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/CjsWebGPUDevice.js", { path: new URL("../src/CjsWebGPUDevice.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/packageDraw.js", { path: new URL("../src/core/packageDraw.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/spaceObjectMainBindings.js", { path: new URL("../src/core/spaceObjectMainBindings.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
@@ -523,7 +524,9 @@ async function Main()
         {
             console.log(
                 `Compiled ${result.preparedMatrix.uniqueShaderModules} unique emitted modules and prepared ` +
-                `${result.preparedMatrix.uniquePipelines} unique pipelines from ${result.preparedMatrix.label}, ` +
+                `${result.preparedMatrix.uniquePipelines} unique pipelines ` +
+                `(${result.preparedMatrix.uniqueRenderPipelines} render, ` +
+                `${result.preparedMatrix.uniqueComputePipelines} compute) from ${result.preparedMatrix.label}, ` +
                 `covering ${result.preparedMatrix.coveredShaderOccurrences} emitted stage occurrences and ` +
                 `${result.preparedMatrix.coveredOccurrences} ready permutation/pass occurrences with 0 WGSL warnings.`
             );
