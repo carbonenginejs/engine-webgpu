@@ -180,15 +180,21 @@ function validateBackendRecord(backend, record)
       fail(`${backend}:${variant.id} has inconsistent pass provenance`);
     }
     positiveInteger(variant.occurrences, `${backend}:${variant.id}.occurrences`);
-    if (!Array.isArray(variant.stageDigests) || variant.stageDigests.length !== 2
-      || !variant.stageDigests.some((entry) => entry.stageName === "vertex")
-      || !variant.stageDigests.some((entry) => entry.stageName === "pixel")
-      || variant.stageDigests.some((entry) => !stageVariants.has(entry.digest)))
+    const stageDigests = Array.isArray(variant.stageDigests) ? variant.stageDigests : [];
+    const stageNames = new Set(stageDigests.map((entry) => entry?.stageName));
+    if (!stageDigests.length || stageNames.size !== stageDigests.length
+      || stageDigests.some((entry) => typeof entry?.stageName !== "string" || !entry.stageName
+        || !stageVariants.has(entry.digest)
+        || stageVariants.get(entry.digest).stage !== entry.stageName))
     {
-      fail(`${backend}:${variant.id} does not reference exactly two qualified stage variants`);
+      fail(`${backend}:${variant.id} has invalid qualified stage references`);
     }
     if (variant.status === "ready")
     {
+      if (stageDigests.length !== 2 || !stageNames.has("vertex") || !stageNames.has("pixel"))
+      {
+        fail(`${backend}:${variant.id} ready pass does not reference exactly vertex+pixel`);
+      }
       validateReadyWgsl(variant);
       readyPassOccurrences += variant.occurrences;
       readyPassVariants += 1;

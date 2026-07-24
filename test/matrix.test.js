@@ -62,6 +62,7 @@ function stageVariant(digest, key, stage, code)
     keys: [ key ],
     occurrences: 2,
     frontEnd: "qualified",
+    stage: key.split(".").at(-1),
     wgsl: "emitted",
     independentShader: { stage, entryPoint: "main", code }
   };
@@ -176,6 +177,64 @@ test("effect matrix conversion prepares each ready variant once while preserving
   assert.throws(() => buildMatrixPipelines(unsupported), /version 1 or 2 CJS_WGSL_SET/u);
 });
 
+test("effect matrix conversion validates and skips unsupported geometry pass variants", () =>
+{
+  const matrix = qualifiedMatrix();
+  const backend = matrix.backends.dx11;
+  backend.stageVariants.push({
+    digest: "geometry-a",
+    keys: [ "Main.pass0.geometry" ],
+    occurrences: 2,
+    frontEnd: "qualified",
+    stage: "geometry",
+    wgsl: "unsupported",
+    independentShader: null,
+    reason: "WGSL geometry stages are not supported"
+  });
+  backend.stages = {
+    ...backend.stages,
+    occurrences: 6,
+    frontEndQualifiedOccurrences: 6,
+    emittedWgslOccurrences: 4,
+    unsupportedWgslOccurrences: 2,
+    uniquePrograms: 3,
+    uniqueFrontEndQualifiedPrograms: 3,
+    uniqueEmittedWgslPrograms: 2,
+    uniqueUnsupportedWgslPrograms: 1
+  };
+  const unsupported = {
+    ...backend.passVariants[0],
+    id: "variant-geometry",
+    status: "unsupported",
+    stageDigests: [
+      ...backend.passVariants[0].stageDigests,
+      { stageName: "geometry", digest: "geometry-a" }
+    ],
+    wgsl: null
+  };
+  backend.passVariants = [ unsupported ];
+  backend.passes = {
+    ...backend.passes,
+    readyOccurrences: 0,
+    unsupportedOccurrences: 2,
+    uniqueReadyVariants: 0,
+    uniqueUnsupportedVariants: 1
+  };
+  backend.bodyResults.forEach((body) =>
+  {
+    body.passes = [ {
+      passKey: unsupported.passKey,
+      variantId: unsupported.id,
+      status: unsupported.status
+    } ];
+  });
+
+  const result = buildMatrixPipelines(matrix);
+  assert.equal(result.uniquePipelines, 0);
+  assert.equal(result.coveredOccurrences, 0);
+  assert.equal(result.uniqueShaderModules, 2);
+});
+
 test("effect matrix conversion rejects malformed ready records", () =>
 {
   assert.throws(() => buildMatrixPipelines({}), /version 1/u);
@@ -195,4 +254,12 @@ test("effect matrix conversion rejects malformed ready records", () =>
   const truncated = qualifiedMatrix();
   truncated.backends.dx11.bodyResults.pop();
   assert.throws(() => buildMatrixPipelines(truncated), /body-result coverage is incomplete/u);
+
+  const mismatchedStage = qualifiedMatrix();
+  mismatchedStage.backends.dx11.passVariants[0].stageDigests[0].stageName = "geometry";
+  assert.throws(() => buildMatrixPipelines(mismatchedStage), /invalid qualified stage references/u);
+
+  const failedPass = qualifiedMatrix();
+  failedPass.backends.dx11.passVariants[0].status = "failed";
+  assert.throws(() => buildMatrixPipelines(failedPass), /invalid pass status/u);
 });
