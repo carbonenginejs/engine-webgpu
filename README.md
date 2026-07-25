@@ -115,7 +115,7 @@ explicit `shipData`.
 This engine consumes CEWGPU bytes produced either by the browser-safe
 `CjsFormatWebgpu` class or by an offline tools-core build. Agents needing an
 indexed EVE corpus, build report, harness input, or persistent resource overlay
-must use the canonical builder from `E:\carbonenginejs-org\tools-core`:
+must use the canonical builder supplied by `@carbonenginejs/tools-core`:
 
 ```powershell
 npm.cmd run build:shader:webgpu -- --shader-target eve-webgpu --build latest --out <output>
