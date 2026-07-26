@@ -51,7 +51,9 @@ transposes logical matrices once into Carbon cbuffer register-row order while
 copying already GPU-form custom-mask slots unchanged.
 
 The standalone harness qualifies synthetic static and skinned QuadV5 draws
-without loading SOF, a Trinity graph, production defaults, or an EVE asset.
+through a provisional Trinity-shaped batch dispatcher without loading SOF, a
+Trinity graph, production defaults, or an EVE asset. The dispatcher imports no
+runtime package and is not yet a public renderer-composition contract.
 
 ## Documentation
 

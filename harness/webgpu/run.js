@@ -13,6 +13,7 @@ import {
 } from "/quadV5Fixture.js";
 import { CjsWebGPUDevice } from "/CjsWebGPUDevice.js";
 import { buildEveSpaceObjectMainUniformData } from "/spaceObjectMainBindings.js";
+import { CjsWebGPUTrinityBatchDispatcher } from "/trinityBatchDispatcher.js";
 
 const WIDTH = QUADV5_TARGET_WIDTH;
 const HEIGHT = QUADV5_TARGET_HEIGHT;
@@ -494,6 +495,10 @@ async function CreateQuadV5GpuResources(webgpu, records)
 {
     const values = createQuadV5FixtureValues(WIDTH, HEIGHT);
     const skinned = records[0]?.variant === "skinned";
+    const geometrySource = Object.freeze({
+        kind: "synthetic-quadv5",
+        variant: skinned ? "skinned" : "static"
+    });
     const texturePayloads = Object.fromEntries(values.textures
         .filter((entry) => entry.dimension === "2d")
         .map((entry) => [
@@ -630,6 +635,7 @@ async function CreateQuadV5GpuResources(webgpu, records)
             bindingValues: createQuadV5MainBindingValues(WIDTH, HEIGHT),
             resourcesByBackend,
             geometry: bundle.geometries.main,
+            geometrySource,
             bundle,
             destroy()
             {
@@ -646,6 +652,87 @@ async function CreateQuadV5GpuResources(webgpu, records)
         bundle.Destroy();
         throw error;
     }
+}
+
+function CreateQuadV5TrinityBatch(record, fixture)
+{
+    return Object.freeze({
+        material: record,
+        shader: record.pipeline,
+        geometrySource: Object.freeze({
+            geometry: fixture.geometrySource,
+            meshIndex: 0,
+            areaIndex: 0,
+            count: 1,
+            reversed: false
+        }),
+        objectData: fixture.bindingValues,
+        topology: 4,
+        indexCountPerInstance: fixture.geometry.indexCount,
+        instanceCount: 1,
+        startIndexLocation: 0,
+        baseVertexLocation: 0,
+        startInstanceLocation: 0,
+        renderingMode: 0,
+        pickingData: 0,
+        groupCount: 1
+    });
+}
+
+function CreateQuadV5TrinityDispatcher(webgpu, fixture)
+{
+    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+        ResolveMaterial(record)
+        {
+            return {
+                pipeline: record.pipeline,
+                prepareOptions: { warningsAsErrors: true },
+                recipe: {
+                    label: `QuadV5 ${record.label} Main.pass0`,
+                    vertex: { buffers: fixture.geometry.vertexBufferLayouts },
+                    fragment: {
+                        targets: [ { format: "rgba8unorm" }, { format: "rgba8unorm" } ]
+                    },
+                    primitive: { cullMode: "none" }
+                }
+            };
+        },
+        ResolveGeometry(source)
+        {
+            Assert(
+                source?.geometry === fixture.geometrySource
+                    && source.meshIndex === 0
+                    && source.areaIndex === 0
+                    && source.count === 1
+                    && source.reversed === false,
+                "QuadV5 batch references an unknown geometry source"
+            );
+            return {
+                geometry: fixture.geometry,
+                indexed: true
+            };
+        },
+        ResolveBindings(batch)
+        {
+            const record = batch.material;
+            Assert(
+                batch.objectData === fixture.bindingValues,
+                `QuadV5 ${record.label} batch references unknown object data`
+            );
+            return {
+                uniformData: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    new Map(Object.entries(buildEveSpaceObjectMainUniformData(record, batch.objectData))),
+                    `QuadV5 ${record.label} uniform data`
+                ),
+                resources: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    fixture.resourcesByBackend.get(record.backend),
+                    `QuadV5 ${record.label} resources`
+                )
+            };
+        }
+    });
 }
 
 function PixelOffset(x, y)
@@ -810,46 +897,21 @@ async function RunQuadV5Comparison(webgpu)
 
     const device = webgpu.GetDevice();
     const fixture = await CreateQuadV5GpuResources(webgpu, records);
+    const dispatcher = CreateQuadV5TrinityDispatcher(webgpu, fixture);
     const instances = [];
     let warningCount = 0;
     try
     {
         for (const record of records)
         {
-            const uniformData = ScopeFixtureBindingValues(
-                record.pipeline,
-                new Map(Object.entries(buildEveSpaceObjectMainUniformData(record, fixture.bindingValues))),
-                `QuadV5 ${record.label} uniform data`
-            );
-            const resources = ScopeFixtureBindingValues(
-                record.pipeline,
-                fixture.resourcesByBackend.get(record.backend),
-                `QuadV5 ${record.label} resources`
-            );
-            const prepared = await webgpu.PreparePipeline(record.pipeline, { warningsAsErrors: true });
-            warningCount += prepared.diagnostics.filter((entry) => entry.type === "warning").length;
-            const livePipeline = await webgpu.CreateRenderPipeline(prepared, {
-                label: `QuadV5 ${record.label} Main.pass0`,
-                vertex: { buffers: fixture.geometry.vertexBufferLayouts },
-                fragment: {
-                    targets: [ { format: "rgba8unorm" }, { format: "rgba8unorm" } ]
-                },
-                primitive: { topology: "triangle-list", cullMode: "none" }
-            });
-            let bindingSet = null;
+            let preparedBatch = null;
             const targets = [];
             const readbacks = [];
             try
             {
-                bindingSet = webgpu.CreateBindingSet(livePipeline, {
-                    uniformData,
-                    resources
-                });
-                const draw = webgpu.CreateDraw(livePipeline, {
-                    bindingSet,
-                    geometry: fixture.geometry,
-                    draw: { indexCount: fixture.geometry.indexCount }
-                });
+                preparedBatch = await dispatcher.Prepare(CreateQuadV5TrinityBatch(record, fixture));
+                warningCount += preparedBatch.prepared.diagnostics
+                    .filter((entry) => entry.type === "warning").length;
                 for (let targetIndex = 0; targetIndex < QUADV5_CLEAR_TARGETS.length; targetIndex += 1)
                 {
                     targets.push(device.createTexture({
@@ -867,11 +929,11 @@ async function RunQuadV5Comparison(webgpu)
                         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
                     }));
                 }
-                instances.push({ record, draw, bindingSet, targets, readbacks, snapshots: [] });
+                instances.push({ record, preparedBatch, targets, readbacks, snapshots: [] });
             }
             catch (error)
             {
-                bindingSet?.Destroy();
+                if (preparedBatch) dispatcher.Destroy(preparedBatch);
                 for (const buffer of readbacks)
                 {
                     buffer.destroy();
@@ -901,7 +963,7 @@ async function RunQuadV5Comparison(webgpu)
                     storeOp: "store"
                 }))
             });
-            webgpu.EncodeDraw(pass, instance.draw);
+            dispatcher.Encode(pass, instance.preparedBatch);
             pass.end();
             instance.targets.forEach((texture, targetIndex) =>
             {
@@ -970,7 +1032,7 @@ async function RunQuadV5Comparison(webgpu)
     {
         for (const instance of instances)
         {
-            instance.bindingSet.Destroy();
+            dispatcher.Destroy(instance.preparedBatch);
             for (const buffer of instance.readbacks)
             {
                 if (buffer.mapState === "mapped") buffer.unmap();

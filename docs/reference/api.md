@@ -28,6 +28,10 @@ The resource helpers accept complete caller-owned data. They do not select
 effects, resolve paths, infer vertex layouts, or create production uniform
 values.
 
+The source tree also contains an internal
+`CjsWebGPUTrinityBatchDispatcher` conformance prototype. It is intentionally
+not exported from the package root and is not part of the supported public API.
+
 ## Space-object uniform serialization
 
 - `EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES` exposes the bounded struct sizes.

@@ -48,6 +48,13 @@ Fixture creation and pixel expectations remain harness responsibilities, so
 the reusable engine class does not acquire resource paths or infer format/
 geometry policy.
 
+The static and skinned QuadV5 modes additionally route each draw through the
+internal `CjsWebGPUTrinityBatchDispatcher`. The fixture constructs the
+duck-typed fields of a transient `Tr2RenderBatch`; injected hooks resolve its
+material, geometry source, and object data to the existing WebGPU resources.
+This tests the engine crossing without importing `runtime-trinity`, loading a
+Trinity graph, or presenting the prototype as a public composition API.
+
 To compile a candidate module while preserving the existing render/readback
 gate, pass WGSL text by file path:
 

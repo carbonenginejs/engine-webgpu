@@ -65,12 +65,38 @@ encoding rather than applying `MATRIX` a second time.
 CEWGPU bytes can be decoded by an injected reader. Offline corpus tooling can
 produce packages for qualification, but it is not an engine dependency.
 
+## Provisional Trinity batch boundary
+
+The internal `CjsWebGPUTrinityBatchDispatcher` proves the first engine-facing
+`Tr2RenderBatch` shape without importing `runtime-trinity`. It accepts the
+transient batch's material, geometry source, object-data reference, D3D
+topology, and draw arguments. Injected composition hooks resolve those CPU
+references to an already-decoded pipeline recipe, WebGPU-owned geometry, and
+complete binding values.
+
+The dispatcher owns only the binding set it creates. Geometry, textures,
+samplers, decoded packages, and logical values remain owned by their
+resolvers. It maps indexed and non-indexed draw arguments, rejects unsupported
+topologies and incompatible pipeline recipes, and rolls back its binding set
+when draw creation fails.
+
+This class is internal and is not exported from the package root. It is a
+conformance prototype, not a frozen renderer API. The static and skinned
+QuadV5 browser gates use it, and an actual `runtime-trinity` `Tr2RenderBatch`
+passes its duck-typed contract. A later render-step executor still needs to
+own frame/pass planning and batch-map dispatch.
+
+The contract consumes already-decoded pipeline data. Moving shader format
+readers between format and resource packages therefore does not change this
+boundary; only the injected reader or material resolver changes.
+
 ## Current non-goals
 
 There is no dependency on `runtime-core`, `runtime-resource`, or
 `runtime-trinity`. The package does not load GR2 or CMF geometry, resolve
 resource paths, extract scene state, choose production material or per-object
-values, translate complete Carbon render state, or schedule a render loop.
+values, translate complete Carbon render state, dispatch a Trinity batch map,
+or schedule a render loop.
 
 The public engine texture adapter currently uploads only explicit,
 single-mip, uncompressed 2D RGBA8 data. The standalone harness may create

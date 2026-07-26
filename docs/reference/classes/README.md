@@ -94,3 +94,13 @@ Immutable WebGPU-facing sampler binding descriptor.
 - Source: `src/CjsWebGPUSampler.js`
 - Visibility: Public
 - Kind: CarbonEngineJS
+
+<!-- class:CjsWebGPUTrinityBatchDispatcher -->
+## `CjsWebGPUTrinityBatchDispatcher`
+
+Internal conformance adapter from a duck-typed Trinity batch to one WebGPU draw.
+
+- Export: Not exported
+- Source: `src/core/trinityBatchDispatcher.js`
+- Visibility: Internal
+- Kind: CarbonEngineJS
