@@ -112,3 +112,13 @@ Internal ordered recorder for duck-typed Trinity render-step intents.
 - Source: `src/core/trinityStepRecorder.js`
 - Visibility: Internal
 - Kind: CarbonEngineJS
+
+<!-- class:CjsWebGPUTrinityPassEncoder -->
+## `CjsWebGPUTrinityPassEncoder`
+
+Internal encoder for caller-owned WebGPU pass plans over prepared Trinity batch maps.
+
+- Export: Not exported
+- Source: `src/core/trinityPassEncoder.js`
+- Visibility: Internal
+- Kind: CarbonEngineJS

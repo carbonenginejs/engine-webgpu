@@ -61,6 +61,8 @@ geometry. This tests
 the engine crossing without importing `runtime-trinity`, loading a Trinity
 graph, depending on grouped or indirect GDPR optimization, inferring pass
 policy, or presenting the prototype as a public composition API.
+The final draw is encoded through a one-pass caller-authored plan, which keeps
+the MRT attachments and opaque selection explicit.
 
 To compile a candidate module while preserving the existing render/readback
 gate, pass WGSL text by file path:

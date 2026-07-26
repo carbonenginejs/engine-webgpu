@@ -14,6 +14,7 @@ import {
 import { CjsWebGPUDevice } from "/CjsWebGPUDevice.js";
 import { buildEveSpaceObjectMainUniformData } from "/spaceObjectMainBindings.js";
 import { CjsWebGPUTrinityBatchDispatcher } from "/trinityBatchDispatcher.js";
+import { CjsWebGPUTrinityPassEncoder } from "/trinityPassEncoder.js";
 
 const WIDTH = QUADV5_TARGET_WIDTH;
 const HEIGHT = QUADV5_TARGET_HEIGHT;
@@ -936,6 +937,7 @@ async function RunQuadV5Comparison(webgpu)
     const device = webgpu.GetDevice();
     const fixture = await CreateQuadV5GpuResources(webgpu, records);
     const dispatcher = CreateQuadV5TrinityDispatcher(webgpu, fixture);
+    const passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
     const instances = [];
     let warningCount = 0;
     try
@@ -995,22 +997,26 @@ async function RunQuadV5Comparison(webgpu)
         const encoder = device.createCommandEncoder({ label: "QuadV5 DX11/DX12 comparison encoder" });
         for (const instance of instances)
         {
-            const pass = encoder.beginRenderPass({
-                label: `QuadV5 ${instance.record.label} Main.pass0`,
-                colorAttachments: instance.targets.map((texture, targetIndex) => ({
-                    view: texture.createView(),
-                    clearValue: {
-                        r: QUADV5_CLEAR_TARGETS[targetIndex][0] / 255,
-                        g: QUADV5_CLEAR_TARGETS[targetIndex][1] / 255,
-                        b: QUADV5_CLEAR_TARGETS[targetIndex][2] / 255,
-                        a: QUADV5_CLEAR_TARGETS[targetIndex][3] / 255
-                    },
-                    loadOp: "clear",
-                    storeOp: "store"
-                }))
-            });
-            dispatcher.EncodeBatchType(pass, instance.preparedBatchMap, TRINITY_BATCH_TYPE_OPAQUE);
-            pass.end();
+            passEncoder.Encode(encoder, [ {
+                descriptor: {
+                    label: `QuadV5 ${instance.record.label} Main.pass0`,
+                    colorAttachments: instance.targets.map((texture, targetIndex) => ({
+                        view: texture.createView(),
+                        clearValue: {
+                            r: QUADV5_CLEAR_TARGETS[targetIndex][0] / 255,
+                            g: QUADV5_CLEAR_TARGETS[targetIndex][1] / 255,
+                            b: QUADV5_CLEAR_TARGETS[targetIndex][2] / 255,
+                            a: QUADV5_CLEAR_TARGETS[targetIndex][3] / 255
+                        },
+                        loadOp: "clear",
+                        storeOp: "store"
+                    }))
+                },
+                selections: [ {
+                    preparedBatchMap: instance.preparedBatchMap,
+                    batchType: TRINITY_BATCH_TYPE_OPAQUE
+                } ]
+            } ]);
             instance.targets.forEach((texture, targetIndex) =>
             {
                 encoder.copyTextureToBuffer(

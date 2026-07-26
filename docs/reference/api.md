@@ -44,6 +44,10 @@ implements the duck-typed `Tr2RenderContext.SetStepExecutor(...)` callbacks,
 preserves nested render-step intent order, and defers asynchronous WebGPU work
 until after the synchronous render-job run.
 
+`CjsWebGPUTrinityPassEncoder` synchronously encodes caller-authored pass
+descriptors and prepared batch-map selections into an existing command
+encoder. It does not choose pass order, techniques, attachments, or submission.
+
 ## Space-object uniform serialization
 
 - `EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES` exposes the bounded struct sizes.

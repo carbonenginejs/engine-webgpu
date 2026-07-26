@@ -122,6 +122,15 @@ emitted before the child, then the parent resumes after the child. WebGPU
 pipeline preparation, pass creation, encoding, and submission remain a later
 asynchronous phase; none run inside Trinity's synchronous `Run(...)`.
 
+The internal `CjsWebGPUTrinityPassEncoder` proves the synchronous encoding end
+of that split. A caller supplies an existing command encoder plus ordered
+render-pass descriptors and prepared batch-map selections. Multiple batch
+types may share one pass, and separately prepared maps may be selected when a
+different technique is required. Optional synchronous pass configuration can
+set viewport or other dynamic state. The encoder ends every pass it begins but
+does not own attachments, finish command buffers, submit work, or assign EVE
+meaning to a batch type.
+
 The contract consumes already-decoded pipeline data. Moving shader format
 readers between format and resource packages therefore does not change this
 boundary; only the injected reader or material resolver changes.

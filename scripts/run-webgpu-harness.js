@@ -190,6 +190,7 @@ const ASSETS = new Map([
     [ "/packageDraw.js", { path: new URL("../src/core/packageDraw.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/spaceObjectMainBindings.js", { path: new URL("../src/core/spaceObjectMainBindings.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/trinityBatchDispatcher.js", { path: new URL("../src/core/trinityBatchDispatcher.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/trinityPassEncoder.js", { path: new URL("../src/core/trinityPassEncoder.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadV5Fixture.js", { path: new URL("../harness/webgpu/quadV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/freeze.js", { path: new URL("../src/core/freeze.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/config.json", {
