@@ -6,6 +6,7 @@ import { validateDecalCounterV5PackagePair } from "../harness/webgpu/decalCounte
 import { validateDecalCylindricV5PackagePair } from "../harness/webgpu/decalCylindricV5Fixture.js";
 import { validateDecalGlowCylindricV5PackagePair } from "../harness/webgpu/decalGlowCylindricV5Fixture.js";
 import { validateDecalGlowV5PackagePair } from "../harness/webgpu/decalGlowV5Fixture.js";
+import { validateDecalHoleV5PackagePair } from "../harness/webgpu/decalHoleV5Fixture.js";
 import { validateDecalV5PackagePair } from "../harness/webgpu/decalV5Fixture.js";
 import { validateQuadV5PackagePair } from "../harness/webgpu/quadV5Fixture.js";
 
@@ -39,6 +40,7 @@ const DRAW_QUADV5_INDEX = process.argv.indexOf("--draw-quadv5");
 const DRAW_SKINNED_QUADV5_INDEX = process.argv.indexOf("--draw-skinned-quadv5");
 const DRAW_DECALV5_INDEX = process.argv.indexOf("--draw-decalv5");
 const DRAW_DECALCYLINDRICV5_INDEX = process.argv.indexOf("--draw-decalcylindricv5");
+const DRAW_DECALHOLEV5_INDEX = process.argv.indexOf("--draw-decalholev5");
 const DRAW_DECALCOUNTERV5_INDEX = process.argv.indexOf("--draw-decalcounterv5");
 const DRAW_DECALGLOWV5_INDEX = process.argv.indexOf("--draw-decalglowv5");
 const DRAW_DECALGLOWCYLINDRICV5_INDEX =
@@ -65,6 +67,7 @@ const DRAW_QUADV5_PATHS = ACTIVE_QUADV5_INDEX >= 0
 if ([
     DRAW_DECALV5_INDEX,
     DRAW_DECALCYLINDRICV5_INDEX,
+    DRAW_DECALHOLEV5_INDEX,
     DRAW_DECALCOUNTERV5_INDEX,
     DRAW_DECALGLOWV5_INDEX,
     DRAW_DECALGLOWCYLINDRICV5_INDEX
@@ -73,7 +76,9 @@ if ([
 {
     throw new Error("DecalV5 family draw flags are mutually exclusive");
 }
-const ACTIVE_DECALV5_INDEX = DRAW_DECALCYLINDRICV5_INDEX >= 0
+const ACTIVE_DECALV5_INDEX = DRAW_DECALHOLEV5_INDEX >= 0
+    ? DRAW_DECALHOLEV5_INDEX
+    : (DRAW_DECALCYLINDRICV5_INDEX >= 0
     ? DRAW_DECALCYLINDRICV5_INDEX
     : (DRAW_DECALGLOWCYLINDRICV5_INDEX >= 0
     ? DRAW_DECALGLOWCYLINDRICV5_INDEX
@@ -81,21 +86,25 @@ const ACTIVE_DECALV5_INDEX = DRAW_DECALCYLINDRICV5_INDEX >= 0
         ? DRAW_DECALGLOWV5_INDEX
         : (DRAW_DECALCOUNTERV5_INDEX >= 0
             ? DRAW_DECALCOUNTERV5_INDEX
-            : DRAW_DECALV5_INDEX)));
-const DECALV5_VARIANT = DRAW_DECALCYLINDRICV5_INDEX >= 0
+            : DRAW_DECALV5_INDEX))));
+const DECALV5_VARIANT = DRAW_DECALHOLEV5_INDEX >= 0
+    ? "hole"
+    : (DRAW_DECALCYLINDRICV5_INDEX >= 0
     ? "cylindric"
     : (DRAW_DECALGLOWCYLINDRICV5_INDEX >= 0
     ? "glowCylindric"
     : (DRAW_DECALGLOWV5_INDEX >= 0
         ? "glow"
-        : (DRAW_DECALCOUNTERV5_INDEX >= 0 ? "counter" : "standard")));
-const DECALV5_FLAG = DECALV5_VARIANT === "cylindric"
+        : (DRAW_DECALCOUNTERV5_INDEX >= 0 ? "counter" : "standard"))));
+const DECALV5_FLAG = DECALV5_VARIANT === "hole"
+    ? "--draw-decalholev5"
+    : (DECALV5_VARIANT === "cylindric"
     ? "--draw-decalcylindricv5"
     : (DECALV5_VARIANT === "glowCylindric"
     ? "--draw-decalglowcylindricv5"
     : (DECALV5_VARIANT === "glow"
         ? "--draw-decalglowv5"
-        : (DECALV5_VARIANT === "counter" ? "--draw-decalcounterv5" : "--draw-decalv5")));
+        : (DECALV5_VARIANT === "counter" ? "--draw-decalcounterv5" : "--draw-decalv5"))));
 if (ACTIVE_DECALV5_INDEX >= 0 && ACTIVE_QUADV5_INDEX >= 0)
 {
     throw new Error(`${DECALV5_FLAG} cannot be combined with a QuadV5 draw flag`);
@@ -282,7 +291,9 @@ async function ReadDecalV5Packages(paths, variant)
             pipeline: pipeline.ToJSON()
         });
     }
-    const validatePair = variant === "cylindric"
+    const validatePair = variant === "hole"
+        ? validateDecalHoleV5PackagePair
+        : (variant === "cylindric"
         ? validateDecalCylindricV5PackagePair
         : (variant === "glowCylindric"
         ? validateDecalGlowCylindricV5PackagePair
@@ -290,7 +301,7 @@ async function ReadDecalV5Packages(paths, variant)
             ? validateDecalGlowV5PackagePair
             : (variant === "counter"
                 ? validateDecalCounterV5PackagePair
-                : validateDecalV5PackagePair)));
+                : validateDecalV5PackagePair))));
     validatePair(records);
     return records;
 }
@@ -323,6 +334,7 @@ const ASSETS = new Map([
     [ "/decalCylindricV5Fixture.js", { path: new URL("../harness/webgpu/decalCylindricV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/decalGlowCylindricV5Fixture.js", { path: new URL("../harness/webgpu/decalGlowCylindricV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/decalGlowV5Fixture.js", { path: new URL("../harness/webgpu/decalGlowV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/decalHoleV5Fixture.js", { path: new URL("../harness/webgpu/decalHoleV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/decalV5Fixture.js", { path: new URL("../harness/webgpu/decalV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadV5Fixture.js", { path: new URL("../harness/webgpu/quadV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/freeze.js", { path: new URL("../src/core/freeze.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
@@ -335,6 +347,7 @@ const ASSETS = new Map([
             drawQuadV5: !!QUADV5_DRAW,
             drawDecalV5: !!DECALV5_DRAW && DECALV5_VARIANT === "standard",
             drawDecalCylindricV5: !!DECALV5_DRAW && DECALV5_VARIANT === "cylindric",
+            drawDecalHoleV5: !!DECALV5_DRAW && DECALV5_VARIANT === "hole",
             drawDecalCounterV5: !!DECALV5_DRAW && DECALV5_VARIANT === "counter",
             drawDecalGlowV5: !!DECALV5_DRAW && DECALV5_VARIANT === "glow",
             drawDecalGlowCylindricV5:
@@ -393,7 +406,9 @@ if (QUADV5_DRAW)
 }
 if (DECALV5_DRAW)
 {
-    const route = DECALV5_VARIANT === "cylindric"
+    const route = DECALV5_VARIANT === "hole"
+        ? "/draw-decalholev5.json"
+        : (DECALV5_VARIANT === "cylindric"
         ? "/draw-decalcylindricv5.json"
         : (DECALV5_VARIANT === "glowCylindric"
         ? "/draw-decalglowcylindricv5.json"
@@ -401,7 +416,7 @@ if (DECALV5_DRAW)
             ? "/draw-decalglowv5.json"
             : (DECALV5_VARIANT === "counter"
                 ? "/draw-decalcounterv5.json"
-                : "/draw-decalv5.json")));
+                : "/draw-decalv5.json"))));
     ASSETS.set(route, {
         body: JSON.stringify(DECALV5_DRAW),
         type: "application/json; charset=utf-8"
@@ -640,6 +655,22 @@ async function Main()
                 `(${result.decalCylindricV5Comparison.statistics.coverage} active pixels; ` +
                 `angular/axial alpha MAE ${alpha.angularMeanAbsoluteError.toFixed(3)}/` +
                 `${alpha.axialMeanAbsoluteError.toFixed(3)} bytes).`
+            );
+        }
+        if (result.decalHoleV5Comparison)
+        {
+            const hole = result.decalHoleV5Comparison
+                .textureInfluence.holeProjection;
+            console.log(
+                `Rendered non-bindless DecalHoleV5 body ` +
+                `${result.decalHoleV5Comparison.bodyIndex} from ` +
+                `${result.decalHoleV5Comparison.labels.join(" and ")} from direct ` +
+                `CEWGPU reads; ${result.decalHoleV5Comparison.pixelCount} pixels ` +
+                `matched exactly across ${result.decalHoleV5Comparison.renderCaseCount} ` +
+                `discard/texture cases and both backends with 0 WGSL warnings ` +
+                `(${hole.activePixels} surviving, ${hole.discardedPixels} discarded; ` +
+                `base alpha/RGB MAE ${hole.baseAlphaMeanAbsoluteError.toFixed(3)}/` +
+                `${hole.baseRgbMeanAbsoluteError.toFixed(3)} bytes).`
             );
         }
         if (result.decalCounterV5Comparison)

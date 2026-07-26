@@ -17,6 +17,20 @@ import {
     validateDecalCylindricV5PackagePair
 } from "/decalCylindricV5Fixture.js";
 import {
+    DECAL_HOLE_V5_AXIAL_TRANSPARENCY,
+    DECAL_HOLE_V5_BASE_TRANSPARENCY,
+    DECAL_HOLE_V5_CUBE_ALPHA,
+    DECAL_HOLE_V5_GLOW_COLOR,
+    DECAL_HOLE_V5_HOLE_ALPHA,
+    DECAL_HOLE_V5_HOLE_RED,
+    DECAL_HOLE_V5_TARGET_HEIGHT,
+    DECAL_HOLE_V5_TARGET_WIDTH,
+    DECAL_HOLE_V5_VERTEX_BUFFER_LAYOUT,
+    createDecalHoleV5FixtureValues,
+    getDecalHoleV5ResourcePlan,
+    validateDecalHoleV5PackagePair
+} from "/decalHoleV5Fixture.js";
+import {
     DECAL_GLOW_V5_TARGET_HEIGHT,
     DECAL_GLOW_V5_TARGET_WIDTH,
     DECAL_GLOW_V5_VERTEX_BUFFER_LAYOUT,
@@ -86,6 +100,20 @@ const DECAL_FAMILY_V5_PROFILES = Object.freeze({
         createValues: createDecalCylindricV5FixtureValues,
         getResourcePlan: getDecalCylindricV5ResourcePlan,
         validatePair: validateDecalCylindricV5PackagePair,
+        resolveUniformData: (record, values) => Object.freeze({
+            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
+            ...values.decalUniformData
+        })
+    }),
+    hole: Object.freeze({
+        label: "DecalHoleV5",
+        route: "/draw-decalholev5.json",
+        width: DECAL_HOLE_V5_TARGET_WIDTH,
+        height: DECAL_HOLE_V5_TARGET_HEIGHT,
+        vertexLayout: DECAL_HOLE_V5_VERTEX_BUFFER_LAYOUT,
+        createValues: createDecalHoleV5FixtureValues,
+        getResourcePlan: getDecalHoleV5ResourcePlan,
+        validatePair: validateDecalHoleV5PackagePair,
         resolveUniformData: (record, values) => Object.freeze({
             ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
             ...values.decalUniformData
@@ -833,7 +861,7 @@ async function CreateDecalV5GpuResources(webgpu, records, profile)
         if (cubeDefinition)
         {
             cubeTexture = device.createTexture({
-                label: `${profile.label} EveSpaceSceneEnvMap`,
+                label: `${profile.label} ${cubeDefinition.name}`,
                 size: {
                     width: cubeDefinition.width,
                     height: cubeDefinition.height,
@@ -855,7 +883,7 @@ async function CreateDecalV5GpuResources(webgpu, records, profile)
                 );
             }
             cubeView = cubeTexture.createView({
-                label: `${profile.label} EveSpaceSceneEnvMap cube view`,
+                label: `${profile.label} ${cubeDefinition.name} cube view`,
                 dimension: "cube"
             });
         }
@@ -879,8 +907,8 @@ async function CreateDecalV5GpuResources(webgpu, records, profile)
                 for (const texture of plan.textures)
                 {
                     const resourceName = textureOverrides[texture.name] ?? texture.name;
-                    const resource = texture.name === "EveSpaceSceneEnvMap"
-                        ? cubeView
+                    const resource = texture.viewDimension === "cube"
+                        ? (resourceName === cubeDefinition?.name ? cubeView : null)
                         : bundle.textures[resourceName];
                     Assert(
                         resource,
@@ -1165,6 +1193,14 @@ function PixelEquals(bytes, x, y, expected)
     return expected.every((value, component) => bytes[offset + component] === value);
 }
 
+function PixelRgbEquals(left, right, x, y)
+{
+    const offset = PixelOffset(x, y);
+    return left[offset] === right[offset]
+        && left[offset + 1] === right[offset + 1]
+        && left[offset + 2] === right[offset + 2];
+}
+
 function PixelNeighborhoodHasDraw(bytes, x, y, clear, radius)
 {
     for (let dy = -radius; dy <= radius; dy += 1)
@@ -1362,6 +1398,15 @@ function AssertDecalV5Silhouette(bytes, label, variant, resourceVariant = "base"
         );
         Assert(colors.size >= 2, `${label} must contain varied counter output rather than a constant fill`);
     }
+    else if (variant === "hole")
+    {
+        Assert(coverage >= 2700 && coverage <= 2730, `${label} has implausible hole coverage ${coverage}`);
+        Assert(
+            minimumX <= 4 && maximumX >= 59 && minimumY <= 4 && maximumY >= 59,
+            `${label} has implausible hole bounds ${minimumX}..${maximumX}, ${minimumY}..${maximumY}`
+        );
+        Assert(colors.size >= 8, `${label} must contain varied hole output rather than a constant fill`);
+    }
     else if (variant === "glow" || variant === "glowCylindric")
     {
         Assert(coverage >= 900 && coverage <= 1800, `${label} has implausible glow coverage ${coverage}`);
@@ -1455,6 +1500,31 @@ function SampleRepeatBilinear8x8(u, v, texel)
     const bottom = texel(x.lower, y.upper) * (1 - x.fraction)
         + texel(x.upper, y.upper) * x.fraction;
     return (top * (1 - y.fraction) + bottom * y.fraction) / 255;
+}
+
+function SampleZeroBorderBilinear8x8(u, v, texel)
+{
+    const locationX = u * 8 - 0.5;
+    const locationY = v * 8 - 0.5;
+    const lowerX = Math.floor(locationX);
+    const lowerY = Math.floor(locationY);
+    const fractionX = locationX - lowerX;
+    const fractionY = locationY - lowerY;
+    const read = (x, y) => x < 0 || x >= 8 || y < 0 || y >= 8
+        ? 0
+        : texel(x, y);
+    const top = read(lowerX, lowerY) * (1 - fractionX)
+        + read(lowerX + 1, lowerY) * fractionX;
+    const bottom = read(lowerX, lowerY + 1) * (1 - fractionX)
+        + read(lowerX + 1, lowerY + 1) * fractionX;
+    return (top * (1 - fractionY) + bottom * fractionY) / 255;
+}
+
+function LinearToSrgb(value)
+{
+    return value < 0.0031308
+        ? value * 12.92
+        : 1.055 * (value ** (1 / 2.4)) - 0.055;
 }
 
 function AssertCylindricGlowControls(instances)
@@ -1674,6 +1744,218 @@ function AssertCylindricSurfaceAlpha(instances)
     };
 }
 
+function AssertDecalHoleProjection(instances)
+{
+    const snapshots = Object.fromEntries(instances
+        .filter((instance) => instance.record.backend === "dx11")
+        .map((instance) => [ instance.resourceVariant, instance.snapshot ]));
+    const names = [
+        "base",
+        "axialTransparency",
+        "interiorWhiteTransparency",
+        "zeroHole",
+        "insideHole"
+    ];
+    for (const name of names)
+    {
+        Assert(snapshots[name], `DecalHoleV5 ${name} output is missing`);
+    }
+
+    const edgeTexel = (x, y) => x === 0 || x === 7 || y === 0 || y === 7;
+    const sample = (u, v, texel) => SampleZeroBorderBilinear8x8(
+        u,
+        v,
+        (x, y) => edgeTexel(x, y) ? 0 : texel(x, y)
+    );
+    let activePixels = 0;
+    let classifiedPixels = 0;
+    let uncertainTangentPixels = 0;
+    let baseAlphaError = 0;
+    let axialAlphaError = 0;
+    let whiteAlphaError = 0;
+    let baseRgbError = 0;
+    let insideRgbError = 0;
+    let baseAlphaMaximumError = 0;
+    let axialAlphaMaximumError = 0;
+    let whiteAlphaMaximumError = 0;
+    let baseRgbMaximumError = 0;
+    let insideRgbMaximumError = 0;
+    let baseVsZeroChanged = 0;
+    let insideVsZeroChanged = 0;
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            const clear = PixelEquals(snapshots.base, x, y, DECALV5_CLEAR_TARGET);
+            for (const name of names)
+            {
+                Assert(
+                    PixelEquals(snapshots[name], x, y, DECALV5_CLEAR_TARGET) === clear,
+                    `DecalHoleV5 ${name} changed the discard silhouette at (${x}, ${y})`
+                );
+            }
+
+            const worldX = 2 * (x + 0.5) / WIDTH - 1;
+            const worldY = 1 - 2 * (y + 0.5) / HEIGHT;
+            const worldZ = 0.5 + 0.2 * worldX;
+            const cameraDistance = 4.5 - 0.2 * worldX;
+            const rayDenominator =
+                worldX * worldX + worldY * worldY + cameraDistance * cameraDistance;
+            const discriminant =
+                (cameraDistance * cameraDistance
+                    - 24 * (worldX * worldX + worldY * worldY))
+                / rayDenominator;
+            if (Math.abs(discriminant) <= 0.0001)
+            {
+                uncertainTangentPixels += 1;
+            }
+            else
+            {
+                classifiedPixels += 1;
+                Assert(
+                    clear === (discriminant < 0),
+                    `DecalHoleV5 ray/sphere discard drifted at (${x}, ${y})`
+                );
+            }
+            if (clear) continue;
+
+            activePixels += 1;
+            const u = (worldY + 1) * 0.5;
+            const v = (worldZ + 1) * 0.5;
+            const expectedBaseAlpha = sample(
+                u,
+                v,
+                (texelX) => DECAL_HOLE_V5_BASE_TRANSPARENCY[texelX]
+            ) * 255;
+            const expectedAxialAlpha = sample(
+                u,
+                v,
+                (_texelX, texelY) => DECAL_HOLE_V5_AXIAL_TRANSPARENCY[texelY]
+            ) * 255;
+            const expectedWhiteAlpha = sample(u, v, () => 255) * 255;
+            const holeRed = sample(
+                u,
+                v,
+                (texelX) => DECAL_HOLE_V5_HOLE_RED[texelX]
+            );
+            const holeAlpha = sample(
+                u,
+                v,
+                (_texelX, texelY) => DECAL_HOLE_V5_HOLE_ALPHA[texelY]
+            );
+            const insideAlpha = sample(u, v, () => 255);
+            const cubeAlpha = DECAL_HOLE_V5_CUBE_ALPHA / 255;
+            const baseFactor = holeRed + holeAlpha * (cubeAlpha - holeRed);
+            const insideFactor = insideAlpha * cubeAlpha;
+            const offset = PixelOffset(x, y);
+            const alphaErrors = [
+                Math.abs(snapshots.base[offset + 3] - expectedBaseAlpha),
+                Math.abs(snapshots.axialTransparency[offset + 3] - expectedAxialAlpha),
+                Math.abs(
+                    snapshots.interiorWhiteTransparency[offset + 3]
+                        - expectedWhiteAlpha
+                )
+            ];
+            baseAlphaError += alphaErrors[0];
+            axialAlphaError += alphaErrors[1];
+            whiteAlphaError += alphaErrors[2];
+            baseAlphaMaximumError = Math.max(baseAlphaMaximumError, alphaErrors[0]);
+            axialAlphaMaximumError = Math.max(axialAlphaMaximumError, alphaErrors[1]);
+            whiteAlphaMaximumError = Math.max(whiteAlphaMaximumError, alphaErrors[2]);
+            Assert(
+                snapshots.zeroHole[offset + 3] === snapshots.base[offset + 3]
+                    && snapshots.insideHole[offset + 3] === snapshots.base[offset + 3],
+                `DecalHoleV5 hole controls changed transparency at (${x}, ${y})`
+            );
+            for (let component = 0; component < 3; component += 1)
+            {
+                Assert(
+                    snapshots.axialTransparency[offset + component]
+                        === snapshots.base[offset + component]
+                        && snapshots.interiorWhiteTransparency[offset + component]
+                        === snapshots.base[offset + component],
+                    `DecalHoleV5 transparency controls changed RGB at (${x}, ${y})`
+                );
+                Assert(
+                    snapshots.zeroHole[offset + component] === 0,
+                    `DecalHoleV5 zero-hole RGB is nonzero at (${x}, ${y})`
+                );
+                const expectedBase = LinearToSrgb(
+                    DECAL_HOLE_V5_GLOW_COLOR[component] * baseFactor
+                ) * 255;
+                const expectedInside = LinearToSrgb(
+                    DECAL_HOLE_V5_GLOW_COLOR[component] * insideFactor
+                ) * 255;
+                const baseError =
+                    Math.abs(snapshots.base[offset + component] - expectedBase);
+                const insideError =
+                    Math.abs(snapshots.insideHole[offset + component] - expectedInside);
+                baseRgbError += baseError;
+                insideRgbError += insideError;
+                baseRgbMaximumError = Math.max(baseRgbMaximumError, baseError);
+                insideRgbMaximumError = Math.max(insideRgbMaximumError, insideError);
+            }
+            if (!PixelRgbEquals(snapshots.base, snapshots.zeroHole, x, y))
+            {
+                baseVsZeroChanged += 1;
+            }
+            if (!PixelRgbEquals(snapshots.insideHole, snapshots.zeroHole, x, y))
+            {
+                insideVsZeroChanged += 1;
+            }
+        }
+    }
+
+    Assert(
+        classifiedPixels + uncertainTangentPixels === WIDTH * HEIGHT
+            && uncertainTangentPixels <= 4,
+        "DecalHoleV5 tangent exclusion band is unexpectedly broad"
+    );
+    Assert(
+        activePixels >= 2714 && activePixels <= 2722,
+        `DecalHoleV5 ray/sphere coverage ${activePixels} is outside the audited range`
+    );
+    Assert(
+        baseVsZeroChanged / activePixels >= 0.95
+            && insideVsZeroChanged / activePixels >= 0.95,
+        "DecalHoleV5 hole/cube controls do not influence enough surviving pixels"
+    );
+    const baseAlphaMeanAbsoluteError = baseAlphaError / activePixels;
+    const axialAlphaMeanAbsoluteError = axialAlphaError / activePixels;
+    const whiteAlphaMeanAbsoluteError = whiteAlphaError / activePixels;
+    const baseRgbMeanAbsoluteError = baseRgbError / (activePixels * 3);
+    const insideRgbMeanAbsoluteError = insideRgbError / (activePixels * 3);
+    for (const [ label, maximum, mean ] of [
+        [ "base alpha", baseAlphaMaximumError, baseAlphaMeanAbsoluteError ],
+        [ "axial alpha", axialAlphaMaximumError, axialAlphaMeanAbsoluteError ],
+        [ "interior-white alpha", whiteAlphaMaximumError, whiteAlphaMeanAbsoluteError ],
+        [ "base hole RGB", baseRgbMaximumError, baseRgbMeanAbsoluteError ],
+        [ "inside-hole RGB", insideRgbMaximumError, insideRgbMeanAbsoluteError ]
+    ])
+    {
+        Assert(
+            maximum <= 2 && mean <= 1.5,
+            `DecalHoleV5 ${label} oracle drifted: max ${maximum}, MAE ${mean}`
+        );
+    }
+    return {
+        activePixels,
+        discardedPixels: WIDTH * HEIGHT - activePixels,
+        classifiedPixels,
+        uncertainTangentPixels,
+        baseAlphaMaximumError,
+        axialAlphaMaximumError,
+        whiteAlphaMaximumError,
+        baseRgbMaximumError,
+        insideRgbMaximumError,
+        baseAlphaMeanAbsoluteError,
+        axialAlphaMeanAbsoluteError,
+        whiteAlphaMeanAbsoluteError,
+        baseRgbMeanAbsoluteError,
+        insideRgbMeanAbsoluteError
+    };
+}
+
 async function RunQuadV5Comparison(webgpu)
 {
     if (!CONFIG.drawQuadV5) return null;
@@ -1847,15 +2129,18 @@ async function RunQuadV5Comparison(webgpu)
 
 async function RunDecalV5Comparison(webgpu)
 {
-    const variant = CONFIG.drawDecalCylindricV5
-        ? "cylindric"
-        : (CONFIG.drawDecalGlowCylindricV5
-            ? "glowCylindric"
-            : (CONFIG.drawDecalGlowV5
-                ? "glow"
-                : (CONFIG.drawDecalCounterV5 ? "counter" : "standard")));
+    const variant = CONFIG.drawDecalHoleV5
+        ? "hole"
+        : (CONFIG.drawDecalCylindricV5
+            ? "cylindric"
+            : (CONFIG.drawDecalGlowCylindricV5
+                ? "glowCylindric"
+                : (CONFIG.drawDecalGlowV5
+                    ? "glow"
+                    : (CONFIG.drawDecalCounterV5 ? "counter" : "standard"))));
     if (!CONFIG.drawDecalV5 && !CONFIG.drawDecalCounterV5
-        && !CONFIG.drawDecalCylindricV5 && !CONFIG.drawDecalGlowV5
+        && !CONFIG.drawDecalCylindricV5 && !CONFIG.drawDecalHoleV5
+        && !CONFIG.drawDecalGlowV5
         && !CONFIG.drawDecalGlowCylindricV5)
     {
         return null;
@@ -2043,6 +2328,12 @@ async function RunDecalV5Comparison(webgpu)
                 cylindricalAlpha: AssertCylindricSurfaceAlpha(instances)
             };
         }
+        else if (variant === "hole")
+        {
+            textureInfluence = {
+                holeProjection: AssertDecalHoleProjection(instances)
+            };
+        }
         return {
             bodyIndex: 0,
             variant,
@@ -2188,6 +2479,7 @@ async function RunHarness()
     let quadV5Comparison = null;
     let decalV5Comparison = null;
     let decalCylindricV5Comparison = null;
+    let decalHoleV5Comparison = null;
     let decalCounterV5Comparison = null;
     let decalGlowV5Comparison = null;
     let decalGlowCylindricV5Comparison = null;
@@ -2206,6 +2498,10 @@ async function RunHarness()
         if (decalComparison?.variant === "cylindric")
         {
             decalCylindricV5Comparison = decalComparison;
+        }
+        else if (decalComparison?.variant === "hole")
+        {
+            decalHoleV5Comparison = decalComparison;
         }
         else if (decalComparison?.variant === "counter") decalCounterV5Comparison = decalComparison;
         else if (decalComparison?.variant === "glow") decalGlowV5Comparison = decalComparison;
@@ -2294,6 +2590,7 @@ async function RunHarness()
             quadV5Comparison,
             decalV5Comparison,
             decalCylindricV5Comparison,
+            decalHoleV5Comparison,
             decalCounterV5Comparison,
             decalGlowV5Comparison,
             decalGlowCylindricV5Comparison

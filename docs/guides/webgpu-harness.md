@@ -167,6 +167,13 @@ The full cylindrical surface sibling uses the separately qualified default
 npm.cmd run test:webgpu:required -- --draw-decalcylindricv5 .\artifacts\decalcylindricv5-dx11.cewgpu .\artifacts\decalcylindricv5-dx12.cewgpu
 ```
 
+The ray/sphere hole sibling uses the separately qualified default
+`unpacked_decalholev5` Main pass:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-decalholev5 .\artifacts\decalholev5-dx11.cewgpu .\artifacts\decalholev5-dx12.cewgpu
+```
+
 The kill-counter slice uses the separately qualified default
 `unpacked_decalcounterv5` Main pass:
 
@@ -299,6 +306,35 @@ transforms or transposition. The authored cylindrical UVs keep every
 single-mip sample footprint inside the texture, making clamp-to-edge
 equivalent to DX11's zero-border sampler for this fixture only; the reflected
 `-0.75` mip bias remains outside this one-mip gate.
+
+The DecalHoleV5 command gates only the canonical default body of
+`unpacked_decalholev5`; it does not implement the shader or qualify every
+permutation. Its exact layout has five uniform buffers, two 2D maps, one sRGB
+inside cube, and two filtering samplers. Both backends keep the maps at
+`t0..t2`; unlike full DecalV5, this body has no DX12 texture-register shift.
+The full matrix remains asymmetric: DX12 bindless and instanced bodies are not
+covered by this default-only gate.
+
+The synthetic quad supplies local position
+`p=(NDC.x,NDC.y,0.5+0.2*NDC.x)` and camera position `(0,0,5)`. The fragment
+shader discards a ray when it misses the unit sphere, leaving 2,718 surviving
+and 1,378 discarded target pixels on the 64x64 pixel-center grid. A CPU oracle
+checks the analytic sign outside a four-pixel near-tangent band. Five
+byte-exact DX11/DX12 cases then exercise base and axial transparency, an
+interior-white transparency control, a zero hole, and an inside-cube hole.
+The oracle predicts the exact `((p.y+1)/2,(p.z+1)/2)` 2D coordinates,
+transparency alpha, hole red/alpha blend against constant cube alpha, and the
+shader's explicit linear-to-sRGB transfer.
+
+The semantic serializer supplies material/per-frame `cb0..cb2`; exact
+harness-owned Decal bytes replace the incompatible generic per-object
+payloads with a 384-byte six-matrix vertex `cb3` and the active 16-byte
+fragment `cb4`. Full production Decal RawData remains 384/176 bytes. Packed
+RawData is already GPU-form and must not be transposed again; WebGPU and WebGL
+packing remain independent renderer concerns. Every 2D control has zero outer
+texels so WebGPU clamp-to-edge matches the authored DX11 zero-border result at
+the tested footprints. A one-mip, constant-alpha cube intentionally does not
+prove mip bias, cube face selection, seams, or direction-dependent sampling.
 
 The DecalCounterV5 command applies the same canonical provenance, default
 selection, complete-pass, batch-type, warning, validation, and exact

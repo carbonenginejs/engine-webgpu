@@ -51,11 +51,11 @@ transposes logical matrices once into Carbon cbuffer register-row order while
 copying already GPU-form custom-mask slots unchanged.
 
 The standalone harness qualifies synthetic static/skinned QuadV5,
-non-bindless DecalV5/DecalCylindricV5, kill-counter DecalCounterV5, and
-two-texture DecalGlowV5/DecalGlowCylindricV5 draws through a provisional
-Trinity-shaped batch dispatcher without loading SOF, a Trinity graph,
-production defaults, or an EVE asset. The dispatcher imports no runtime
-package and is not yet a public renderer-composition contract.
+non-bindless DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter
+DecalCounterV5, and two-texture DecalGlowV5/DecalGlowCylindricV5 draws
+through a provisional Trinity-shaped batch dispatcher without loading SOF,
+a Trinity graph, production defaults, or an EVE asset. The dispatcher imports
+no runtime package and is not yet a public renderer-composition contract.
 
 ## Documentation
 
