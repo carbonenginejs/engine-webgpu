@@ -34,6 +34,11 @@ not exported from the package root and is not part of the supported public API.
 Its batch, accumulator, and batch-map paths keep material/resource resolution
 and render-pass selection injected.
 
+`CjsWebGPUTrinityStepRecorder` is another internal conformance prototype. It
+implements the duck-typed `Tr2RenderContext.SetStepExecutor(...)` callbacks,
+preserves nested render-step intent order, and defers asynchronous WebGPU work
+until after the synchronous render-job run.
+
 ## Space-object uniform serialization
 
 - `EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES` exposes the bounded struct sizes.

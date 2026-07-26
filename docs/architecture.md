@@ -100,6 +100,15 @@ QuadV5 browser gates use its one-type batch-map path, and actual
 executor still needs to own frame/pass planning and select the pass for each
 batch type.
 
+The internal `CjsWebGPUTrinityStepRecorder` proves the synchronous
+`Tr2RenderContext.SetStepExecutor(...)` seam separately. It delegates the
+step's begin, execute, and end hooks back to the GPU-free context, consumes
+`TakeIntents()` exactly once, and records immutable segments in observable
+order. Nested jobs are re-entrant: a child step flushes any parent intents
+emitted before the child, then the parent resumes after the child. WebGPU
+pipeline preparation, pass creation, encoding, and submission remain a later
+asynchronous phase; none run inside Trinity's synchronous `Run(...)`.
+
 The contract consumes already-decoded pipeline data. Moving shader format
 readers between format and resource packages therefore does not change this
 boundary; only the injected reader or material resolver changes.
@@ -109,8 +118,8 @@ boundary; only the injected reader or material resolver changes.
 There is no dependency on `runtime-core`, `runtime-resource`, or
 `runtime-trinity`. The package does not load GR2 or CMF geometry, resolve
 resource paths, extract scene state, choose production material or per-object
-values, translate complete Carbon render state, dispatch a Trinity batch map,
-or schedule a render loop.
+values, translate complete Carbon render state, infer batch-type pass policy,
+realize render-job intents, or schedule a render loop.
 
 The public engine texture adapter currently uploads only explicit,
 single-mip, uncompressed 2D RGBA8 data. The standalone harness may create
