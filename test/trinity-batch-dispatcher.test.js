@@ -196,53 +196,42 @@ test("Trinity batch dispatcher fails closed on unsupported or conflicting contra
   );
 });
 
-test("Trinity batch dispatcher preserves ordinary accumulator order and lifecycle", async () =>
+test("Trinity batch dispatcher preserves GDPR-first accumulator order and lifecycle", async () =>
 {
   const boundary = mockBoundary();
   const dispatcher = new CjsWebGPUTrinityBatchDispatcher(boundary.webgpu, hooks());
-  const first = indexedBatch({ material: { id: "first" }, startIndexLocation: 0 });
-  const second = indexedBatch({ material: { id: "second" }, startIndexLocation: 36 });
-  const batchAccumulator = accumulator([ first, second ]);
+  const gdpr = indexedBatch({ material: { id: "gdpr" }, startIndexLocation: 0 });
+  const first = indexedBatch({ material: { id: "first" }, startIndexLocation: 36 });
+  const second = indexedBatch({ material: { id: "second" }, startIndexLocation: 72 });
+  const batchAccumulator = accumulator([ first, second ], [ gdpr ]);
   const prepared = await dispatcher.PrepareAccumulator(batchAccumulator);
+  assert.deepEqual(prepared.gdprBatches.map((entry) => entry.batch), [ gdpr ]);
   assert.deepEqual(prepared.batches.map((entry) => entry.batch), [ first, second ]);
 
   const pass = { id: "pass" };
   dispatcher.EncodeAccumulator(pass, prepared);
   assert.deepEqual(
     boundary.calls.filter(([ name ]) => name === "EncodeDraw").map((entry) => entry[2]),
-    prepared.batches.map((entry) => entry.draw)
+    [ ...prepared.gdprBatches, ...prepared.batches ].map((entry) => entry.draw)
   );
   dispatcher.DestroyAccumulator(prepared);
   dispatcher.DestroyAccumulator(prepared);
-  assert.deepEqual(boundary.bindingSets.map((entry) => entry.destroyed), [ 1, 1 ]);
+  assert.deepEqual(boundary.bindingSets.map((entry) => entry.destroyed), [ 1, 1, 1 ]);
   assert.throws(
     () => dispatcher.EncodeAccumulator(pass, prepared),
     /prepared accumulator is destroyed/u
   );
 });
 
-test("Trinity batch dispatcher rejects GDPR and rolls back partial accumulators", async () =>
+test("Trinity batch dispatcher rolls back partial GDPR and ordinary vectors", async () =>
 {
-  const boundary = mockBoundary();
-  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(boundary.webgpu, hooks());
-  await assert.rejects(
-    dispatcher.PrepareAccumulator({
-      GetGdprBatches: () => [ indexedBatch() ],
-      GetBatches: () => [],
-      GetBatchCount: () => 1
-    }),
-    /GDPR batch dispatch is not implemented/u
-  );
-  assert.equal(boundary.bindingSets.length, 0);
-
   const rejected = mockBoundary({ rejectDrawAt: 2 });
   const rejecting = new CjsWebGPUTrinityBatchDispatcher(rejected.webgpu, hooks());
   await assert.rejects(
-    rejecting.PrepareAccumulator({
-      GetGdprBatches: () => [],
-      GetBatches: () => [ indexedBatch(), indexedBatch() ],
-      GetBatchCount: () => 2
-    }),
+    rejecting.PrepareAccumulator(accumulator(
+      [ indexedBatch({ material: { id: "ordinary" } }) ],
+      [ indexedBatch({ material: { id: "gdpr" } }) ]
+    )),
     /draw rejected/u
   );
   assert.deepEqual(rejected.bindingSets.map((entry) => entry.destroyed), [ 1, 1 ]);
@@ -323,10 +312,10 @@ test("Trinity batch dispatcher validates batch-map identity and rolls back all t
       GetBatchTypes: () => [ 0, 2 ],
       GetAccumulator: (batchType) => batchType === 0
         ? accumulator([ indexedBatch() ])
-        : accumulator([], [ indexedBatch() ]),
+        : accumulator([ indexedBatch({ geometrySource: null }) ]),
       GetBatchCount: () => 2
     }),
-    /GDPR batch dispatch is not implemented/u
+    /geometrySource is required/u
   );
   assert.deepEqual(boundary.bindingSets.map((entry) => entry.destroyed), [ 1 ]);
 

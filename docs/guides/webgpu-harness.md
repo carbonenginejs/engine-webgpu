@@ -56,8 +56,8 @@ the opaque batch type's render pass; injected hooks resolve its material,
 geometry source, and object data to the existing WebGPU resources and assert
 that the immutable resolver context identifies that opaque type. This tests
 the engine crossing without importing `runtime-trinity`, loading a Trinity
-graph, accepting the still-unimplemented GDPR path, inferring pass policy, or
-presenting the prototype as a public composition API.
+graph, depending on grouped or indirect GDPR optimization, inferring pass
+policy, or presenting the prototype as a public composition API.
 
 To compile a candidate module while preserving the existing render/readback
 gate, pass WGSL text by file path:

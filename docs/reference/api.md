@@ -34,7 +34,8 @@ not exported from the package root and is not part of the supported public API.
 Its batch, accumulator, and batch-map paths keep material/resource resolution
 and render-pass selection injected. Batch-map preparation supplies an
 immutable `{ batchType }` context to each injected material, geometry, and
-binding resolver.
+binding resolver. Accumulator preparation retains separate GDPR and ordinary
+vectors, encoding GDPR first through the complete direct per-batch fallback.
 
 `CjsWebGPUTrinityStepRecorder` is another internal conformance prototype. It
 implements the duck-typed `Tr2RenderContext.SetStepExecutor(...)` callbacks,

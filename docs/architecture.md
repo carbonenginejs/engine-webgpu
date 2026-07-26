@@ -80,14 +80,16 @@ resolvers. It maps indexed and non-indexed draw arguments, rejects unsupported
 topologies and incompatible pipeline recipes, and rolls back its binding set
 when draw creation fails.
 
-It also snapshots the ordinary `GetBatches()` vector of a finalized
-`TriRenderBatchAccumulator`-compatible object, preserves its order, and owns
-the collected binding-set lifecycle as one unit. `GetGdprBatches()` must
-currently be empty: grouped state sharing remains explicitly unsupported and
-fails before any batch allocation.
+It also snapshots both vectors of a finalized
+`TriRenderBatchAccumulator`-compatible object, preserves their internal order,
+encodes GDPR before ordinary batches, and owns the collected binding-set
+lifecycle as one unit. GDPR entries currently use the same complete direct
+per-batch path as ordinary entries. This matches Carbon's non-indirect fallback
+semantics while deliberately giving up grouped state sharing and indirect-draw
+optimization.
 
 At the next level it snapshots `TriRenderBatchMap` batch types in insertion
-order and prepares each ordinary accumulator. Batch-type meaning and render
+order and prepares each accumulator. Batch-type meaning and render
 pass selection remain outside the dispatcher: `EncodeBatchType(...)` requires
 the caller to supply the compatible pass for the requested type. This avoids
 turning opaque, decal, transparent, or depth policy into shared device code.

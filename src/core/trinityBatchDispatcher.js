@@ -251,9 +251,10 @@ export class CjsWebGPUTrinityBatchDispatcher
   }
 
   /**
-   * Snapshots and prepares the ordinary batch vector of one finalized
-   * TriRenderBatchAccumulator-compatible object. GDPR batches remain rejected
-   * until their grouped state-sharing contract is implemented.
+   * Snapshots and prepares both vectors of one finalized
+   * TriRenderBatchAccumulator-compatible object. GDPR batches retain their
+   * separate identity but use complete direct per-batch state until grouped
+   * encoding is implemented.
    */
   async PrepareAccumulator(accumulator, context = undefined)
   {
@@ -269,19 +270,20 @@ export class CjsWebGPUTrinityBatchDispatcher
     {
       fail("accumulator batch getters must return arrays");
     }
-    if (gdprBatches.length)
-    {
-      fail("GDPR batch dispatch is not implemented");
-    }
     if (typeof accumulator.GetBatchCount === "function"
-      && accumulator.GetBatchCount() !== batches.length)
+      && accumulator.GetBatchCount() !== gdprBatches.length + batches.length)
     {
       fail("accumulator batch count does not match its batch vectors");
     }
 
+    const preparedGdprBatches = [];
     const preparedBatches = [];
     try
     {
+      for (const batch of gdprBatches)
+      {
+        preparedGdprBatches.push(await this.Prepare(batch, preparedContext));
+      }
       for (const batch of batches)
       {
         preparedBatches.push(await this.Prepare(batch, preparedContext));
@@ -289,6 +291,7 @@ export class CjsWebGPUTrinityBatchDispatcher
       const handle = Object.freeze({
         accumulator,
         context: preparedContext,
+        gdprBatches: Object.freeze(preparedGdprBatches.slice()),
         batches: Object.freeze(preparedBatches.slice())
       });
       PREPARED_ACCUMULATORS.set(handle, {
@@ -303,16 +306,24 @@ export class CjsWebGPUTrinityBatchDispatcher
       {
         this.Destroy(preparedBatches[index]);
       }
+      for (let index = preparedGdprBatches.length - 1; index >= 0; index -= 1)
+      {
+        this.Destroy(preparedGdprBatches[index]);
+      }
       throw error;
     }
   }
 
-  /** Encodes every ordinary prepared batch in accumulator order. */
+  /** Encodes GDPR then ordinary prepared batches in accumulator order. */
   EncodeAccumulator(pass, handle)
   {
     const state = PREPARED_ACCUMULATORS.get(handle);
     if (!state || state.owner !== this) fail("prepared accumulator belongs to another dispatcher");
     if (state.destroyed) fail("prepared accumulator is destroyed");
+    for (const batch of handle.gdprBatches)
+    {
+      this.Encode(pass, batch);
+    }
     for (const batch of handle.batches)
     {
       this.Encode(pass, batch);
@@ -329,6 +340,10 @@ export class CjsWebGPUTrinityBatchDispatcher
     for (let index = handle.batches.length - 1; index >= 0; index -= 1)
     {
       this.Destroy(handle.batches[index]);
+    }
+    for (let index = handle.gdprBatches.length - 1; index >= 0; index -= 1)
+    {
+      this.Destroy(handle.gdprBatches[index]);
     }
   }
 
@@ -370,7 +385,9 @@ export class CjsWebGPUTrinityBatchDispatcher
         }));
       }
       const preparedCount = entries.reduce(
-        (count, entry) => count + entry.accumulator.batches.length,
+        (count, entry) => count
+          + entry.accumulator.gdprBatches.length
+          + entry.accumulator.batches.length,
         0
       );
       if (typeof batchMap.GetBatchCount === "function"
