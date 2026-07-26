@@ -107,13 +107,14 @@ technique without the dispatcher importing or interpreting `TriBatchType`.
 
 This class is internal and is not exported from the package root. It is a
 conformance prototype, not a frozen renderer API. The static/skinned QuadV5,
-non-bindless DecalV5, and kill-counter DecalCounterV5 browser gates use its
-one-type batch-map path, with the decal fixtures proving that numeric batch
-type `1` stays caller-selected. The duck-typed boundary is shaped for future
-`runtime-trinity` `Tr2RenderBatch`, `TriRenderBatchAccumulator`, and
-`TriRenderBatchMap` instances, but this package does not yet run an integration
-gate against them. A later render-step executor still needs to own frame/pass
-planning and select the pass for each batch type.
+non-bindless DecalV5, kill-counter DecalCounterV5, and DecalGlowV5 browser
+gates use its one-type batch-map path, with the decal fixtures proving that
+numeric batch type `1` stays caller-selected. The duck-typed boundary is
+shaped for future `runtime-trinity` `Tr2RenderBatch`,
+`TriRenderBatchAccumulator`, and `TriRenderBatchMap` instances, but this
+package does not yet run an integration gate against them. A later
+render-step executor still needs to own frame/pass planning and select the
+pass for each batch type.
 
 The internal `CjsWebGPUTrinityStepRecorder` proves the synchronous
 `Tr2RenderContext.SetStepExecutor(...)` seam separately. It delegates the

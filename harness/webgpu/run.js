@@ -9,6 +9,14 @@ import {
     validateDecalCounterV5PackagePair
 } from "/decalCounterV5Fixture.js";
 import {
+    DECAL_GLOW_V5_TARGET_HEIGHT,
+    DECAL_GLOW_V5_TARGET_WIDTH,
+    DECAL_GLOW_V5_VERTEX_BUFFER_LAYOUT,
+    createDecalGlowV5FixtureValues,
+    getDecalGlowV5ResourcePlan,
+    validateDecalGlowV5PackagePair
+} from "/decalGlowV5Fixture.js";
+import {
     DECALV5_CLEAR_TARGET,
     DECALV5_TARGET_HEIGHT,
     DECALV5_TARGET_WIDTH,
@@ -62,6 +70,20 @@ const DECAL_FAMILY_V5_PROFILES = Object.freeze({
         createValues: createDecalCounterV5FixtureValues,
         getResourcePlan: getDecalCounterV5ResourcePlan,
         validatePair: validateDecalCounterV5PackagePair,
+        resolveUniformData: (record, values) => Object.freeze({
+            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
+            ...values.decalUniformData
+        })
+    }),
+    glow: Object.freeze({
+        label: "DecalGlowV5",
+        route: "/draw-decalglowv5.json",
+        width: DECAL_GLOW_V5_TARGET_WIDTH,
+        height: DECAL_GLOW_V5_TARGET_HEIGHT,
+        vertexLayout: DECAL_GLOW_V5_VERTEX_BUFFER_LAYOUT,
+        createValues: createDecalGlowV5FixtureValues,
+        getResourcePlan: getDecalGlowV5ResourcePlan,
+        validatePair: validateDecalGlowV5PackagePair,
         resolveUniformData: (record, values) => Object.freeze({
             ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
             ...values.decalUniformData
@@ -722,17 +744,21 @@ async function CreateDecalV5GpuResources(webgpu, records, profile)
                 data: entry.data
             }
         ]));
-    const samplers = Object.fromEntries(values.samplerNames.map((name) => [
+    const samplerDefinitions = values.samplers ?? values.samplerNames.map((name) => ({
+        name,
+        minFilter: "linear",
+        magFilter: "linear",
+        mipmapFilter: "linear",
+        addressModeU: name === "Sampler0" ? "repeat" : "clamp-to-edge",
+        addressModeV: name === "Sampler0" ? "repeat" : "clamp-to-edge",
+        addressModeW: "clamp-to-edge",
+        maxAnisotropy: 16
+    }));
+    const samplers = Object.fromEntries(samplerDefinitions.map(({ name, ...descriptor }) => [
         name,
         {
             label: `${profile.label} ${name}`,
-            minFilter: "linear",
-            magFilter: "linear",
-            mipmapFilter: "linear",
-            addressModeU: name === "Sampler0" ? "repeat" : "clamp-to-edge",
-            addressModeV: name === "Sampler0" ? "repeat" : "clamp-to-edge",
-            addressModeW: "clamp-to-edge",
-            maxAnisotropy: 16
+            ...descriptor
         }
     ]));
     const device = webgpu.GetDevice();
@@ -789,32 +815,51 @@ async function CreateDecalV5GpuResources(webgpu, records, profile)
                 dimension: "cube"
             });
         }
+        const textureResourceVariants = values.textureResourceVariants ?? Object.freeze({
+            base: Object.freeze({})
+        });
+        const resourceVariantNames = Object.freeze(Object.keys(textureResourceVariants));
+        Assert(
+            resourceVariantNames.length >= 1 && resourceVariantNames[0] === "base",
+            `${profile.label} texture resource variants must begin with base`
+        );
         const resourcesByBackend = new Map();
         for (const record of records)
         {
             const plan = profile.getResourcePlan(record);
-            const resources = new Map();
-            for (const texture of plan.textures)
+            const variants = new Map();
+            for (const variantName of resourceVariantNames)
             {
-                const resource = texture.name === "EveSpaceSceneEnvMap"
-                    ? cubeView
-                    : bundle.textures[texture.name];
-                Assert(resource, `${profile.label} fixture is missing texture ${texture.name}`);
-                resources.set(texture.scopeIdentity, resource);
+                const resources = new Map();
+                const textureOverrides = textureResourceVariants[variantName];
+                for (const texture of plan.textures)
+                {
+                    const resourceName = textureOverrides[texture.name] ?? texture.name;
+                    const resource = texture.name === "EveSpaceSceneEnvMap"
+                        ? cubeView
+                        : bundle.textures[resourceName];
+                    Assert(
+                        resource,
+                        `${profile.label} ${variantName} fixture is missing texture ${resourceName}`
+                    );
+                    resources.set(texture.scopeIdentity, resource);
+                }
+                for (const sampler of plan.samplers)
+                {
+                    const resource = bundle.samplers[sampler.name];
+                    Assert(resource, `${profile.label} fixture is missing sampler ${sampler.name}`);
+                    resources.set(sampler.scopeIdentity, resource);
+                }
+                variants.set(variantName, resources);
             }
-            for (const sampler of plan.samplers)
-            {
-                const resource = bundle.samplers[sampler.name];
-                Assert(resource, `${profile.label} fixture is missing sampler ${sampler.name}`);
-                resources.set(sampler.scopeIdentity, resource);
-            }
-            resourcesByBackend.set(record.backend, resources);
+            resourcesByBackend.set(record.backend, variants);
         }
         return {
             label: profile.label,
             bindingValues: values.bindingValues ?? values.uniformData,
             uniformDataFor: (record) => profile.resolveUniformData(record, values),
             resourcesByBackend,
+            resourceVariantNames,
             geometry: bundle.geometries.main,
             geometrySource,
             bundle,
@@ -951,11 +996,12 @@ function CreateQuadV5TrinityDispatcher(webgpu, fixture)
     });
 }
 
-function CreateDecalV5TrinityBatch(record, fixture)
+function CreateDecalV5TrinityBatch(record, fixture, resourceVariant)
 {
     return Object.freeze({
         material: record,
         shader: record.pipeline,
+        resourceVariant,
         geometrySource: Object.freeze({
             geometry: fixture.geometrySource,
             meshIndex: 0,
@@ -976,9 +1022,11 @@ function CreateDecalV5TrinityBatch(record, fixture)
     });
 }
 
-function CreateDecalV5TrinityBatchMap(record, fixture)
+function CreateDecalV5TrinityBatchMap(record, fixture, resourceVariant)
 {
-    const batches = Object.freeze([ CreateDecalV5TrinityBatch(record, fixture) ]);
+    const batches = Object.freeze([
+        CreateDecalV5TrinityBatch(record, fixture, resourceVariant)
+    ]);
     const gdprBatches = Object.freeze([]);
     const accumulator = Object.freeze({
         GetGdprBatches: () => gdprBatches,
@@ -1042,7 +1090,8 @@ function CreateDecalV5TrinityDispatcher(webgpu, fixture)
             const record = batch.material;
             Assert(
                 context?.batchType === TRINITY_BATCH_TYPE_DECAL
-                    && batch.objectData === fixture.bindingValues,
+                    && batch.objectData === fixture.bindingValues
+                    && fixture.resourceVariantNames.includes(batch.resourceVariant),
                 `${fixture.label} ${record.label} batch references unknown object data`
             );
             return {
@@ -1053,7 +1102,7 @@ function CreateDecalV5TrinityDispatcher(webgpu, fixture)
                 ),
                 resources: ScopeFixtureBindingValues(
                     record.pipeline,
-                    fixture.resourcesByBackend.get(record.backend),
+                    fixture.resourcesByBackend.get(record.backend).get(batch.resourceVariant),
                     `${fixture.label} ${record.label} resources`
                 )
             };
@@ -1269,6 +1318,15 @@ function AssertDecalV5Silhouette(bytes, label, variant)
         );
         Assert(colors.size >= 2, `${label} must contain varied counter output rather than a constant fill`);
     }
+    else if (variant === "glow")
+    {
+        Assert(coverage >= 900 && coverage <= 1800, `${label} has implausible glow coverage ${coverage}`);
+        Assert(
+            minimumX <= 20 && maximumX >= 48 && minimumY <= 12 && maximumY >= 50,
+            `${label} has implausible glow bounds ${minimumX}..${maximumX}, ${minimumY}..${maximumY}`
+        );
+        Assert(colors.size >= 16, `${label} must contain varied glow shading rather than a constant fill`);
+    }
     else
     {
         Assert(coverage >= 700 && coverage <= 2000, `${label} has implausible decal coverage ${coverage}`);
@@ -1283,6 +1341,37 @@ function AssertDecalV5Silhouette(bytes, label, variant)
         bounds: { minimumX, maximumX, minimumY, maximumY },
         distinctColors: colors.size
     };
+}
+
+function AssertGlowTextureInfluence(base, control, label)
+{
+    let activePixels = 0;
+    let changedPixels = 0;
+    let rgbDelta = 0;
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            const baseClear = PixelEquals(base, x, y, DECALV5_CLEAR_TARGET);
+            const controlClear = PixelEquals(control, x, y, DECALV5_CLEAR_TARGET);
+            Assert(baseClear === controlClear, `${label} changed the active silhouette at (${x}, ${y})`);
+            if (baseClear) continue;
+            activePixels += 1;
+            const offset = PixelOffset(x, y);
+            let pixelDelta = 0;
+            for (let component = 0; component < 3; component += 1)
+            {
+                pixelDelta += Math.abs(base[offset + component] - control[offset + component]);
+            }
+            if (pixelDelta > 0) changedPixels += 1;
+            rgbDelta += pixelDelta;
+        }
+    }
+    const changedRatio = changedPixels / activePixels;
+    const averageRgbDelta = rgbDelta / activePixels;
+    Assert(changedRatio >= 0.5, `${label} affected only ${changedPixels}/${activePixels} active pixels`);
+    Assert(averageRgbDelta >= 12, `${label} average RGB delta ${averageRgbDelta} is too small`);
+    return { activePixels, changedPixels, changedRatio, averageRgbDelta };
 }
 
 async function RunQuadV5Comparison(webgpu)
@@ -1458,8 +1547,10 @@ async function RunQuadV5Comparison(webgpu)
 
 async function RunDecalV5Comparison(webgpu)
 {
-    const variant = CONFIG.drawDecalCounterV5 ? "counter" : "standard";
-    if (!CONFIG.drawDecalV5 && !CONFIG.drawDecalCounterV5) return null;
+    const variant = CONFIG.drawDecalGlowV5
+        ? "glow"
+        : (CONFIG.drawDecalCounterV5 ? "counter" : "standard");
+    if (!CONFIG.drawDecalV5 && !CONFIG.drawDecalCounterV5 && !CONFIG.drawDecalGlowV5) return null;
     const profile = DECAL_FAMILY_V5_PROFILES[variant];
     const response = await fetch(profile.route);
     Assert(response.ok, `Failed to load ${profile.label} package records: HTTP ${response.status}`);
@@ -1480,48 +1571,53 @@ async function RunDecalV5Comparison(webgpu)
     {
         for (const record of records)
         {
-            let preparedBatchMap = null;
-            let target = null;
-            let readback = null;
-            try
+            for (const resourceVariant of fixture.resourceVariantNames)
             {
-                preparedBatchMap = await dispatcher.PrepareBatchMap(
-                    CreateDecalV5TrinityBatchMap(record, fixture)
-                );
-                warningCount += preparedBatchMap.entries.reduce(
-                    (mapTotal, entry) => mapTotal + entry.accumulator.batches.reduce(
-                        (batchTotal, batch) => batchTotal
-                            + batch.prepared.diagnostics.filter((item) => item.type === "warning").length,
+                let preparedBatchMap = null;
+                let target = null;
+                let readback = null;
+                try
+                {
+                    preparedBatchMap = await dispatcher.PrepareBatchMap(
+                        CreateDecalV5TrinityBatchMap(record, fixture, resourceVariant)
+                    );
+                    warningCount += preparedBatchMap.entries.reduce(
+                        (mapTotal, entry) => mapTotal + entry.accumulator.batches.reduce(
+                            (batchTotal, batch) => batchTotal
+                                + batch.prepared.diagnostics
+                                    .filter((item) => item.type === "warning").length,
+                            0
+                        ),
                         0
-                    ),
-                    0
-                );
-                target = device.createTexture({
-                    label: `${profile.label} ${record.label} color target`,
-                    size: { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 },
-                    format: "rgba8unorm",
-                    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
-                });
-                readback = device.createBuffer({
-                    label: `${profile.label} ${record.label} readback`,
-                    size: BYTES_PER_ROW * HEIGHT,
-                    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
-                });
-                instances.push({
-                    record,
-                    preparedBatchMap,
-                    target,
-                    readback,
-                    snapshot: null,
-                    statistics: null
-                });
-            }
-            catch (error)
-            {
-                if (preparedBatchMap) dispatcher.DestroyBatchMap(preparedBatchMap);
-                readback?.destroy();
-                target?.destroy();
-                throw error;
+                    );
+                    target = device.createTexture({
+                        label: `${profile.label} ${record.label} ${resourceVariant} color target`,
+                        size: { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 },
+                        format: "rgba8unorm",
+                        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
+                    });
+                    readback = device.createBuffer({
+                        label: `${profile.label} ${record.label} ${resourceVariant} readback`,
+                        size: BYTES_PER_ROW * HEIGHT,
+                        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+                    });
+                    instances.push({
+                        record,
+                        resourceVariant,
+                        preparedBatchMap,
+                        target,
+                        readback,
+                        snapshot: null,
+                        statistics: null
+                    });
+                }
+                catch (error)
+                {
+                    if (preparedBatchMap) dispatcher.DestroyBatchMap(preparedBatchMap);
+                    readback?.destroy();
+                    target?.destroy();
+                    throw error;
+                }
             }
         }
 
@@ -1532,7 +1628,9 @@ async function RunDecalV5Comparison(webgpu)
         {
             passEncoder.Encode(encoder, [ {
                 descriptor: {
-                    label: `${profile.label} ${instance.record.label} Main.pass0`,
+                    label:
+                        `${profile.label} ${instance.record.label} ` +
+                        `${instance.resourceVariant} Main.pass0`,
                     colorAttachments: [ {
                         view: instance.target.createView(),
                         clearValue: {
@@ -1570,15 +1668,60 @@ async function RunDecalV5Comparison(webgpu)
             instance.snapshot = new Uint8Array(instance.readback.getMappedRange()).slice();
             instance.statistics = AssertDecalV5Silhouette(
                 instance.snapshot,
-                `${profile.label} ${instance.record.label} color target`,
+                `${profile.label} ${instance.record.label} ` +
+                    `${instance.resourceVariant} color target`,
                 variant
             );
         }
-        AssertExactTargetMatch(
-            instances[0].snapshot,
-            instances[1].snapshot,
-            `DX11/DX12 ${profile.label} color target`
-        );
+        for (const resourceVariant of fixture.resourceVariantNames)
+        {
+            const dx11 = instances.find((instance) =>
+                instance.record.backend === "dx11"
+                    && instance.resourceVariant === resourceVariant);
+            const dx12 = instances.find((instance) =>
+                instance.record.backend === "dx12"
+                    && instance.resourceVariant === resourceVariant);
+            Assert(dx11 && dx12, `${profile.label} ${resourceVariant} comparison pair is incomplete`);
+            AssertExactTargetMatch(
+                dx11.snapshot,
+                dx12.snapshot,
+                `DX11/DX12 ${profile.label} ${resourceVariant} color target`
+            );
+        }
+        const base = instances.find((instance) =>
+            instance.record.backend === "dx11" && instance.resourceVariant === "base");
+        Assert(base, `${profile.label} base comparison output is missing`);
+        let textureInfluence = null;
+        if (variant === "glow")
+        {
+            const whiteTransparency = instances.find((instance) =>
+                instance.record.backend === "dx11"
+                    && instance.resourceVariant === "whiteTransparency");
+            const whiteGlow = instances.find((instance) =>
+                instance.record.backend === "dx11"
+                    && instance.resourceVariant === "whiteGlow");
+            Assert(
+                whiteTransparency && whiteGlow,
+                "DecalGlowV5 texture-control outputs are incomplete"
+            );
+            textureInfluence = {
+                transparency: AssertGlowTextureInfluence(
+                    base.snapshot,
+                    whiteTransparency.snapshot,
+                    "DecalGlowV5 transparency texture"
+                ),
+                glow: AssertGlowTextureInfluence(
+                    base.snapshot,
+                    whiteGlow.snapshot,
+                    "DecalGlowV5 glow texture"
+                ),
+                controls: AssertGlowTextureInfluence(
+                    whiteTransparency.snapshot,
+                    whiteGlow.snapshot,
+                    "DecalGlowV5 texture controls"
+                )
+            };
+        }
         return {
             bodyIndex: 0,
             variant,
@@ -1590,12 +1733,14 @@ async function RunDecalV5Comparison(webgpu)
             drawKind: "indexed synthetic decal silhouette",
             indexCount: fixture.geometry.indexCount,
             warningCount,
+            renderCaseCount: fixture.resourceVariantNames.length,
             clearTarget: DECALV5_CLEAR_TARGET,
-            topLeftClearPixel: Array.from(instances[0].snapshot.slice(0, 4)),
-            statistics: instances[0].statistics,
+            topLeftClearPixel: Array.from(base.snapshot.slice(0, 4)),
+            statistics: base.statistics,
+            textureInfluence,
             targetWidth: WIDTH,
             targetHeight: HEIGHT,
-            targetPixels: GetActiveTargetPixels(instances[0].snapshot)
+            targetPixels: GetActiveTargetPixels(base.snapshot)
         };
     }
     finally
@@ -1722,6 +1867,7 @@ async function RunHarness()
     let quadV5Comparison = null;
     let decalV5Comparison = null;
     let decalCounterV5Comparison = null;
+    let decalGlowV5Comparison = null;
     let errorScopeOpen = true;
 
     device.pushErrorScope("validation");
@@ -1735,6 +1881,7 @@ async function RunHarness()
         quadV5Comparison = await RunQuadV5Comparison(webgpu);
         const decalComparison = await RunDecalV5Comparison(webgpu);
         if (decalComparison?.variant === "counter") decalCounterV5Comparison = decalComparison;
+        else if (decalComparison?.variant === "glow") decalGlowV5Comparison = decalComparison;
         else decalV5Comparison = decalComparison;
         const shaderModule = device.createShaderModule({
             label: "engine-webgpu phase-0 shader",
@@ -1815,7 +1962,8 @@ async function RunHarness()
                 : null,
             quadV5Comparison,
             decalV5Comparison,
-            decalCounterV5Comparison
+            decalCounterV5Comparison,
+            decalGlowV5Comparison
         };
     }
     finally

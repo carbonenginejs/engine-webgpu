@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { buildMatrixPipelines } from "../src/core/matrixPipelines.js";
 import { validateDecalCounterV5PackagePair } from "../harness/webgpu/decalCounterV5Fixture.js";
+import { validateDecalGlowV5PackagePair } from "../harness/webgpu/decalGlowV5Fixture.js";
 import { validateDecalV5PackagePair } from "../harness/webgpu/decalV5Fixture.js";
 import { validateQuadV5PackagePair } from "../harness/webgpu/quadV5Fixture.js";
 
@@ -36,6 +37,7 @@ const DRAW_QUADV5_INDEX = process.argv.indexOf("--draw-quadv5");
 const DRAW_SKINNED_QUADV5_INDEX = process.argv.indexOf("--draw-skinned-quadv5");
 const DRAW_DECALV5_INDEX = process.argv.indexOf("--draw-decalv5");
 const DRAW_DECALCOUNTERV5_INDEX = process.argv.indexOf("--draw-decalcounterv5");
+const DRAW_DECALGLOWV5_INDEX = process.argv.indexOf("--draw-decalglowv5");
 if (DRAW_QUADV5_INDEX >= 0 && DRAW_SKINNED_QUADV5_INDEX >= 0)
 {
     throw new Error("--draw-quadv5 and --draw-skinned-quadv5 are mutually exclusive");
@@ -55,15 +57,20 @@ if (ACTIVE_QUADV5_INDEX >= 0
 const DRAW_QUADV5_PATHS = ACTIVE_QUADV5_INDEX >= 0
     ? [ resolve(process.argv[ACTIVE_QUADV5_INDEX + 1]), resolve(process.argv[ACTIVE_QUADV5_INDEX + 2]) ]
     : null;
-if (DRAW_DECALV5_INDEX >= 0 && DRAW_DECALCOUNTERV5_INDEX >= 0)
+if ([ DRAW_DECALV5_INDEX, DRAW_DECALCOUNTERV5_INDEX, DRAW_DECALGLOWV5_INDEX ]
+    .filter((index) => index >= 0).length > 1)
 {
-    throw new Error("--draw-decalv5 and --draw-decalcounterv5 are mutually exclusive");
+    throw new Error("DecalV5 family draw flags are mutually exclusive");
 }
-const ACTIVE_DECALV5_INDEX = DRAW_DECALCOUNTERV5_INDEX >= 0
-    ? DRAW_DECALCOUNTERV5_INDEX
-    : DRAW_DECALV5_INDEX;
-const DECALV5_VARIANT = DRAW_DECALCOUNTERV5_INDEX >= 0 ? "counter" : "standard";
-const DECALV5_FLAG = DECALV5_VARIANT === "counter" ? "--draw-decalcounterv5" : "--draw-decalv5";
+const ACTIVE_DECALV5_INDEX = DRAW_DECALGLOWV5_INDEX >= 0
+    ? DRAW_DECALGLOWV5_INDEX
+    : (DRAW_DECALCOUNTERV5_INDEX >= 0 ? DRAW_DECALCOUNTERV5_INDEX : DRAW_DECALV5_INDEX);
+const DECALV5_VARIANT = DRAW_DECALGLOWV5_INDEX >= 0
+    ? "glow"
+    : (DRAW_DECALCOUNTERV5_INDEX >= 0 ? "counter" : "standard");
+const DECALV5_FLAG = DECALV5_VARIANT === "glow"
+    ? "--draw-decalglowv5"
+    : (DECALV5_VARIANT === "counter" ? "--draw-decalcounterv5" : "--draw-decalv5");
 if (ACTIVE_DECALV5_INDEX >= 0 && ACTIVE_QUADV5_INDEX >= 0)
 {
     throw new Error(`${DECALV5_FLAG} cannot be combined with a QuadV5 draw flag`);
@@ -250,9 +257,11 @@ async function ReadDecalV5Packages(paths, variant)
             pipeline: pipeline.ToJSON()
         });
     }
-    const validatePair = variant === "counter"
-        ? validateDecalCounterV5PackagePair
-        : validateDecalV5PackagePair;
+    const validatePair = variant === "glow"
+        ? validateDecalGlowV5PackagePair
+        : (variant === "counter"
+            ? validateDecalCounterV5PackagePair
+            : validateDecalV5PackagePair);
     validatePair(records);
     return records;
 }
@@ -282,6 +291,7 @@ const ASSETS = new Map([
     [ "/trinityBatchDispatcher.js", { path: new URL("../src/core/trinityBatchDispatcher.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/trinityPassEncoder.js", { path: new URL("../src/core/trinityPassEncoder.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/decalCounterV5Fixture.js", { path: new URL("../harness/webgpu/decalCounterV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/decalGlowV5Fixture.js", { path: new URL("../harness/webgpu/decalGlowV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/decalV5Fixture.js", { path: new URL("../harness/webgpu/decalV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadV5Fixture.js", { path: new URL("../harness/webgpu/quadV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/freeze.js", { path: new URL("../src/core/freeze.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
@@ -294,6 +304,7 @@ const ASSETS = new Map([
             drawQuadV5: !!QUADV5_DRAW,
             drawDecalV5: !!DECALV5_DRAW && DECALV5_VARIANT === "standard",
             drawDecalCounterV5: !!DECALV5_DRAW && DECALV5_VARIANT === "counter",
+            drawDecalGlowV5: !!DECALV5_DRAW && DECALV5_VARIANT === "glow",
             decalV5Variant: DECALV5_DRAW ? DECALV5_VARIANT : null,
             quadV5Variant: QUADV5_DRAW ? QUADV5_VARIANT : null,
             prepareCewgpu: !!PACKAGE_PREPARE,
@@ -348,9 +359,11 @@ if (QUADV5_DRAW)
 }
 if (DECALV5_DRAW)
 {
-    const route = DECALV5_VARIANT === "counter"
-        ? "/draw-decalcounterv5.json"
-        : "/draw-decalv5.json";
+    const route = DECALV5_VARIANT === "glow"
+        ? "/draw-decalglowv5.json"
+        : (DECALV5_VARIANT === "counter"
+            ? "/draw-decalcounterv5.json"
+            : "/draw-decalv5.json");
     ASSETS.set(route, {
         body: JSON.stringify(DECALV5_DRAW),
         type: "application/json; charset=utf-8"
@@ -583,6 +596,19 @@ async function Main()
                 `and both backends with 0 WGSL warnings ` +
                 `(${result.decalCounterV5Comparison.statistics.coverage} active pixels, bounds ` +
                 `${JSON.stringify(result.decalCounterV5Comparison.statistics.bounds)}).`
+            );
+        }
+        if (result.decalGlowV5Comparison)
+        {
+            const influence = result.decalGlowV5Comparison.textureInfluence;
+            console.log(
+                `Rendered non-bindless DecalGlowV5 body ${result.decalGlowV5Comparison.bodyIndex} from ` +
+                `${result.decalGlowV5Comparison.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `${result.decalGlowV5Comparison.pixelCount} pixels matched exactly across ` +
+                `${result.decalGlowV5Comparison.renderCaseCount} texture cases and both backends ` +
+                `with 0 WGSL warnings (${result.decalGlowV5Comparison.statistics.coverage} active ` +
+                `pixels; transparency/glow controls changed ` +
+                `${influence.transparency.changedPixels}/${influence.glow.changedPixels} pixels).`
             );
         }
         if (result.preparedPackage)

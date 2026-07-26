@@ -167,6 +167,13 @@ The kill-counter slice uses the separately qualified default
 npm.cmd run test:webgpu:required -- --draw-decalcounterv5 .\artifacts\decalcounterv5-dx11.cewgpu .\artifacts\decalcounterv5-dx12.cewgpu
 ```
 
+The glow slice uses the separately qualified default `unpacked_decalglowv5`
+Main pass:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-decalglowv5 .\artifacts\decalglowv5-dx11.cewgpu .\artifacts\decalglowv5-dx12.cewgpu
+```
+
 Add `--capture-quadv5 .\artifacts\quadv5-ppt-on.png` to save a browser-rendered
 PNG visualization of the DX11 package's two 64x64 active-pixel MRT readbacks
 after the silhouette invariants and byte-exact DX11/DX12 checks pass. DX12 is not
@@ -264,6 +271,33 @@ data to the following register. The runtime transports this value as a
 clear corners, produce bounded and varied counter coverage, and match
 byte-for-byte across backends. These are conformance inputs, not production
 defaults or a finalized RawData integration.
+
+The DecalGlowV5 command applies the same canonical provenance, default
+selection, complete-pass, batch-type, warning, validation, and exact
+DX11/DX12 target checks to `unpacked_decalglowv5`. Its group-zero contract has
+five uniform buffers, `DecalTransparencyMap`, `DecalGlowMap`, and two
+samplers. The four local material values also move between DX11 and DX12
+`cb0`, so `DecalTextureScaling`, `DecalTextureOffset`,
+`DecalIntensityData`, and `DecalGlowColor` are packed by reflected name.
+Harness-authored per-object bytes again provide the full six-matrix
+`DecalVSPerObjectData` layout and only the shader-active, two-register
+`DecalPSPerObjectData` prefix. Both `displayData.y` and `shipData.y` are set
+to `1` for decal visibility and ship activation strength respectively; this
+shader does not consume the kill-count lane.
+
+The browser renders three cases per backend: both patterned textures, a white
+transparency control, and a white glow control. Each case must preserve the
+same bounded silhouette and match byte-for-byte between DX11 and DX12. Both
+white controls must also change at least half the active pixels with a
+substantial average RGB delta, proving independently that both texture
+samples affect the result. DX11 sampler `s0` uses zero-border addressing,
+which WebGPU cannot express. This fixture deliberately adapts it to
+clamp-to-edge and authors a zero red-channel outer texel ring on the
+single-mip transparency texture, matching the zero border in the only channel
+this shader reads. This is a controlled fixture adaptation, not validation of
+general D3D border-address behavior. The values, textures, and sampler
+adaptation are conformance inputs, not production defaults, final blend/pass
+policy, or a finalized RawData integration.
 
 The QuadV5 path supplies semantic material, per-frame, and per-object values
 rather than hand-addressed constant-buffer rows. It calls
