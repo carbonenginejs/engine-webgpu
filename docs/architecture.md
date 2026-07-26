@@ -80,6 +80,13 @@ resolvers. It maps indexed and non-indexed draw arguments, rejects unsupported
 topologies and incompatible pipeline recipes, and rolls back its binding set
 when draw creation fails.
 
+Mesh batches may carry only a `geometrySource` area range and leave their draw
+arguments zero. `ResolveGeometry` may therefore return a complete indexed or
+non-indexed `draw` override derived from CPU geometry facts and the engine's
+realized buffer packing. Producers with explicit draw arguments continue to
+use the batch fields. The dispatcher validates either path before draw
+creation.
+
 It also snapshots both vectors of a finalized
 `TriRenderBatchAccumulator`-compatible object, preserves their internal order,
 encodes GDPR before ordinary batches, and owns the collected binding-set

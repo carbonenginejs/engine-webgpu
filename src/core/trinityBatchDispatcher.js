@@ -20,11 +20,20 @@ function fail(message)
   throw error;
 }
 
-function gpuSize32(value, name)
+function gpuSize32(value, name, owner = "batch")
 {
   if (!Number.isSafeInteger(value) || value < 0 || value > MAX_GPU_SIZE_32)
   {
-    fail(`batch ${name} must be a GPUSize32 value`);
+    fail(`${owner} ${name} must be a GPUSize32 value`);
+  }
+  return value;
+}
+
+function signedOffset32(value, name)
+{
+  if (!Number.isSafeInteger(value) || value < -0x80000000 || value > 0x7fffffff)
+  {
+    fail(`resolved geometry draw ${name} must be a GPUSignedOffset32 value`);
   }
   return value;
 }
@@ -49,6 +58,30 @@ function preparationContext(value)
     fail("preparation context batchType must be a non-negative integer");
   }
   return Object.freeze(context);
+}
+
+function geometryDraw(value, indexed)
+{
+  if (!value || typeof value !== "object" || Array.isArray(value))
+  {
+    fail("ResolveGeometry draw must be an object");
+  }
+  if (indexed)
+  {
+    return Object.freeze({
+      indexCount: gpuSize32(value.indexCount, "indexCount", "resolved geometry draw"),
+      instanceCount: gpuSize32(value.instanceCount, "instanceCount", "resolved geometry draw"),
+      firstIndex: gpuSize32(value.firstIndex, "firstIndex", "resolved geometry draw"),
+      baseVertex: signedOffset32(value.baseVertex, "baseVertex"),
+      firstInstance: gpuSize32(value.firstInstance, "firstInstance", "resolved geometry draw")
+    });
+  }
+  return Object.freeze({
+    vertexCount: gpuSize32(value.vertexCount, "vertexCount", "resolved geometry draw"),
+    instanceCount: gpuSize32(value.instanceCount, "instanceCount", "resolved geometry draw"),
+    firstVertex: gpuSize32(value.firstVertex, "firstVertex", "resolved geometry draw"),
+    firstInstance: gpuSize32(value.firstInstance, "firstInstance", "resolved geometry draw")
+  });
 }
 
 function batchDraw(batch, indexed)
@@ -119,8 +152,9 @@ export class CjsWebGPUTrinityBatchDispatcher
    *   { pipeline, recipe, prepareOptions? }; receives immutable preparation
    *   context as its third argument.
    * @param {Function} hooks.ResolveGeometry Resolves geometrySource to
-   *   { geometry, indexed }; receives preparation context as its third
-   *   argument.
+   *   { geometry, indexed, draw? }; a draw override supplies arguments derived
+   *   from deferred geometry areas and realized buffer packing. Receives
+   *   preparation context as its third argument.
    * @param {Function} hooks.ResolveBindings Resolves batch/object data to
    *   { uniformData, resources }; receives preparation context as its third
    *   argument.
@@ -183,6 +217,9 @@ export class CjsWebGPUTrinityBatchDispatcher
     {
       fail("ResolveGeometry must return geometry and an indexed boolean");
     }
+    const drawArguments = geometry.draw === undefined
+      ? batchDraw(batch, geometry.indexed)
+      : geometryDraw(geometry.draw, geometry.indexed);
 
     const prepared = await this.#webgpu.PreparePipeline(
       material.pipeline,
@@ -208,7 +245,7 @@ export class CjsWebGPUTrinityBatchDispatcher
       const draw = this.#webgpu.CreateDraw(livePipeline, {
         bindingSet,
         geometry: geometry.geometry,
-        draw: batchDraw(batch, geometry.indexed)
+        draw: drawArguments
       });
       const handle = Object.freeze({
         batch,

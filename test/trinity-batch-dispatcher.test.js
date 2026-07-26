@@ -64,7 +64,7 @@ function mockBoundary(options = {})
   return { bindingSets, calls, webgpu };
 }
 
-function hooks(indexed = true, observedContexts = null)
+function hooks(indexed = true, observedContexts = null, draw = undefined)
 {
   return {
     async ResolveMaterial(material, batch, context)
@@ -86,7 +86,8 @@ function hooks(indexed = true, observedContexts = null)
       observedContexts?.push([ "geometry", context ]);
       return {
         geometry: { id: "live-geometry" },
-        indexed
+        indexed,
+        ...(draw === undefined ? {} : { draw })
       };
     },
     async ResolveBindings(batch, livePipeline, context)
@@ -162,6 +163,46 @@ test("Trinity batch dispatcher maps non-indexed batches and owns rollback", asyn
   assert.equal(rejected.bindingSets[0].destroyed, 1);
 });
 
+test("Trinity batch dispatcher accepts resolver draw arguments for deferred geometry areas", async () =>
+{
+  const boundary = mockBoundary();
+  const draw = {
+    indexCount: 18,
+    instanceCount: 2,
+    firstIndex: 24,
+    baseVertex: -7,
+    firstInstance: 3
+  };
+  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(
+    boundary.webgpu,
+    hooks(true, null, draw)
+  );
+  const prepared = await dispatcher.Prepare(indexedBatch({
+    indexCountPerInstance: 0,
+    instanceCount: 0,
+    startIndexLocation: 0,
+    baseVertexLocation: 0,
+    startInstanceLocation: 0
+  }));
+  assert.deepEqual(boundary.calls[3][2].draw, draw);
+  dispatcher.Destroy(prepared);
+
+  const nonIndexed = mockBoundary();
+  const nonIndexedDraw = {
+    vertexCount: 9,
+    instanceCount: 1,
+    firstVertex: 12,
+    firstInstance: 0
+  };
+  const nonIndexedDispatcher = new CjsWebGPUTrinityBatchDispatcher(
+    nonIndexed.webgpu,
+    hooks(false, null, nonIndexedDraw)
+  );
+  const nonIndexedPrepared = await nonIndexedDispatcher.Prepare(indexedBatch());
+  assert.deepEqual(nonIndexed.calls[3][2].draw, nonIndexedDraw);
+  nonIndexedDispatcher.Destroy(nonIndexedPrepared);
+});
+
 test("Trinity batch dispatcher fails closed on unsupported or conflicting contracts", async () =>
 {
   const { webgpu } = mockBoundary();
@@ -179,6 +220,19 @@ test("Trinity batch dispatcher fails closed on unsupported or conflicting contra
   await assert.rejects(
     dispatcher.Prepare(indexedBatch({ geometrySource: null })),
     /geometrySource is required/u
+  );
+  await assert.rejects(
+    new CjsWebGPUTrinityBatchDispatcher(
+      webgpu,
+      hooks(true, null, {
+        indexCount: 3,
+        instanceCount: 1,
+        firstIndex: 0,
+        baseVertex: 0x80000000,
+        firstInstance: 0
+      })
+    ).Prepare(indexedBatch()),
+    /baseVertex must be a GPUSignedOffset32 value/u
   );
 
   const conflicting = hooks();

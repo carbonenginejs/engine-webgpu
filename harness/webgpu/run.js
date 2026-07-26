@@ -669,8 +669,8 @@ function CreateQuadV5TrinityBatch(record, fixture)
         }),
         objectData: fixture.bindingValues,
         topology: 4,
-        indexCountPerInstance: fixture.geometry.indexCount,
-        instanceCount: 1,
+        indexCountPerInstance: 0,
+        instanceCount: 0,
         startIndexLocation: 0,
         baseVertexLocation: 0,
         startInstanceLocation: 0,
@@ -739,7 +739,14 @@ function CreateQuadV5TrinityDispatcher(webgpu, fixture)
             );
             return {
                 geometry: fixture.geometry,
-                indexed: true
+                indexed: true,
+                draw: {
+                    indexCount: fixture.geometry.indexCount,
+                    instanceCount: 1,
+                    firstIndex: 0,
+                    baseVertex: 0,
+                    firstInstance: 0
+                }
             };
         },
         ResolveBindings(batch, _livePipeline, context)
