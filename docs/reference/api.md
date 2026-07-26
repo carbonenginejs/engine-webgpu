@@ -31,6 +31,8 @@ values.
 The source tree also contains an internal
 `CjsWebGPUTrinityBatchDispatcher` conformance prototype. It is intentionally
 not exported from the package root and is not part of the supported public API.
+Its batch, accumulator, and batch-map paths keep material/resource resolution
+and render-pass selection injected.
 
 ## Space-object uniform serialization
 

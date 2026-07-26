@@ -86,12 +86,19 @@ the collected binding-set lifecycle as one unit. `GetGdprBatches()` must
 currently be empty: grouped state sharing remains explicitly unsupported and
 fails before any batch allocation.
 
+At the next level it snapshots `TriRenderBatchMap` batch types in insertion
+order and prepares each ordinary accumulator. Batch-type meaning and render
+pass selection remain outside the dispatcher: `EncodeBatchType(...)` requires
+the caller to supply the compatible pass for the requested type. This avoids
+turning opaque, decal, transparent, or depth policy into shared device code.
+
 This class is internal and is not exported from the package root. It is a
 conformance prototype, not a frozen renderer API. The static and skinned
-QuadV5 browser gates use its accumulator path, and actual `runtime-trinity`
-`Tr2RenderBatch` and `TriRenderBatchAccumulator` instances pass the duck-typed
-contract. A later render-step executor still needs to own frame/pass planning
-and batch-map dispatch.
+QuadV5 browser gates use its one-type batch-map path, and actual
+`runtime-trinity` `Tr2RenderBatch`, `TriRenderBatchAccumulator`, and
+`TriRenderBatchMap` instances pass the duck-typed contract. A later render-step
+executor still needs to own frame/pass planning and select the pass for each
+batch type.
 
 The contract consumes already-decoded pipeline data. Moving shader format
 readers between format and resource packages therefore does not change this

@@ -19,6 +19,7 @@ const WIDTH = QUADV5_TARGET_WIDTH;
 const HEIGHT = QUADV5_TARGET_HEIGHT;
 const BYTES_PER_PIXEL = 4;
 const BYTES_PER_ROW = 256;
+const TRINITY_BATCH_TYPE_OPAQUE = 0;
 const EXPECTED_PIXEL = Object.freeze([ 255, 0, 0, 255 ]);
 const CONFIG = await fetch("/config.json").then((response) => response.json());
 const SOURCE = `
@@ -691,6 +692,17 @@ function CreateQuadV5TrinityAccumulator(record, fixture)
     });
 }
 
+function CreateQuadV5TrinityBatchMap(record, fixture)
+{
+    const accumulator = CreateQuadV5TrinityAccumulator(record, fixture);
+    const batchTypes = Object.freeze([ TRINITY_BATCH_TYPE_OPAQUE ]);
+    return Object.freeze({
+        GetBatchTypes: () => batchTypes,
+        GetAccumulator: (value) => value === TRINITY_BATCH_TYPE_OPAQUE ? accumulator : null,
+        GetBatchCount: () => accumulator.GetBatchCount()
+    });
+}
+
 function CreateQuadV5TrinityDispatcher(webgpu, fixture)
 {
     return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
@@ -916,17 +928,20 @@ async function RunQuadV5Comparison(webgpu)
     {
         for (const record of records)
         {
-            let preparedAccumulator = null;
+            let preparedBatchMap = null;
             const targets = [];
             const readbacks = [];
             try
             {
-                preparedAccumulator = await dispatcher.PrepareAccumulator(
-                    CreateQuadV5TrinityAccumulator(record, fixture)
+                preparedBatchMap = await dispatcher.PrepareBatchMap(
+                    CreateQuadV5TrinityBatchMap(record, fixture)
                 );
-                warningCount += preparedAccumulator.batches.reduce(
-                    (total, batch) => total
-                        + batch.prepared.diagnostics.filter((entry) => entry.type === "warning").length,
+                warningCount += preparedBatchMap.entries.reduce(
+                    (mapTotal, entry) => mapTotal + entry.accumulator.batches.reduce(
+                        (batchTotal, batch) => batchTotal
+                            + batch.prepared.diagnostics.filter((item) => item.type === "warning").length,
+                        0
+                    ),
                     0
                 );
                 for (let targetIndex = 0; targetIndex < QUADV5_CLEAR_TARGETS.length; targetIndex += 1)
@@ -946,11 +961,11 @@ async function RunQuadV5Comparison(webgpu)
                         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
                     }));
                 }
-                instances.push({ record, preparedAccumulator, targets, readbacks, snapshots: [] });
+                instances.push({ record, preparedBatchMap, targets, readbacks, snapshots: [] });
             }
             catch (error)
             {
-                if (preparedAccumulator) dispatcher.DestroyAccumulator(preparedAccumulator);
+                if (preparedBatchMap) dispatcher.DestroyBatchMap(preparedBatchMap);
                 for (const buffer of readbacks)
                 {
                     buffer.destroy();
@@ -980,7 +995,7 @@ async function RunQuadV5Comparison(webgpu)
                     storeOp: "store"
                 }))
             });
-            dispatcher.EncodeAccumulator(pass, instance.preparedAccumulator);
+            dispatcher.EncodeBatchType(pass, instance.preparedBatchMap, TRINITY_BATCH_TYPE_OPAQUE);
             pass.end();
             instance.targets.forEach((texture, targetIndex) =>
             {
@@ -1049,7 +1064,7 @@ async function RunQuadV5Comparison(webgpu)
     {
         for (const instance of instances)
         {
-            dispatcher.DestroyAccumulator(instance.preparedAccumulator);
+            dispatcher.DestroyBatchMap(instance.preparedBatchMap);
             for (const buffer of instance.readbacks)
             {
                 if (buffer.mapState === "mapped") buffer.unmap();

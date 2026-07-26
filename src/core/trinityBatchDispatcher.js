@@ -10,6 +10,7 @@ const TOPOLOGIES = Object.freeze({
 
 const PREPARED_BATCHES = new WeakMap();
 const PREPARED_ACCUMULATORS = new WeakMap();
+const PREPARED_BATCH_MAPS = new WeakMap();
 
 function fail(message)
 {
@@ -300,6 +301,100 @@ export class CjsWebGPUTrinityBatchDispatcher
     for (let index = handle.batches.length - 1; index >= 0; index -= 1)
     {
       this.Destroy(handle.batches[index]);
+    }
+  }
+
+  /**
+   * Snapshots and prepares every accumulator in one
+   * TriRenderBatchMap-compatible object without interpreting batch-type
+   * meaning or selecting render passes.
+   */
+  async PrepareBatchMap(batchMap)
+  {
+    if (!batchMap || typeof batchMap.GetBatchTypes !== "function"
+      || typeof batchMap.GetAccumulator !== "function")
+    {
+      fail("batch map requires GetBatchTypes and GetAccumulator");
+    }
+    const batchTypes = batchMap.GetBatchTypes();
+    if (!Array.isArray(batchTypes)) fail("batch map GetBatchTypes must return an array");
+    const seen = new Set();
+    for (const batchType of batchTypes)
+    {
+      if (!Number.isInteger(batchType) || batchType < 0)
+      {
+        fail("batch map types must be non-negative integers");
+      }
+      if (seen.has(batchType)) fail(`batch map duplicates batch type ${batchType}`);
+      seen.add(batchType);
+    }
+
+    const entries = [];
+    try
+    {
+      for (const batchType of batchTypes)
+      {
+        const accumulator = batchMap.GetAccumulator(batchType);
+        if (!accumulator) fail(`batch map has no accumulator for type ${batchType}`);
+        entries.push(Object.freeze({
+          batchType,
+          accumulator: await this.PrepareAccumulator(accumulator)
+        }));
+      }
+      const preparedCount = entries.reduce(
+        (count, entry) => count + entry.accumulator.batches.length,
+        0
+      );
+      if (typeof batchMap.GetBatchCount === "function"
+        && batchMap.GetBatchCount() !== preparedCount)
+      {
+        fail("batch map count does not match its accumulators");
+      }
+      const handle = Object.freeze({
+        batchMap,
+        entries: Object.freeze(entries.slice())
+      });
+      PREPARED_BATCH_MAPS.set(handle, {
+        owner: this,
+        destroyed: false,
+        entries: new Map(entries.map((entry) => [ entry.batchType, entry ]))
+      });
+      return handle;
+    }
+    catch (error)
+    {
+      for (let index = entries.length - 1; index >= 0; index -= 1)
+      {
+        this.DestroyAccumulator(entries[index].accumulator);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Encodes one prepared batch type into a caller-selected compatible render
+   * pass.
+   */
+  EncodeBatchType(pass, handle, batchType)
+  {
+    const state = PREPARED_BATCH_MAPS.get(handle);
+    if (!state || state.owner !== this) fail("prepared batch map belongs to another dispatcher");
+    if (state.destroyed) fail("prepared batch map is destroyed");
+    const entry = state.entries.get(batchType);
+    if (!entry) fail(`prepared batch map has no batch type ${batchType}`);
+    this.EncodeAccumulator(pass, entry.accumulator);
+  }
+
+  /** Releases every accumulator and binding set owned by a prepared batch map. */
+  DestroyBatchMap(handle)
+  {
+    const state = PREPARED_BATCH_MAPS.get(handle);
+    if (!state || state.owner !== this) fail("prepared batch map belongs to another dispatcher");
+    if (state.destroyed) return;
+    state.destroyed = true;
+    for (let index = handle.entries.length - 1; index >= 0; index -= 1)
+    {
+      this.DestroyAccumulator(handle.entries[index].accumulator);
     }
   }
 }

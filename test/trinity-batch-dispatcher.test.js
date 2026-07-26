@@ -99,6 +99,15 @@ function hooks(indexed = true)
   };
 }
 
+function accumulator(batches, gdprBatches = [])
+{
+  return {
+    GetGdprBatches: () => gdprBatches,
+    GetBatches: () => batches,
+    GetBatchCount: () => batches.length + gdprBatches.length
+  };
+}
+
 test("Trinity batch dispatcher resolves an indexed batch without importing Trinity", async () =>
 {
   const { bindingSets, calls, webgpu } = mockBoundary();
@@ -186,12 +195,8 @@ test("Trinity batch dispatcher preserves ordinary accumulator order and lifecycl
   const dispatcher = new CjsWebGPUTrinityBatchDispatcher(boundary.webgpu, hooks());
   const first = indexedBatch({ material: { id: "first" }, startIndexLocation: 0 });
   const second = indexedBatch({ material: { id: "second" }, startIndexLocation: 36 });
-  const accumulator = {
-    GetGdprBatches: () => [],
-    GetBatches: () => [ first, second ],
-    GetBatchCount: () => 2
-  };
-  const prepared = await dispatcher.PrepareAccumulator(accumulator);
+  const batchAccumulator = accumulator([ first, second ]);
+  const prepared = await dispatcher.PrepareAccumulator(batchAccumulator);
   assert.deepEqual(prepared.batches.map((entry) => entry.batch), [ first, second ]);
 
   const pass = { id: "pass" };
@@ -234,4 +239,75 @@ test("Trinity batch dispatcher rejects GDPR and rolls back partial accumulators"
     /draw rejected/u
   );
   assert.deepEqual(rejected.bindingSets.map((entry) => entry.destroyed), [ 1, 1 ]);
+});
+
+test("Trinity batch dispatcher snapshots batch maps and leaves pass choice external", async () =>
+{
+  const boundary = mockBoundary();
+  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(boundary.webgpu, hooks());
+  const opaque = accumulator([ indexedBatch({ material: { id: "opaque" } }) ]);
+  const transparent = accumulator([ indexedBatch({ material: { id: "transparent" } }) ]);
+  const batchMap = {
+    GetBatchTypes: () => [ 0, 2 ],
+    GetAccumulator: (batchType) => batchType === 0 ? opaque : transparent,
+    GetBatchCount: () => 2
+  };
+
+  const prepared = await dispatcher.PrepareBatchMap(batchMap);
+  assert.deepEqual(prepared.entries.map((entry) => entry.batchType), [ 0, 2 ]);
+  const pass = { id: "transparent-pass" };
+  dispatcher.EncodeBatchType(pass, prepared, 2);
+  assert.deepEqual(
+    boundary.calls.filter(([ name ]) => name === "EncodeDraw").map((entry) => entry[2]),
+    [ prepared.entries[1].accumulator.batches[0].draw ]
+  );
+  assert.throws(
+    () => dispatcher.EncodeBatchType(pass, prepared, 9),
+    /has no batch type 9/u
+  );
+
+  dispatcher.DestroyBatchMap(prepared);
+  dispatcher.DestroyBatchMap(prepared);
+  assert.deepEqual(boundary.bindingSets.map((entry) => entry.destroyed), [ 1, 1 ]);
+  assert.throws(
+    () => dispatcher.EncodeBatchType(pass, prepared, 0),
+    /prepared batch map is destroyed/u
+  );
+});
+
+test("Trinity batch dispatcher validates batch-map identity and rolls back all types", async () =>
+{
+  const boundary = mockBoundary();
+  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(boundary.webgpu, hooks());
+  await assert.rejects(
+    dispatcher.PrepareBatchMap({
+      GetBatchTypes: () => [ 0, 0 ],
+      GetAccumulator: () => accumulator([])
+    }),
+    /duplicates batch type 0/u
+  );
+
+  await assert.rejects(
+    dispatcher.PrepareBatchMap({
+      GetBatchTypes: () => [ 0, 2 ],
+      GetAccumulator: (batchType) => batchType === 0
+        ? accumulator([ indexedBatch() ])
+        : accumulator([], [ indexedBatch() ]),
+      GetBatchCount: () => 2
+    }),
+    /GDPR batch dispatch is not implemented/u
+  );
+  assert.deepEqual(boundary.bindingSets.map((entry) => entry.destroyed), [ 1 ]);
+
+  const mismatched = mockBoundary();
+  const mismatchedDispatcher = new CjsWebGPUTrinityBatchDispatcher(mismatched.webgpu, hooks());
+  await assert.rejects(
+    mismatchedDispatcher.PrepareBatchMap({
+      GetBatchTypes: () => [ 0 ],
+      GetAccumulator: () => accumulator([ indexedBatch() ]),
+      GetBatchCount: () => 2
+    }),
+    /batch map count does not match/u
+  );
+  assert.deepEqual(mismatched.bindingSets.map((entry) => entry.destroyed), [ 1 ]);
 });

@@ -98,7 +98,7 @@ Immutable WebGPU-facing sampler binding descriptor.
 <!-- class:CjsWebGPUTrinityBatchDispatcher -->
 ## `CjsWebGPUTrinityBatchDispatcher`
 
-Internal conformance adapter from duck-typed Trinity batches and accumulators to WebGPU draws.
+Internal conformance adapter from duck-typed Trinity batch maps to WebGPU draws.
 
 - Export: Not exported
 - Source: `src/core/trinityBatchDispatcher.js`
