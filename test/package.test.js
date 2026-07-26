@@ -441,6 +441,48 @@ test("package shader matching rejects contradictory keyed stage provenance", () 
   );
 });
 
+test("render packages normalize only the inactive zero thread-group sentinel", () =>
+{
+  const value = {
+    stages: [ {
+      key: "Main.pass0.vertex",
+      techniqueName: "Main",
+      passIndex: 0,
+      stageName: "vertex",
+      stageType: 0,
+      threadGroupSize: { x: 0, y: 0, z: 0 }
+    } ],
+    shaders: [ {
+      key: "Main.pass0.vertex",
+      techniqueName: "Main",
+      passIndex: 0,
+      stageName: "vertex",
+      stage: "vertex",
+      stageType: 0,
+      threadGroupSize: { x: 0, y: 0, z: 0 },
+      entryPoint: "main",
+      code: "@vertex fn main() -> @builtin(position) vec4f { return vec4f(); }"
+    } ]
+  };
+  assert.equal(
+    CjsWebGPUPackage.from(value).GetShaderModule("Main.pass0.vertex").threadGroupSize,
+    null
+  );
+
+  value.shaders[0].threadGroupSize = { x: 1, y: 1, z: 1 };
+  assert.throws(
+    () => CjsWebGPUPackage.from(value),
+    /cannot declare threadGroupSize/u
+  );
+
+  value.shaders[0].threadGroupSize = { x: 0, y: 0, z: 0 };
+  value.stages[0].threadGroupSize = { x: 1, y: 1, z: 1 };
+  assert.throws(
+    () => CjsWebGPUPackage.from(value),
+    /cannot declare threadGroupSize/u
+  );
+});
+
 test("structured WGSL package input accepts only set versions 1 and 2", () =>
 {
   for (const formatVersion of [ 1, 2 ])

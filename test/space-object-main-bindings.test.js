@@ -180,6 +180,97 @@ test("space-object Main serializer emits full Carbon buffers at canonical identi
   assert.equal(floatAt(result["uniform-buffer:0:4"], 416), 12);
 });
 
+test("space-object Main serializer transposes logical matrices exactly once", () =>
+{
+  const values = bindingValues();
+  Object.assign(values.perFrameVS, {
+    ViewMat: matrix(301),
+    ProjectionMat: matrix(401),
+    ShadowViewMat: matrix(501),
+    ShadowViewProjectionMat: matrix(601),
+    EnvMapRotationMat: matrix(701),
+    ViewLast: matrix(801),
+    ProjLast: matrix(901)
+  });
+  Object.assign(values.perFramePS, {
+    ViewInverseTransposeMat: matrix(1001),
+    ViewMat: matrix(1101),
+    EnvMapRotationMat: matrix(1201),
+    ProjectionInverseMat: matrix(3001)
+  });
+  values.perObjectVS.worldTransform = [
+    0, 2, 0, 0,
+    -3, 0, 0, 0,
+    0, 0, 4, 0,
+    10, 20, 30, 1
+  ];
+  values.perFramePS.ShadowMatrixVal = [
+    matrix(1001),
+    matrix(1101),
+    ...Array.from({ length: 14 }, () => matrix(0))
+  ];
+  values.perObjectVS.customMaskMatrix = [matrix(1201), matrix(1301)];
+
+  const result = buildEveSpaceObjectMainUniformData(packageRecord(), values);
+  const perFrameVS = result["uniform-buffer:0:1"];
+  const perFramePS = result["uniform-buffer:0:2"];
+  const perObjectVS = result["uniform-buffer:0:3"];
+  const perObjectPS = result["uniform-buffer:0:4"];
+
+  assert.deepEqual(
+    Array.from({ length: 16 }, (_, index) => floatAt(perObjectVS, index * 4)),
+    [0, -3, 0, 10, 2, 0, 0, 20, 0, 0, 4, 30, 0, 0, 0, 1]
+  );
+  assert.deepEqual(
+    Array.from({ length: 16 }, (_, index) => floatAt(perFrameVS, 64 + index * 4)),
+    [101, 105, 109, 113, 102, 106, 110, 114, 103, 107, 111, 115, 104, 108, 112, 116]
+  );
+  assert.deepEqual(
+    Array.from({ length: 32 }, (_, index) => floatAt(perFramePS, 448 + index * 4)),
+    [
+      1001, 1005, 1009, 1013, 1002, 1006, 1010, 1014,
+      1003, 1007, 1011, 1015, 1004, 1008, 1012, 1016,
+      1101, 1105, 1109, 1113, 1102, 1106, 1110, 1114,
+      1103, 1107, 1111, 1115, 1104, 1108, 1112, 1116
+    ]
+  );
+  assert.deepEqual(
+    Array.from({ length: 32 }, (_, index) => floatAt(perObjectVS, 256 + index * 4)),
+    [ ...matrix(1201), ...matrix(1301) ]
+  );
+  for (const [ data, byteOffset, source, label ] of [
+    [ perFrameVS, 0, values.perFrameVS.ViewInverseTransposeMat, "perFrameVS.ViewInverseTransposeMat" ],
+    [ perFrameVS, 64, values.perFrameVS.ViewProjectionMat, "perFrameVS.ViewProjectionMat" ],
+    [ perFrameVS, 128, values.perFrameVS.ViewMat, "perFrameVS.ViewMat" ],
+    [ perFrameVS, 192, values.perFrameVS.ProjectionMat, "perFrameVS.ProjectionMat" ],
+    [ perFrameVS, 256, values.perFrameVS.ShadowViewMat, "perFrameVS.ShadowViewMat" ],
+    [ perFrameVS, 320, values.perFrameVS.ShadowViewProjectionMat, "perFrameVS.ShadowViewProjectionMat" ],
+    [ perFrameVS, 384, values.perFrameVS.EnvMapRotationMat, "perFrameVS.EnvMapRotationMat" ],
+    [ perFrameVS, 448, values.perFrameVS.ViewProjectionLast, "perFrameVS.ViewProjectionLast" ],
+    [ perFrameVS, 512, values.perFrameVS.ViewLast, "perFrameVS.ViewLast" ],
+    [ perFrameVS, 576, values.perFrameVS.ProjLast, "perFrameVS.ProjLast" ],
+    [ perFramePS, 0, values.perFramePS.ViewInverseTransposeMat, "perFramePS.ViewInverseTransposeMat" ],
+    [ perFramePS, 64, values.perFramePS.ViewMat, "perFramePS.ViewMat" ],
+    [ perFramePS, 128, values.perFramePS.EnvMapRotationMat, "perFramePS.EnvMapRotationMat" ],
+    [ perFramePS, 1488, values.perFramePS.ProjectionInverseMat, "perFramePS.ProjectionInverseMat" ],
+    [ perObjectVS, 0, values.perObjectVS.worldTransform, "perObjectVS.worldTransform" ],
+    [ perObjectVS, 64, values.perObjectVS.worldTransformLast, "perObjectVS.worldTransformLast" ],
+    [ perObjectVS, 128, values.perObjectVS.invWorldTransform, "perObjectVS.invWorldTransform" ],
+    [ perObjectPS, 0, values.perObjectPS.worldTransform, "perObjectPS.worldTransform" ],
+    [ perObjectPS, 64, values.perObjectPS.worldTransformLast, "perObjectPS.worldTransformLast" ],
+    [ perObjectPS, 128, values.perObjectPS.invWorldTransform, "perObjectPS.invWorldTransform" ]
+  ])
+  {
+    const expected = Array.from({ length: 16 }, (_, index) =>
+      source[(index % 4) * 4 + Math.floor(index / 4)]);
+    assert.deepEqual(
+      Array.from({ length: 16 }, (_, index) => floatAt(data, byteOffset + index * 4)),
+      expected,
+      label
+    );
+  }
+});
+
 test("space-object Main serializer emits exact v2 stage-scoped identities", () =>
 {
   const record = packageRecord(true);
@@ -239,10 +330,10 @@ test("space-object Main serializer accepts package objects and the QuadV5 semant
     packageObject,
     createQuadV5MainBindingValues(4, 4)
   );
-  assert.equal(floatAt(result["uniform-buffer:0:0"], 16), 0.25);
+  assert.equal(floatAt(result["uniform-buffer:0:0"], 16), Math.fround(0.08));
   assert.equal(floatAt(result["uniform-buffer:0:1"], 56), 5);
   assert.equal(floatAt(result["uniform-buffer:0:1"], 64), 1);
-  assert.equal(floatAt(result["uniform-buffer:0:1"], 640 + 8), 1);
+  assert.equal(floatAt(result["uniform-buffer:0:1"], 640 + 8), Math.fround(0.9027735));
   assert.equal(floatAt(result["uniform-buffer:0:2"], 272), 4);
   assert.equal(floatAt(result["uniform-buffer:0:2"], 348), 2);
   assert.equal(floatAt(result["uniform-buffer:0:4"], 196), 1);

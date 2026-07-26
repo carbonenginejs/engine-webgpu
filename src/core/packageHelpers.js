@@ -244,6 +244,16 @@ function validatedThreadGroupSize(value, label)
   return [ ...normalized ];
 }
 
+function isInactiveThreadGroupSize(value)
+{
+  const normalized = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? [ value.x, value.y, value.z ]
+      : null;
+  return normalized?.length === 3 && normalized.every((entry) => entry === 0);
+}
+
 function resolveThreadGroupSize(stage, shader)
 {
   const canonicalStage = normalizeCanonicalStage(stage.stageName);
@@ -251,7 +261,8 @@ function resolveThreadGroupSize(stage, shader)
   const shaderSize = shader?.threadGroupSize ?? null;
   if (canonicalStage !== "compute")
   {
-    if (analysisSize !== null || shaderSize !== null)
+    if ((analysisSize !== null && !isInactiveThreadGroupSize(analysisSize))
+      || (shaderSize !== null && !isInactiveThreadGroupSize(shaderSize)))
     {
       throw new Error(`Shader stage ${stage.key || buildStageKey(stage)} cannot declare threadGroupSize`);
     }

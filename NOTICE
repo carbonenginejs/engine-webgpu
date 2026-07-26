@@ -7,11 +7,11 @@ Fenris Creations (CCP Games) source material, tools, assets, shader behavior,
 and EVE-related data remain copyright their original holders.
 
 This package currently contains CarbonEngineJS original project code only. It
-implements a descriptor-only WebGPU consumption layer for `.cewgpu` package
-data and Carbon-style effect path rewriting. CarbonEngine and Fenris
-Creations (CCP Games) are mentioned for interoperability, provenance, and
-behavioral reference context only. This package is not affiliated with or
-endorsed by CCP Games.
+implements CEWGPU descriptor normalization plus live WebGPU pipeline, resource,
+binding, and draw realization, together with Carbon-style effect path
+rewriting. CarbonEngine and Fenris Creations (CCP Games) are mentioned for
+interoperability, provenance, and behavioral reference context only. This
+package is not affiliated with or endorsed by CCP Games.
 
 Development tooling
 -------------------

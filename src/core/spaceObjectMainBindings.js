@@ -24,16 +24,16 @@ const VISIBILITY = Object.freeze({
 });
 
 const PER_FRAME_VS_FIELDS = Object.freeze([
-  [ "ViewInverseTransposeMat", 0, 16, true ],
-  [ "ViewProjectionMat", 64, 16, true ],
-  [ "ViewMat", 128, 16 ],
-  [ "ProjectionMat", 192, 16 ],
-  [ "ShadowViewMat", 256, 16 ],
-  [ "ShadowViewProjectionMat", 320, 16 ],
-  [ "EnvMapRotationMat", 384, 16 ],
-  [ "ViewProjectionLast", 448, 16, true ],
-  [ "ViewLast", 512, 16 ],
-  [ "ProjLast", 576, 16 ],
+  [ "ViewInverseTransposeMat", 0, 16, true, "matrix" ],
+  [ "ViewProjectionMat", 64, 16, true, "matrix" ],
+  [ "ViewMat", 128, 16, false, "matrix" ],
+  [ "ProjectionMat", 192, 16, false, "matrix" ],
+  [ "ShadowViewMat", 256, 16, false, "matrix" ],
+  [ "ShadowViewProjectionMat", 320, 16, false, "matrix" ],
+  [ "EnvMapRotationMat", 384, 16, false, "matrix" ],
+  [ "ViewProjectionLast", 448, 16, true, "matrix" ],
+  [ "ViewLast", 512, 16, false, "matrix" ],
+  [ "ProjLast", 576, 16, false, "matrix" ],
   [ "Sun.DirWorld", 640, 3, true ],
   [ "Sun.unused_pad0", 652, 1 ],
   [ "Sun.DiffuseColor", 656, 4 ],
@@ -48,9 +48,9 @@ const PER_FRAME_VS_FIELDS = Object.freeze([
 ]);
 
 const PER_FRAME_PS_FIELDS = Object.freeze([
-  [ "ViewInverseTransposeMat", 0, 16 ],
-  [ "ViewMat", 64, 16 ],
-  [ "EnvMapRotationMat", 128, 16 ],
+  [ "ViewInverseTransposeMat", 0, 16, false, "matrix" ],
+  [ "ViewMat", 64, 16, false, "matrix" ],
+  [ "EnvMapRotationMat", 128, 16, false, "matrix" ],
   [ "Sun.DirWorld", 192, 3 ],
   [ "Sun.unused_pad0", 204, 1 ],
   [ "Sun.DiffuseColor", 208, 4 ],
@@ -78,9 +78,9 @@ const PER_FRAME_PS_FIELDS = Object.freeze([
   [ "ShadowMapAtlasEntryMinSizeLog2", 364, 1, false, "uint" ],
   [ "VolumetricSlices", 368, 4 ],
   [ "ShadowMapValues", 384, 16 ],
-  [ "ShadowMatrixVal", 448, 256 ],
+  [ "ShadowMatrixVal", 448, 256, false, "matrix" ],
   [ "SplitInfo", 1472, 4 ],
-  [ "ProjectionInverseMat", 1488, 16 ],
+  [ "ProjectionInverseMat", 1488, 16, false, "matrix" ],
   [ "CascadeRanges", 1552, 64 ],
   [ "FroxelFogData.FogColor", 1808, 3 ],
   [ "FroxelFogData.BackgroundVisibility", 1820, 1 ],
@@ -96,14 +96,14 @@ const PER_FRAME_PS_FIELDS = Object.freeze([
 ]);
 
 const PER_OBJECT_VS_FIELDS = Object.freeze([
-  [ "worldTransform", 0, 16, true ],
-  [ "worldTransformLast", 64, 16, true ],
-  [ "invWorldTransform", 128, 16, true ],
+  [ "worldTransform", 0, 16, true, "matrix" ],
+  [ "worldTransformLast", 64, 16, true, "matrix" ],
+  [ "invWorldTransform", 128, 16, true, "matrix" ],
   [ "shipData", 192, 4, true ],
   [ "clipData", 208, 4 ],
   [ "ellpsoidRadii", 224, 4 ],
   [ "ellpsoidCenter", 240, 4 ],
-  [ "customMaskMatrix", 256, 32 ],
+  [ "customMaskMatrix", 256, 32, false, "raw-matrix" ],
   [ "customMaskData", 384, 8 ],
   [ "boneOffsets", 416, 4, false, "uint" ],
   [ "morphTargetVertexDataOffset", 432, 1, false, "uint" ],
@@ -114,9 +114,9 @@ const PER_OBJECT_VS_FIELDS = Object.freeze([
 ]);
 
 const PER_OBJECT_PS_FIELDS = Object.freeze([
-  [ "worldTransform", 0, 16, true ],
-  [ "worldTransformLast", 64, 16, true ],
-  [ "invWorldTransform", 128, 16, true ],
+  [ "worldTransform", 0, 16, true, "matrix" ],
+  [ "worldTransformLast", 64, 16, true, "matrix" ],
+  [ "invWorldTransform", 128, 16, true, "matrix" ],
   [ "shipData", 192, 4, true ],
   [ "clipSphereCenter", 208, 3 ],
   [ "clipRadiusSq", 220, 1 ],
@@ -177,9 +177,20 @@ function writeField(view, source, descriptor, owner)
   }
   const values = flattenNumbers(value);
   if (values.length !== count) fail(`${owner}.${path} must contain exactly ${count} values`);
+  if ((kind === "matrix" || kind === "raw-matrix") && count % 16 !== 0)
+  {
+    fail(`${owner}.${path} has an invalid matrix footprint`);
+  }
   for (let index = 0; index < count; index += 1)
   {
-    const item = values[index];
+    let sourceIndex = index;
+    if (kind === "matrix")
+    {
+      const element = Math.floor(index / 16) * 16;
+      const lane = index % 16;
+      sourceIndex = element + (lane % 4) * 4 + Math.floor(lane / 4);
+    }
+    const item = values[sourceIndex];
     if (kind === "uint")
     {
       if (typeof item !== "number" || !Number.isInteger(item) || item < 0 || item > 0xffffffff)
@@ -190,7 +201,7 @@ function writeField(view, source, descriptor, owner)
     }
     else
     {
-      if (!isFiniteFloat32(item)) fail(`${owner}.${path}[${index}] must be a finite float32`);
+      if (!isFiniteFloat32(item)) fail(`${owner}.${path}[${sourceIndex}] must be a finite float32`);
       view.setFloat32(offset + index * 4, item, true);
     }
   }
@@ -393,10 +404,13 @@ function canonicalUniformBindings(pipeline)
  * Serialize the proven Carbon space-scene/space-object Main-pass structs and
  * the package-reflected stage-local material constants into canonical binding
  * scope identities. The caller owns
- * policy; this function owns only the byte ABI.
+ * policy; this function owns only the byte ABI. Logical 4x4 matrix values are
+ * transposed once into Carbon cbuffer register-row order. `customMaskMatrix`
+ * is the exception: its Trinity producer already supplies GPU-form bytes, so
+ * those matrix slots are copied unchanged.
  *
  * @param {object} record Loaded CjsWebGPUPackage or record with analysis and pipeline.
- * @param {object} values Plain semantic values for the five constant buffers.
+ * @param {object} values Plain values for the five constant buffers.
  * @returns {object} Frozen scope-identity-to-Uint8Array uniform data.
  */
 export function buildEveSpaceObjectMainUniformData(record, values = {})

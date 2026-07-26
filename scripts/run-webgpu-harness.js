@@ -31,15 +31,25 @@ if (DRAW_CEWGPU_INDEX >= 0 && DRAW_WGSL_INDEX >= 0)
 }
 const DRAW_CEWGPU_PATH = DRAW_CEWGPU_INDEX >= 0 ? resolve(process.argv[DRAW_CEWGPU_INDEX + 1]) : null;
 const DRAW_QUADV5_INDEX = process.argv.indexOf("--draw-quadv5");
-if (DRAW_QUADV5_INDEX >= 0
-  && (!process.argv[DRAW_QUADV5_INDEX + 1] || !process.argv[DRAW_QUADV5_INDEX + 2]
-    || process.argv[DRAW_QUADV5_INDEX + 1].startsWith("--")
-    || process.argv[DRAW_QUADV5_INDEX + 2].startsWith("--")))
+const DRAW_SKINNED_QUADV5_INDEX = process.argv.indexOf("--draw-skinned-quadv5");
+if (DRAW_QUADV5_INDEX >= 0 && DRAW_SKINNED_QUADV5_INDEX >= 0)
 {
-    throw new Error("--draw-quadv5 requires DX11-derived and DX12-derived CEWGPU file paths");
+    throw new Error("--draw-quadv5 and --draw-skinned-quadv5 are mutually exclusive");
 }
-const DRAW_QUADV5_PATHS = DRAW_QUADV5_INDEX >= 0
-    ? [ resolve(process.argv[DRAW_QUADV5_INDEX + 1]), resolve(process.argv[DRAW_QUADV5_INDEX + 2]) ]
+const ACTIVE_QUADV5_INDEX = DRAW_SKINNED_QUADV5_INDEX >= 0
+    ? DRAW_SKINNED_QUADV5_INDEX
+    : DRAW_QUADV5_INDEX;
+const QUADV5_VARIANT = DRAW_SKINNED_QUADV5_INDEX >= 0 ? "skinned" : "static";
+const QUADV5_FLAG = QUADV5_VARIANT === "skinned" ? "--draw-skinned-quadv5" : "--draw-quadv5";
+if (ACTIVE_QUADV5_INDEX >= 0
+  && (!process.argv[ACTIVE_QUADV5_INDEX + 1] || !process.argv[ACTIVE_QUADV5_INDEX + 2]
+    || process.argv[ACTIVE_QUADV5_INDEX + 1].startsWith("--")
+    || process.argv[ACTIVE_QUADV5_INDEX + 2].startsWith("--")))
+{
+    throw new Error(`${QUADV5_FLAG} requires DX11-derived and DX12-derived CEWGPU file paths`);
+}
+const DRAW_QUADV5_PATHS = ACTIVE_QUADV5_INDEX >= 0
+    ? [ resolve(process.argv[ACTIVE_QUADV5_INDEX + 1]), resolve(process.argv[ACTIVE_QUADV5_INDEX + 2]) ]
     : null;
 const CAPTURE_QUADV5_INDEX = process.argv.indexOf("--capture-quadv5");
 if (CAPTURE_QUADV5_INDEX >= 0
@@ -47,23 +57,23 @@ if (CAPTURE_QUADV5_INDEX >= 0
 {
     throw new Error("--capture-quadv5 requires a PNG output path");
 }
-if (CAPTURE_QUADV5_INDEX >= 0 && DRAW_QUADV5_INDEX < 0)
+if (CAPTURE_QUADV5_INDEX >= 0 && ACTIVE_QUADV5_INDEX < 0)
 {
-    throw new Error("--capture-quadv5 requires --draw-quadv5");
+    throw new Error("--capture-quadv5 requires a QuadV5 draw flag");
 }
 const CAPTURE_QUADV5_PATH = CAPTURE_QUADV5_INDEX >= 0
     ? resolve(process.argv[CAPTURE_QUADV5_INDEX + 1])
     : null;
-if (DRAW_QUADV5_INDEX >= 0 && (DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0))
+if (ACTIVE_QUADV5_INDEX >= 0 && (DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0))
 {
-    throw new Error("--draw-quadv5 cannot be combined with another draw input");
+    throw new Error(`${QUADV5_FLAG} cannot be combined with another draw input`);
 }
 const PREPARE_CEWGPU_INDEX = process.argv.indexOf("--prepare-cewgpu");
 if (PREPARE_CEWGPU_INDEX >= 0 && !process.argv[PREPARE_CEWGPU_INDEX + 1])
 {
     throw new Error("--prepare-cewgpu requires a CEWGPU file path");
 }
-if (PREPARE_CEWGPU_INDEX >= 0 && (DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0 || DRAW_QUADV5_INDEX >= 0))
+if (PREPARE_CEWGPU_INDEX >= 0 && (DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0 || ACTIVE_QUADV5_INDEX >= 0))
 {
     throw new Error("--prepare-cewgpu cannot be combined with a draw input");
 }
@@ -74,7 +84,7 @@ if (PREPARE_MATRIX_INDEX >= 0 && !process.argv[PREPARE_MATRIX_INDEX + 1])
     throw new Error("--prepare-matrix requires a CJS_WEBGPU_EFFECT_MATRIX JSON file path");
 }
 if (PREPARE_MATRIX_INDEX >= 0
-  && (PREPARE_CEWGPU_INDEX >= 0 || DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0 || DRAW_QUADV5_INDEX >= 0))
+  && (PREPARE_CEWGPU_INDEX >= 0 || DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0 || ACTIVE_QUADV5_INDEX >= 0))
 {
     throw new Error("--prepare-matrix cannot be combined with another package or draw input");
 }
@@ -92,7 +102,7 @@ const BROWSER_ARGS = Object.freeze([
 async function ReadPackagePipeline(path)
 {
     const [ { CjsFormatWebgpu }, { CjsWebGPUPackage }, { buildCopyblitDrawDescriptor } ] = await Promise.all([
-        import("../../format-webgpu/src/index.js"),
+        import("@carbonenginejs/format-webgpu"),
         import("../src/index.js"),
         import("../src/core/packageDraw.js")
     ]);
@@ -106,24 +116,25 @@ async function ReadPackagePipeline(path)
     return { pipeline: pipeline.ToJSON(), validateCopyblit: buildCopyblitDrawDescriptor };
 }
 
-async function ReadQuadV5Packages(paths)
+async function ReadQuadV5Packages(paths, variant)
 {
     const comparablePath = (value) => process.platform === "win32" ? value.toLowerCase() : value;
     if (comparablePath(paths[0]) === comparablePath(paths[1]))
     {
-        throw new Error("--draw-quadv5 requires distinct DX11 and DX12 package files");
+        throw new Error(`${QUADV5_FLAG} requires distinct DX11 and DX12 package files`);
     }
     const [
         { CjsFormatWebgpu },
         { CjsWebGPUPackage }
     ] = await Promise.all([
-        import("../../format-webgpu/src/index.js"),
+        import("@carbonenginejs/format-webgpu"),
         import("../src/index.js")
     ]);
     const requests = [ "dx11", "dx12" ].map((backend, index) => ({
         backend,
+        variant,
         filePath: paths[index],
-        resourcePath: `res:/webgpu-harness/quadv5/${backend}.cewgpu`
+        resourcePath: `res:/webgpu-harness/${variant}-quadv5/${backend}.cewgpu`
     }));
 
     const records = [];
@@ -144,6 +155,7 @@ async function ReadQuadV5Packages(paths)
         }
         const record = {
             backend: request.backend,
+            variant: request.variant,
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
@@ -165,7 +177,9 @@ const PACKAGE_PREPARE = PREPARE_CEWGPU_PATH ? (await ReadPackagePipeline(PREPARE
 const MATRIX_PREPARE = PREPARE_MATRIX_PATH
     ? buildMatrixPipelines(JSON.parse(await readFile(PREPARE_MATRIX_PATH, "utf8")))
     : null;
-const QUADV5_DRAW = DRAW_QUADV5_PATHS ? await ReadQuadV5Packages(DRAW_QUADV5_PATHS) : null;
+const QUADV5_DRAW = DRAW_QUADV5_PATHS
+    ? await ReadQuadV5Packages(DRAW_QUADV5_PATHS, QUADV5_VARIANT)
+    : null;
 
 const ASSETS = new Map([
     [ "/", { path: new URL("../harness/webgpu/index.html", import.meta.url), type: "text/html; charset=utf-8" } ],
@@ -184,6 +198,7 @@ const ASSETS = new Map([
             drawWgsl: !!DRAW_VERTEX_PATH,
             drawCewgpu: !!PACKAGE_DRAW,
             drawQuadV5: !!QUADV5_DRAW,
+            quadV5Variant: QUADV5_DRAW ? QUADV5_VARIANT : null,
             prepareCewgpu: !!PACKAGE_PREPARE,
             prepareMatrix: !!MATRIX_PREPARE,
             packageLabel: DRAW_CEWGPU_PATH ? basename(DRAW_CEWGPU_PATH) : null,
@@ -332,7 +347,7 @@ canvas { width: 100%; height: 100%; image-rendering: pixelated; }
     linear-gradient(#fff2 1px, transparent 1px); background-size: 25% 25%; }
 .footer { margin-top: 24px; color: #7f8ba5; }
 </style></head><body>
-<h1>QuadV5 PPT-on · body 4</h1>
+<h1>${comparison.variant === "skinned" ? "Skinned " : ""}QuadV5 PPT-on · body 4</h1>
 <div class="subtitle">Actual WebGPU readback - DX11 and DX12 RGBA8 bytes matched after target quantization</div>
 <div class="targets">
   <section class="card"><h2>MRT 0 · color</h2><div class="rgba" id="rgba0"></div>
@@ -357,7 +372,7 @@ canvas { width: 100%; height: 100%; image-rendering: pixelated; }
                 `RGBA8 [${bytes.slice(0, 4).join(", ")}] · ${value.targetWidth}×${value.targetHeight}`;
         }
         document.getElementById("footer").textContent =
-            `${value.labels.join("  ↔  ")} · indexed quad · 6 indices · zero WGSL warnings`;
+            `${value.labels.join("  ↔  ")} · ${value.drawKind} · ${value.indexCount} indices · zero WGSL warnings`;
     }, comparison);
     await page.screenshot({ path: outputPath, type: "png", fullPage: true });
 }
@@ -436,6 +451,7 @@ async function Main()
         {
             console.log(
                 `Rendered PPT-on QuadV5 body ${result.quadV5Comparison.bodyIndex} from ` +
+                `${result.quadV5Comparison.variant} ` +
                 `${result.quadV5Comparison.labels.join(" and ")} from direct CEWGPU reads; ` +
                 `${result.quadV5Comparison.pixelCount} pixels matched exactly across both MRTs and backends ` +
                 `with 0 WGSL warnings.`

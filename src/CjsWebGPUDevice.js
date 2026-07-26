@@ -961,6 +961,10 @@ async function popValidationScope(device, state)
  */
 export class CjsWebGPUDevice
 {
+  /**
+   * Requests or accepts a WebGPU adapter and device, then returns a ready
+   * engine boundary.
+   */
   static async Request(options = {})
   {
     const gpu = options.gpu || globalThis.navigator?.gpu;
@@ -971,6 +975,9 @@ export class CjsWebGPUDevice
     return new CjsWebGPUDevice({ ...options, gpu, adapter, device });
   }
 
+  /**
+   * Creates a ready engine boundary around an already-acquired GPU device.
+   */
   constructor(options = {})
   {
     if (!options.device || typeof options.device.createShaderModule !== "function") fail("a GPUDevice is required");
@@ -999,37 +1006,60 @@ export class CjsWebGPUDevice
     this._WatchDevice(this._device, this._generation);
   }
 
+  /**
+   * Returns the adapter associated with the boundary, when known.
+   */
   GetAdapter()
   {
     return this._adapter;
   }
 
+  /**
+   * Returns the ready native GPU device.
+   */
   GetDevice()
   {
     this._AssertReady();
     return this._device;
   }
 
+  /**
+   * Returns the generation used to reject objects from earlier device
+   * lifecycles.
+   */
   GetGeneration()
   {
     return this._generation;
   }
 
+  /**
+   * Returns the most recently accepted device-loss record, if any.
+   */
   GetLostInfo()
   {
     return this._lostInfo;
   }
 
+  /**
+   * Reports whether the boundary is currently in the lost state.
+   */
   IsLost()
   {
     return this._state === "lost";
   }
 
+  /**
+   * Reports whether the boundary currently has a usable device.
+   */
   IsReady()
   {
     return this._state === "ready";
   }
 
+  /**
+   * Compiles a CEWGPU render descriptor and realizes its generation-bound
+   * canonical pipeline layout.
+   */
   async PreparePipeline(pipeline, options = {})
   {
     const descriptor = normalizePipeline(pipeline, this._shaderStage);
@@ -1110,6 +1140,10 @@ export class CjsWebGPUDevice
     });
   }
 
+  /**
+   * Realizes a generation-bound native render pipeline from a CEWGPU
+   * descriptor or prepared pipeline.
+   */
   async CreateRenderPipeline(pipelineOrPrepared, recipe)
   {
     const pipelineRecipe = validateRecipe(recipe);
@@ -1299,6 +1333,9 @@ export class CjsWebGPUDevice
     });
   }
 
+  /**
+   * Destroys the device buffers owned by a geometry handle.
+   */
   DestroyGeometry(geometry)
   {
     const record = GEOMETRIES.get(geometry);
@@ -1414,6 +1451,9 @@ export class CjsWebGPUDevice
     });
   }
 
+  /**
+   * Destroys the native texture owned by a texture handle.
+   */
   DestroyTexture(texture)
   {
     const record = TEXTURES.get(texture);
@@ -1495,6 +1535,10 @@ export class CjsWebGPUDevice
     });
   }
 
+  /**
+   * Releases one logical sampler handle without destroying its shared native
+   * sampler.
+   */
   DestroySampler(sampler)
   {
     const record = SAMPLERS.get(sampler);
@@ -1573,6 +1617,9 @@ export class CjsWebGPUDevice
     return bundle;
   }
 
+  /**
+   * Destroys a resource bundle's child handles in reverse creation order.
+   */
   DestroyResourceBundle(bundle)
   {
     const record = RESOURCE_BUNDLES.get(bundle);
@@ -1678,6 +1725,9 @@ export class CjsWebGPUDevice
     return promise;
   }
 
+  /**
+   * Allocates, publishes, and rolls back one guarded resource realization.
+   */
   async _RealizeResource(resource, value, plan)
   {
     const stale = () =>
@@ -1774,6 +1824,10 @@ export class CjsWebGPUDevice
     }
   }
 
+  /**
+   * Creates generation-bound bind groups and owned uniform buffers for a live
+   * pipeline.
+   */
   CreateBindingSet(livePipeline, options = {})
   {
     const record = assertLive(this, livePipeline);
@@ -1901,6 +1955,10 @@ export class CjsWebGPUDevice
     }
   }
 
+  /**
+   * Validates and uploads exact-size updates to a binding set's owned uniform
+   * buffers.
+   */
   UpdateBindingSet(bindingSet, uniformData)
   {
     const record = assertBindingSet(this, bindingSet);
@@ -1924,6 +1982,10 @@ export class CjsWebGPUDevice
     return bindingSet;
   }
 
+  /**
+   * Destroys a binding set's owned uniform buffers without releasing external
+   * resources.
+   */
   DestroyBindingSet(bindingSet)
   {
     const record = BINDING_SETS.get(bindingSet);
@@ -1936,6 +1998,9 @@ export class CjsWebGPUDevice
     }
   }
 
+  /**
+   * Validates and snapshots one generation-bound indexed or non-indexed draw.
+   */
   CreateDraw(livePipeline, options = {})
   {
     const record = assertLive(this, livePipeline);
@@ -2109,6 +2174,9 @@ export class CjsWebGPUDevice
     return draw;
   }
 
+  /**
+   * Encodes one validated draw into a render pass.
+   */
   EncodeDraw(pass, draw)
   {
     const wrapper = DRAWS.get(draw);
@@ -2155,11 +2223,18 @@ export class CjsWebGPUDevice
     }
   }
 
+  /**
+   * Submits command buffers to the ready device queue.
+   */
   Submit(commandBuffers)
   {
     this.GetDevice().queue.submit(commandBuffers);
   }
 
+  /**
+   * Acquires or accepts a replacement adapter/device and advances the device
+   * generation.
+   */
   async Recreate(options = {})
   {
     if (this._state === "destroyed") fail("cannot recreate a destroyed device");
@@ -2192,6 +2267,10 @@ export class CjsWebGPUDevice
     return this;
   }
 
+  /**
+   * Transitions the boundary to destroyed, invalidates its generation, and
+   * destroys the native device.
+   */
   Destroy()
   {
     if (this._state === "destroyed") return;
@@ -2205,17 +2284,27 @@ export class CjsWebGPUDevice
     if (typeof device?.destroy === "function") device.destroy();
   }
 
+  /**
+   * Throws unless the boundary has a ready native device.
+   */
   _AssertReady()
   {
     if (this._state !== "ready" || !this._device) fail(`device is ${this._state}`);
   }
 
+  /**
+   * Throws unless an object generation matches the current ready device.
+   */
   _AssertGeneration(generation)
   {
     this._AssertReady();
     if (generation !== this._generation) fail(`object belongs to stale device generation ${generation}`);
   }
 
+  /**
+   * Queues a validation-sensitive operation after all previously queued
+   * operations settle.
+   */
   _SerializeValidation(operation)
   {
     const run = this._validationTail.then(operation, operation);
@@ -2223,6 +2312,10 @@ export class CjsWebGPUDevice
     return run;
   }
 
+  /**
+   * Tracks loss for one device generation and accepts only a still-current
+   * loss event.
+   */
   _WatchDevice(device, generation)
   {
     if (!device?.lost || typeof device.lost.then !== "function") return;

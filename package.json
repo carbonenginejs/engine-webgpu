@@ -2,7 +2,7 @@
   "name": "@carbonenginejs/engine-webgpu",
   "version": "0.3.0",
   "private": true,
-  "description": "CarbonEngineJS WebGPU package consumption, resource realization, and draw execution.",
+  "description": "@carbonenginejs/engine-webgpu consumes already-selected CEWGPU package data and realizes explicit WebGPU pipeline, resource, binding, and draw requests.",
   "type": "module",
   "main": "src/index.js",
   "exports": {
@@ -14,6 +14,7 @@
     "node": ">=18"
   },
   "scripts": {
+    "check": "npm run lint && npm test",
     "test": "node --test",
     "test:webgpu": "node scripts/run-webgpu-harness.js",
     "test:webgpu:required": "node scripts/run-webgpu-harness.js --required",
@@ -28,12 +29,15 @@
   ],
   "files": [
     "src",
+    "docs",
     "README.md",
+    "WEBGPU-HARNESS.md",
     "LICENSE",
     "NOTICE"
   ],
   "license": "MIT",
   "devDependencies": {
+    "@carbonenginejs/format-webgpu": "^0.4.1",
     "playwright": "^1.61.1"
   },
   "publishConfig": {
