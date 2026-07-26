@@ -53,7 +53,8 @@ internal `CjsWebGPUTrinityBatchDispatcher`. The fixture constructs the
 duck-typed fields of a transient `Tr2RenderBatch` inside a finalized
 ordinary-batch accumulator and a one-type batch-map shape. The caller selects
 the opaque batch type's render pass; injected hooks resolve its material,
-geometry source, and object data to the existing WebGPU resources. This tests
+geometry source, and object data to the existing WebGPU resources and assert
+that the immutable resolver context identifies that opaque type. This tests
 the engine crossing without importing `runtime-trinity`, loading a Trinity
 graph, accepting the still-unimplemented GDPR path, inferring pass policy, or
 presenting the prototype as a public composition API.

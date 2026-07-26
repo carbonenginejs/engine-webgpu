@@ -91,6 +91,10 @@ order and prepares each ordinary accumulator. Batch-type meaning and render
 pass selection remain outside the dispatcher: `EncodeBatchType(...)` requires
 the caller to supply the compatible pass for the requested type. This avoids
 turning opaque, decal, transparent, or depth policy into shared device code.
+Every injected material, geometry, and binding resolver receives the same
+immutable preparation context. The batch-map path supplies its numeric
+`batchType`, allowing application composition to select the matching effect
+technique without the dispatcher importing or interpreting `TriBatchType`.
 
 This class is internal and is not exported from the package root. It is a
 conformance prototype, not a frozen renderer API. The static and skinned

@@ -64,12 +64,13 @@ function mockBoundary(options = {})
   return { bindingSets, calls, webgpu };
 }
 
-function hooks(indexed = true)
+function hooks(indexed = true, observedContexts = null)
 {
   return {
-    async ResolveMaterial(material, batch)
+    async ResolveMaterial(material, batch, context)
     {
       assert.equal(material, batch.material);
+      observedContexts?.push([ "material", context ]);
       return {
         pipeline: { key: "Main.pass0" },
         recipe: {
@@ -79,18 +80,20 @@ function hooks(indexed = true)
         }
       };
     },
-    async ResolveGeometry(source, batch)
+    async ResolveGeometry(source, batch, context)
     {
       assert.equal(source, batch.geometrySource);
+      observedContexts?.push([ "geometry", context ]);
       return {
         geometry: { id: "live-geometry" },
         indexed
       };
     },
-    async ResolveBindings(batch, livePipeline)
+    async ResolveBindings(batch, livePipeline, context)
     {
       assert.equal(batch.objectData.id, "object-data");
       assert.equal(livePipeline.recipe.primitive.topology, "triangle-list");
+      observedContexts?.push([ "bindings", context ]);
       return {
         uniformData: new Map([ [ "cb0", new Float32Array(4) ] ]),
         resources: new Map([ [ "t0", { id: "texture" } ] ])
@@ -168,6 +171,10 @@ test("Trinity batch dispatcher fails closed on unsupported or conflicting contra
   );
 
   const dispatcher = new CjsWebGPUTrinityBatchDispatcher(webgpu, hooks());
+  await assert.rejects(
+    dispatcher.Prepare(indexedBatch(), { batchType: -1 }),
+    /batchType must be a non-negative integer/u
+  );
   await assert.rejects(dispatcher.Prepare(indexedBatch({ topology: 99 })), /topology 99 is unsupported/u);
   await assert.rejects(
     dispatcher.Prepare(indexedBatch({ geometrySource: null })),
@@ -244,7 +251,11 @@ test("Trinity batch dispatcher rejects GDPR and rolls back partial accumulators"
 test("Trinity batch dispatcher snapshots batch maps and leaves pass choice external", async () =>
 {
   const boundary = mockBoundary();
-  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(boundary.webgpu, hooks());
+  const observedContexts = [];
+  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(
+    boundary.webgpu,
+    hooks(true, observedContexts)
+  );
   const opaque = accumulator([ indexedBatch({ material: { id: "opaque" } }) ]);
   const transparent = accumulator([ indexedBatch({ material: { id: "transparent" } }) ]);
   const batchMap = {
@@ -255,6 +266,26 @@ test("Trinity batch dispatcher snapshots batch maps and leaves pass choice exter
 
   const prepared = await dispatcher.PrepareBatchMap(batchMap);
   assert.deepEqual(prepared.entries.map((entry) => entry.batchType), [ 0, 2 ]);
+  assert.deepEqual(
+    observedContexts.map(([ hook, context ]) => [ hook, context.batchType ]),
+    [
+      [ "material", 0 ],
+      [ "geometry", 0 ],
+      [ "bindings", 0 ],
+      [ "material", 2 ],
+      [ "geometry", 2 ],
+      [ "bindings", 2 ]
+    ]
+  );
+  assert.equal(Object.isFrozen(observedContexts[0][1]), true);
+  assert.deepEqual(
+    prepared.entries.map((entry) => entry.accumulator.context.batchType),
+    [ 0, 2 ]
+  );
+  assert.deepEqual(
+    prepared.entries.map((entry) => entry.accumulator.batches[0].context.batchType),
+    [ 0, 2 ]
+  );
   const pass = { id: "transparent-pass" };
   dispatcher.EncodeBatchType(pass, prepared, 2);
   assert.deepEqual(

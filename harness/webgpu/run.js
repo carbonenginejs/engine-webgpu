@@ -706,8 +706,12 @@ function CreateQuadV5TrinityBatchMap(record, fixture)
 function CreateQuadV5TrinityDispatcher(webgpu, fixture)
 {
     return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
-        ResolveMaterial(record)
+        ResolveMaterial(record, _batch, context)
         {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE,
+                "QuadV5 material resolved outside the opaque batch type"
+            );
             return {
                 pipeline: record.pipeline,
                 prepareOptions: { warningsAsErrors: true },
@@ -721,9 +725,11 @@ function CreateQuadV5TrinityDispatcher(webgpu, fixture)
                 }
             };
         },
-        ResolveGeometry(source)
+        ResolveGeometry(source, _batch, context)
         {
             Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    &&
                 source?.geometry === fixture.geometrySource
                     && source.meshIndex === 0
                     && source.areaIndex === 0
@@ -736,11 +742,12 @@ function CreateQuadV5TrinityDispatcher(webgpu, fixture)
                 indexed: true
             };
         },
-        ResolveBindings(batch)
+        ResolveBindings(batch, _livePipeline, context)
         {
             const record = batch.material;
             Assert(
-                batch.objectData === fixture.bindingValues,
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && batch.objectData === fixture.bindingValues,
                 `QuadV5 ${record.label} batch references unknown object data`
             );
             return {

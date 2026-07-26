@@ -11,6 +11,7 @@ const TOPOLOGIES = Object.freeze({
 const PREPARED_BATCHES = new WeakMap();
 const PREPARED_ACCUMULATORS = new WeakMap();
 const PREPARED_BATCH_MAPS = new WeakMap();
+const EMPTY_CONTEXT = Object.freeze({});
 
 function fail(message)
 {
@@ -32,6 +33,22 @@ function signedBaseVertex(value)
 {
   const bits = gpuSize32(value, "baseVertexLocation");
   return bits > 0x7fffffff ? bits - 0x100000000 : bits;
+}
+
+function preparationContext(value)
+{
+  if (value === undefined) return EMPTY_CONTEXT;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+  {
+    fail("preparation context must be an object");
+  }
+  const context = { ...value };
+  if (context.batchType !== undefined
+    && (!Number.isInteger(context.batchType) || context.batchType < 0))
+  {
+    fail("preparation context batchType must be a non-negative integer");
+  }
+  return Object.freeze(context);
 }
 
 function batchDraw(batch, indexed)
@@ -99,11 +116,14 @@ export class CjsWebGPUTrinityBatchDispatcher
    * @param {object} webgpu CjsWebGPUDevice-compatible boundary.
    * @param {object} hooks Backend composition hooks.
    * @param {Function} hooks.ResolveMaterial Resolves batch material to
-   *   { pipeline, recipe, prepareOptions? }.
+   *   { pipeline, recipe, prepareOptions? }; receives immutable preparation
+   *   context as its third argument.
    * @param {Function} hooks.ResolveGeometry Resolves geometrySource to
-   *   { geometry, indexed }.
+   *   { geometry, indexed }; receives preparation context as its third
+   *   argument.
    * @param {Function} hooks.ResolveBindings Resolves batch/object data to
-   *   { uniformData, resources }.
+   *   { uniformData, resources }; receives preparation context as its third
+   *   argument.
    */
   constructor(webgpu, hooks = {})
   {
@@ -136,8 +156,9 @@ export class CjsWebGPUTrinityBatchDispatcher
    * WebGPU draw. External geometry and resources remain owned by their
    * resolvers; the returned handle owns only its binding set.
    */
-  async Prepare(batch)
+  async Prepare(batch, context = undefined)
   {
+    const preparedContext = preparationContext(context);
     if (!batch || typeof batch !== "object") fail("batch must be an object");
     if (batch.material === null || batch.material === undefined) fail("batch material is required");
     if (batch.geometrySource === null || batch.geometrySource === undefined)
@@ -147,12 +168,16 @@ export class CjsWebGPUTrinityBatchDispatcher
     const topology = TOPOLOGIES[batch.topology];
     if (!topology) fail(`batch topology ${batch.topology} is unsupported`);
 
-    const material = await this.#hooks.ResolveMaterial(batch.material, batch);
+    const material = await this.#hooks.ResolveMaterial(batch.material, batch, preparedContext);
     if (!material || typeof material !== "object" || material.pipeline == null)
     {
       fail("ResolveMaterial must return a pipeline and recipe");
     }
-    const geometry = await this.#hooks.ResolveGeometry(batch.geometrySource, batch);
+    const geometry = await this.#hooks.ResolveGeometry(
+      batch.geometrySource,
+      batch,
+      preparedContext
+    );
     if (!geometry || typeof geometry !== "object" || geometry.geometry == null
       || typeof geometry.indexed !== "boolean")
     {
@@ -167,7 +192,7 @@ export class CjsWebGPUTrinityBatchDispatcher
       prepared,
       pipelineRecipe(material.recipe, topology)
     );
-    const bindings = await this.#hooks.ResolveBindings(batch, livePipeline);
+    const bindings = await this.#hooks.ResolveBindings(batch, livePipeline, preparedContext);
     if (!bindings || typeof bindings !== "object")
     {
       fail("ResolveBindings must return uniformData and resources");
@@ -187,6 +212,7 @@ export class CjsWebGPUTrinityBatchDispatcher
       });
       const handle = Object.freeze({
         batch,
+        context: preparedContext,
         prepared,
         livePipeline,
         bindingSet,
@@ -229,8 +255,9 @@ export class CjsWebGPUTrinityBatchDispatcher
    * TriRenderBatchAccumulator-compatible object. GDPR batches remain rejected
    * until their grouped state-sharing contract is implemented.
    */
-  async PrepareAccumulator(accumulator)
+  async PrepareAccumulator(accumulator, context = undefined)
   {
+    const preparedContext = preparationContext(context);
     if (!accumulator || typeof accumulator.GetGdprBatches !== "function"
       || typeof accumulator.GetBatches !== "function")
     {
@@ -257,10 +284,11 @@ export class CjsWebGPUTrinityBatchDispatcher
     {
       for (const batch of batches)
       {
-        preparedBatches.push(await this.Prepare(batch));
+        preparedBatches.push(await this.Prepare(batch, preparedContext));
       }
       const handle = Object.freeze({
         accumulator,
+        context: preparedContext,
         batches: Object.freeze(preparedBatches.slice())
       });
       PREPARED_ACCUMULATORS.set(handle, {
@@ -338,7 +366,7 @@ export class CjsWebGPUTrinityBatchDispatcher
         if (!accumulator) fail(`batch map has no accumulator for type ${batchType}`);
         entries.push(Object.freeze({
           batchType,
-          accumulator: await this.PrepareAccumulator(accumulator)
+          accumulator: await this.PrepareAccumulator(accumulator, { batchType })
         }));
       }
       const preparedCount = entries.reduce(
