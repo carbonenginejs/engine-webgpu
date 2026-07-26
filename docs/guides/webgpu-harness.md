@@ -174,6 +174,13 @@ Main pass:
 npm.cmd run test:webgpu:required -- --draw-decalglowv5 .\artifacts\decalglowv5-dx11.cewgpu .\artifacts\decalglowv5-dx12.cewgpu
 ```
 
+The cylindrical glow sibling uses the separately qualified default
+`unpacked_decalglowcylindricv5` Main pass:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-decalglowcylindricv5 .\artifacts\decalglowcylindricv5-dx11.cewgpu .\artifacts\decalglowcylindricv5-dx12.cewgpu
+```
+
 Add `--capture-quadv5 .\artifacts\quadv5-ppt-on.png` to save a browser-rendered
 PNG visualization of the DX11 package's two 64x64 active-pixel MRT readbacks
 after the silhouette invariants and byte-exact DX11/DX12 checks pass. DX12 is not
@@ -299,6 +306,35 @@ general D3D border-address behavior. The values, textures, and sampler
 adaptation are conformance inputs, not production defaults, final blend/pass
 policy, or a finalized RawData integration.
 
+The DecalGlowCylindricV5 command is a separate gate for the canonical
+`unpacked_decalglowcylindricv5` package, not a shader implementation. It
+requires the exact default selection, `Main.pass0` state, vertex outputs
+`1..9`, cylindrical fragment input `8`, five uniform buffers, two textures,
+and one shared filtering sampler. DX11 reflects that sampler as repeat in U/V
+with anisotropy `16` and mip LOD bias `-0.75`; DX12 retains the canonical
+layout but does not carry the static sampler reflection.
+
+The fixture keeps every position z at `0.25`, uses identity decal matrices,
+sets `DecalTextureScaling.w` to `1`, and authors asymmetric affine
+transparency/glow textures. Six cases per backend cover patterned, white, and
+half-value controls. After exact DX11/DX12 target comparison, the browser
+inverts the shader's explicit sRGB transfer and requires the half
+transparency ratio to remain linear, the half glow ratio to retain its
+`2.4` power, and the two sampled terms to satisfy their multiplicative
+identity. A CPU bilinear-repeat oracle independently predicts the emitted
+angular and axial texture coordinates at every active pixel; collapsed,
+planar, or swapped cylindrical inputs therefore cannot pass merely by
+producing varied pixels.
+
+The reflected vertex `cb3` minimum is `320` bytes, while the fixture binds the
+complete six-matrix `384`-byte source shape. Fragment `cb4` binds only its
+active `32`-byte prefix: `displayData` followed by `shipData`. These are
+harness-authored register bytes. Identity matrices do not validate production
+decal transforms, matrix transposition, parent/bone transforms, or a finalized
+RawData packing contract. The single-mip texture fixture also makes the
+reflected `-0.75` mip bias inert; WebGPU has no sampler LOD-bias field, so
+real mip-chain bias behavior remains outside this gate.
+
 The QuadV5 path supplies semantic material, per-frame, and per-object values
 rather than hand-addressed constant-buffer rows. It calls
 `buildEveSpaceObjectMainUniformData(...)` directly; that serializer reflects
@@ -337,8 +373,9 @@ dispatch and does not widen the render-only public `CjsWebGPUDevice` API.
 Unlike the ship-family draw flags, preparation requires no geometry or live
 resource fixtures.
 
-The QuadV5 and DecalV5 commands are direct format/engine integration gates.
-They do not load `runtime-core`, `runtime-resource`, or `runtime-trinity`.
+The QuadV5 and decal-family commands are direct format/engine integration
+gates. They do not load `runtime-core`, `runtime-resource`, or
+`runtime-trinity`.
 
 To exercise the real package boundary, pass a CEWGPU package containing the
 generated `Main.pass0.vertex` and `Main.pass0.pixel` shaders plus its canonical

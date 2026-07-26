@@ -17,6 +17,14 @@ import {
     validateDecalGlowV5PackagePair
 } from "/decalGlowV5Fixture.js";
 import {
+    DECAL_GLOW_CYLINDRIC_V5_TARGET_HEIGHT,
+    DECAL_GLOW_CYLINDRIC_V5_TARGET_WIDTH,
+    DECAL_GLOW_CYLINDRIC_V5_VERTEX_BUFFER_LAYOUT,
+    createDecalGlowCylindricV5FixtureValues,
+    getDecalGlowCylindricV5ResourcePlan,
+    validateDecalGlowCylindricV5PackagePair
+} from "/decalGlowCylindricV5Fixture.js";
+import {
     DECALV5_CLEAR_TARGET,
     DECALV5_TARGET_HEIGHT,
     DECALV5_TARGET_WIDTH,
@@ -84,6 +92,20 @@ const DECAL_FAMILY_V5_PROFILES = Object.freeze({
         createValues: createDecalGlowV5FixtureValues,
         getResourcePlan: getDecalGlowV5ResourcePlan,
         validatePair: validateDecalGlowV5PackagePair,
+        resolveUniformData: (record, values) => Object.freeze({
+            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
+            ...values.decalUniformData
+        })
+    }),
+    glowCylindric: Object.freeze({
+        label: "DecalGlowCylindricV5",
+        route: "/draw-decalglowcylindricv5.json",
+        width: DECAL_GLOW_CYLINDRIC_V5_TARGET_WIDTH,
+        height: DECAL_GLOW_CYLINDRIC_V5_TARGET_HEIGHT,
+        vertexLayout: DECAL_GLOW_CYLINDRIC_V5_VERTEX_BUFFER_LAYOUT,
+        createValues: createDecalGlowCylindricV5FixtureValues,
+        getResourcePlan: getDecalGlowCylindricV5ResourcePlan,
+        validatePair: validateDecalGlowCylindricV5PackagePair,
         resolveUniformData: (record, values) => Object.freeze({
             ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
             ...values.decalUniformData
@@ -1261,7 +1283,7 @@ function GetActiveTargetPixels(bytes)
     return pixels;
 }
 
-function AssertDecalV5Silhouette(bytes, label, variant)
+function AssertDecalV5Silhouette(bytes, label, variant, resourceVariant = "base")
 {
     for (const [ x, y ] of [ [ 0, 0 ], [ WIDTH - 1, 0 ], [ 0, HEIGHT - 1 ], [ WIDTH - 1, HEIGHT - 1 ] ])
     {
@@ -1318,14 +1340,24 @@ function AssertDecalV5Silhouette(bytes, label, variant)
         );
         Assert(colors.size >= 2, `${label} must contain varied counter output rather than a constant fill`);
     }
-    else if (variant === "glow")
+    else if (variant === "glow" || variant === "glowCylindric")
     {
         Assert(coverage >= 900 && coverage <= 1800, `${label} has implausible glow coverage ${coverage}`);
         Assert(
             minimumX <= 20 && maximumX >= 48 && minimumY <= 12 && maximumY >= 50,
             `${label} has implausible glow bounds ${minimumX}..${maximumX}, ${minimumY}..${maximumY}`
         );
-        Assert(colors.size >= 16, `${label} must contain varied glow shading rather than a constant fill`);
+        if (![
+            "whiteBoth",
+            "halfTransparency",
+            "halfGlow"
+        ].includes(resourceVariant))
+        {
+            Assert(
+                colors.size >= 16,
+                `${label} must contain varied glow shading rather than a constant fill`
+            );
+        }
     }
     else
     {
@@ -1372,6 +1404,167 @@ function AssertGlowTextureInfluence(base, control, label)
     Assert(changedRatio >= 0.5, `${label} affected only ${changedPixels}/${activePixels} active pixels`);
     Assert(averageRgbDelta >= 12, `${label} average RGB delta ${averageRgbDelta} is too small`);
     return { activePixels, changedPixels, changedRatio, averageRgbDelta };
+}
+
+function SrgbByteToLinear(value)
+{
+    const normalized = value / 255;
+    return normalized <= 0.04045
+        ? normalized / 12.92
+        : ((normalized + 0.055) / 1.055) ** 2.4;
+}
+
+function SampleRepeatBilinear8x8(u, v, texel)
+{
+    const sampleAxis = (coordinate) =>
+    {
+        const location = (coordinate - Math.floor(coordinate)) * 8 - 0.5;
+        const lower = Math.floor(location);
+        return {
+            lower: ((lower % 8) + 8) % 8,
+            upper: (((lower + 1) % 8) + 8) % 8,
+            fraction: location - lower
+        };
+    };
+    const x = sampleAxis(u);
+    const y = sampleAxis(v);
+    const top = texel(x.lower, y.lower) * (1 - x.fraction)
+        + texel(x.upper, y.lower) * x.fraction;
+    const bottom = texel(x.lower, y.upper) * (1 - x.fraction)
+        + texel(x.upper, y.upper) * x.fraction;
+    return (top * (1 - y.fraction) + bottom * y.fraction) / 255;
+}
+
+function AssertCylindricGlowControls(instances)
+{
+    const snapshots = Object.fromEntries(instances
+        .filter((instance) => instance.record.backend === "dx11")
+        .map((instance) => [ instance.resourceVariant, instance.snapshot ]));
+    for (const name of [
+        "base",
+        "whiteTransparency",
+        "whiteGlow",
+        "whiteBoth",
+        "halfTransparency",
+        "halfGlow"
+    ])
+    {
+        Assert(snapshots[name], `DecalGlowCylindricV5 ${name} output is missing`);
+    }
+
+    const expectedTransparencyRatio = 128 / 255;
+    const expectedGlowRatio = expectedTransparencyRatio ** 2.4;
+    let activePixels = 0;
+    let samples = 0;
+    let transparencyError = 0;
+    let glowError = 0;
+    let productIdentityError = 0;
+    let transparencyCoordinateError = 0;
+    let glowCoordinateError = 0;
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            const clear = PixelEquals(snapshots.whiteBoth, x, y, DECALV5_CLEAR_TARGET);
+            for (const name of Object.keys(snapshots))
+            {
+                Assert(
+                    PixelEquals(snapshots[name], x, y, DECALV5_CLEAR_TARGET) === clear,
+                    `DecalGlowCylindricV5 ${name} changed the active silhouette at (${x}, ${y})`
+                );
+            }
+            if (clear) continue;
+            activePixels += 1;
+            const offset = PixelOffset(x, y);
+            const worldX = 2 * (x + 0.5) / WIDTH - 1;
+            const worldY = 1 - 2 * (y + 0.5) / HEIGHT;
+            const cylindricalU = (Math.atan2(0.25, worldY) + Math.PI) / (2 * Math.PI);
+            const cylindricalV = worldX * 0.5 + 0.5;
+            const expectedTransparency = SampleRepeatBilinear8x8(
+                cylindricalU,
+                cylindricalV,
+                (texelX, texelY) => 32 + 20 * texelX + 8 * texelY
+            );
+            const expectedGlow = SampleRepeatBilinear8x8(
+                cylindricalU,
+                cylindricalV,
+                (texelX, texelY) => 192 - 16 * texelX + 8 * texelY
+            );
+            // Red and green stay comfortably above quantization noise and
+            // below saturation for the harness-authored glow color.
+            for (const component of [ 0, 1 ])
+            {
+                const whiteBoth = SrgbByteToLinear(snapshots.whiteBoth[offset + component]);
+                const halfTransparency =
+                    SrgbByteToLinear(snapshots.halfTransparency[offset + component]);
+                const halfGlow = SrgbByteToLinear(snapshots.halfGlow[offset + component]);
+                const base = SrgbByteToLinear(snapshots.base[offset + component]);
+                const transparencyOnly =
+                    SrgbByteToLinear(snapshots.whiteGlow[offset + component]);
+                const glowOnly =
+                    SrgbByteToLinear(snapshots.whiteTransparency[offset + component]);
+                Assert(
+                    whiteBoth > 0.02,
+                    "DecalGlowCylindricV5 white control is too dark for a ratio oracle"
+                );
+                transparencyError += Math.abs(
+                    halfTransparency / whiteBoth - expectedTransparencyRatio
+                );
+                glowError += Math.abs(halfGlow / whiteBoth - expectedGlowRatio);
+                productIdentityError += Math.abs(
+                    base * whiteBoth - transparencyOnly * glowOnly
+                );
+                transparencyCoordinateError += Math.abs(
+                    transparencyOnly / whiteBoth - expectedTransparency
+                );
+                glowCoordinateError += Math.abs(
+                    (glowOnly / whiteBoth) ** (1 / 2.4) - expectedGlow
+                );
+                samples += 1;
+            }
+        }
+    }
+    Assert(activePixels > 0, "DecalGlowCylindricV5 controls have no active pixels");
+    const transparencyMeanAbsoluteError = transparencyError / samples;
+    const glowMeanAbsoluteError = glowError / samples;
+    const productIdentityMeanAbsoluteError = productIdentityError / samples;
+    const transparencyCoordinateMeanAbsoluteError =
+        transparencyCoordinateError / samples;
+    const glowCoordinateMeanAbsoluteError = glowCoordinateError / samples;
+    Assert(
+        transparencyMeanAbsoluteError <= 0.025,
+        `DecalGlowCylindricV5 linear transparency ratio MAE ` +
+            `${transparencyMeanAbsoluteError} exceeds 0.025`
+    );
+    Assert(
+        glowMeanAbsoluteError <= 0.025,
+        `DecalGlowCylindricV5 2.4-power glow ratio MAE ${glowMeanAbsoluteError} exceeds 0.025`
+    );
+    Assert(
+        productIdentityMeanAbsoluteError <= 0.01,
+        `DecalGlowCylindricV5 texture product identity MAE ` +
+            `${productIdentityMeanAbsoluteError} exceeds 0.01`
+    );
+    Assert(
+        transparencyCoordinateMeanAbsoluteError <= 0.015,
+        `DecalGlowCylindricV5 angular/axial transparency sample MAE ` +
+            `${transparencyCoordinateMeanAbsoluteError} exceeds 0.015`
+    );
+    Assert(
+        glowCoordinateMeanAbsoluteError <= 0.015,
+        `DecalGlowCylindricV5 angular/axial glow sample MAE ` +
+            `${glowCoordinateMeanAbsoluteError} exceeds 0.015`
+    );
+    return {
+        activePixels,
+        expectedTransparencyRatio,
+        expectedGlowRatio,
+        transparencyMeanAbsoluteError,
+        glowMeanAbsoluteError,
+        productIdentityMeanAbsoluteError,
+        transparencyCoordinateMeanAbsoluteError,
+        glowCoordinateMeanAbsoluteError
+    };
 }
 
 async function RunQuadV5Comparison(webgpu)
@@ -1547,10 +1740,16 @@ async function RunQuadV5Comparison(webgpu)
 
 async function RunDecalV5Comparison(webgpu)
 {
-    const variant = CONFIG.drawDecalGlowV5
-        ? "glow"
-        : (CONFIG.drawDecalCounterV5 ? "counter" : "standard");
-    if (!CONFIG.drawDecalV5 && !CONFIG.drawDecalCounterV5 && !CONFIG.drawDecalGlowV5) return null;
+    const variant = CONFIG.drawDecalGlowCylindricV5
+        ? "glowCylindric"
+        : (CONFIG.drawDecalGlowV5
+            ? "glow"
+            : (CONFIG.drawDecalCounterV5 ? "counter" : "standard"));
+    if (!CONFIG.drawDecalV5 && !CONFIG.drawDecalCounterV5
+        && !CONFIG.drawDecalGlowV5 && !CONFIG.drawDecalGlowCylindricV5)
+    {
+        return null;
+    }
     const profile = DECAL_FAMILY_V5_PROFILES[variant];
     const response = await fetch(profile.route);
     Assert(response.ok, `Failed to load ${profile.label} package records: HTTP ${response.status}`);
@@ -1670,7 +1869,8 @@ async function RunDecalV5Comparison(webgpu)
                 instance.snapshot,
                 `${profile.label} ${instance.record.label} ` +
                     `${instance.resourceVariant} color target`,
-                variant
+                variant,
+                instance.resourceVariant
             );
         }
         for (const resourceVariant of fixture.resourceVariantNames)
@@ -1692,7 +1892,7 @@ async function RunDecalV5Comparison(webgpu)
             instance.record.backend === "dx11" && instance.resourceVariant === "base");
         Assert(base, `${profile.label} base comparison output is missing`);
         let textureInfluence = null;
-        if (variant === "glow")
+        if (variant === "glow" || variant === "glowCylindric")
         {
             const whiteTransparency = instances.find((instance) =>
                 instance.record.backend === "dx11"
@@ -1708,19 +1908,24 @@ async function RunDecalV5Comparison(webgpu)
                 transparency: AssertGlowTextureInfluence(
                     base.snapshot,
                     whiteTransparency.snapshot,
-                    "DecalGlowV5 transparency texture"
+                    `${profile.label} transparency texture`
                 ),
                 glow: AssertGlowTextureInfluence(
                     base.snapshot,
                     whiteGlow.snapshot,
-                    "DecalGlowV5 glow texture"
+                    `${profile.label} glow texture`
                 ),
                 controls: AssertGlowTextureInfluence(
                     whiteTransparency.snapshot,
                     whiteGlow.snapshot,
-                    "DecalGlowV5 texture controls"
+                    `${profile.label} texture controls`
                 )
             };
+            if (variant === "glowCylindric")
+            {
+                textureInfluence.cylindricalControls =
+                    AssertCylindricGlowControls(instances);
+            }
         }
         return {
             bodyIndex: 0,
@@ -1868,6 +2073,7 @@ async function RunHarness()
     let decalV5Comparison = null;
     let decalCounterV5Comparison = null;
     let decalGlowV5Comparison = null;
+    let decalGlowCylindricV5Comparison = null;
     let errorScopeOpen = true;
 
     device.pushErrorScope("validation");
@@ -1882,6 +2088,10 @@ async function RunHarness()
         const decalComparison = await RunDecalV5Comparison(webgpu);
         if (decalComparison?.variant === "counter") decalCounterV5Comparison = decalComparison;
         else if (decalComparison?.variant === "glow") decalGlowV5Comparison = decalComparison;
+        else if (decalComparison?.variant === "glowCylindric")
+        {
+            decalGlowCylindricV5Comparison = decalComparison;
+        }
         else decalV5Comparison = decalComparison;
         const shaderModule = device.createShaderModule({
             label: "engine-webgpu phase-0 shader",
@@ -1963,7 +2173,8 @@ async function RunHarness()
             quadV5Comparison,
             decalV5Comparison,
             decalCounterV5Comparison,
-            decalGlowV5Comparison
+            decalGlowV5Comparison,
+            decalGlowCylindricV5Comparison
         };
     }
     finally
