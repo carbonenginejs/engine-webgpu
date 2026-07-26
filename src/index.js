@@ -12,12 +12,4 @@ export {
   buildEveSpaceObjectMainUniformData,
   getEveSpaceObjectMainMaterialConstants
 } from "./core/spaceObjectMainBindings.js";
-export {
-  EVE_SPACE_OBJECT_MAIN_RESOURCE_BEHAVIOR,
-  createEveSpaceObjectMainResourceBehavior
-} from "./core/spaceObjectMainBehavior.js";
-export {
-  WEBGPU_RGBA8_TEXTURE_RESOURCE_BEHAVIOR,
-  createWebGPURgba8TextureResourceBehavior
-} from "./core/rgba8TextureBehavior.js";
 export { normalizeEffectPath, shaderModelSuffix, toCompiledEffectPath } from "./utils/effectPaths.js";

@@ -301,7 +301,7 @@ function resolvePackageRecord(value)
 /**
  * Returns the reflected local material constants consumed by the bounded
  * Eve space-object Main profile. The detached records are safe to pass to a
- * runtime-trinity effect-value extractor.
+ * caller-owned effect-value extractor.
  *
  * @param {object} record Loaded package or analysis/pipeline record.
  * @returns {object[]} Frozen reflected constant records.
@@ -392,7 +392,7 @@ function canonicalUniformBindings(pipeline)
 /**
  * Serialize the proven Carbon space-scene/space-object Main-pass structs and
  * the package-reflected stage-local material constants into canonical binding
- * scope identities. The caller (normally a CjsLibrary-selected behavior) owns
+ * scope identities. The caller owns
  * policy; this function owns only the byte ABI.
  *
  * @param {object} record Loaded CjsWebGPUPackage or record with analysis and pipeline.

@@ -8,13 +8,10 @@ Part of the CarbonEngineJS runtime/engine tier. Ports/adapts from CarbonEngine
 (https://github.com/carbonengine, MIT); ccpwgl is consulted as a behavioral
 reference donor where Carbon naming/routing behavior needs preservation.
 
-`CjsWebGPUDevice` is the live WebGPU owner. It is not a `TriDevice` subclass
-and is not a second name for a future `CjsWebGPU` composition facade. One
-`CjsLibrary` selects one renderer session; if WebGL and WebGPU are both needed,
-the application creates two independently configured library instances. A
-future WebGPU render-step executor will be installed behind a renderer-supplied
-engine-agnostic `Tr2RenderContext` and delegate native realization to this
-device.
+`CjsWebGPUDevice` is the current live WebGPU owner. Its public shape is
+experimental: the shared WebGL/WebGPU ruleset and renderer/runtime composition
+contract have not been designed yet. This package therefore does not import or
+exercise a runtime library or Trinity integration.
 
 ## Status
 
@@ -63,10 +60,6 @@ The current engine slice implements:
   or failed candidates without discarding the CPU payload
 - `CjsWebGPUDevice.RealizeRgba8Texture(...)` strictly maps one canonical
   decoded RGBA8 CPU payload and publishes its engine-owned texture bundle
-- `createWebGPURgba8TextureResourceBehavior(...)` supplies the corresponding
-  fail-closed CjsLibrary recipe; the application injects its path matcher and
-  optional fallback rewrite while the behavior requires registered WebGPU
-  support for automatic selection
 - opaque device-owned binding sets validate canonical CPU uniform payloads,
   allocate/upload their uniform buffers, consume caller-owned read-only storage
   buffer bindings and external texture/sampler resources, reuse native bind
@@ -75,11 +68,8 @@ The current engine slice implements:
 - `buildEveSpaceObjectMainUniformData(...)` serializes the proven Carbon
   space-scene/space-object `Main.pass0` structs and package-reflected stage-local
   material `cb0` into canonical binding identities
-- `createEveSpaceObjectMainResourceBehavior(...)` supplies a structural,
-  capability-gated CjsLibrary request recipe plus the live `BuildUniformData`
-  method without importing runtime-core
-- the behavior's `GetMaterialConstants(package)` returns detached reflected
-  constants suitable for `runtime-trinity` effect-value extraction
+- `getEveSpaceObjectMainMaterialConstants(package)` returns detached reflected
+  constants suitable for caller-owned effect-value extraction
 - device generations reject stale pipelines, geometry, textures, samplers,
   binding sets, and draws after loss or explicit recreation; stale bundles
   remain destroyable so their old-generation children can be reclaimed
@@ -96,19 +86,16 @@ Non-goals for this slice:
   policy yet
 - no Carbon/D3D numeric sampler-state conversion or implicit texture/sampler
   pairing inside the device adapter
-- no reader-fed production CjsResMan geometry/texture/sampler pipeline is
+- no reader-fed production geometry/texture/sampler pipeline is
   registered yet; the bounded RGBA8 pipeline definition is ready for
   registration, while an actual reader-to-real-resource request remains open
 - no per-frame scene extractor, uniform scheduler/ring, draw-area adapter, or
   render loop yet
 
-`CjsLibrary` (or a direct caller) remains responsible for selecting the format
-and supplying the exact WebGPU pipeline recipe. `CjsWebGPUDevice` realizes
-that request; it does not choose an effect variant or resource path.
-`runtime-trinity` now exposes GPU-free helpers for reflected `Tr2Effect`
-constant values and the trustworthy object/shared portion of the space-object
-Main structs. The renderer still supplies complete per-frame values and
-explicit `shipData`.
+The direct caller remains responsible for selecting the format and supplying
+the exact WebGPU pipeline recipe. `CjsWebGPUDevice` realizes that request; it
+does not choose an effect variant or resource path. The renderer still
+supplies complete per-frame values and explicit `shipData`.
 
 ## Shader package inputs
 
@@ -148,8 +135,8 @@ renderer-owned realization operation before the draw consumes the resulting bund
 also prepares the real QuadV5
 DX11/DX12 `Main.pass0`
 modules and nine-binding canonical layout without inventing geometry or
-resource data. The PPT-on body-4 gate goes further: it loads matching DX11-
-and DX12-derived CEWGPU packages through `CjsLibrary` and `CjsResMan`, uploads
+resource data. The PPT-on body-4 gate goes further: it reads matching DX11-
+and DX12-derived CEWGPU packages directly through `CjsFormatWebgpu`, uploads
 the indexed quad, all three fixture pixels, and the selected sampler through
 the same resource-bundle publication seam, then asks one binding set per
 pipeline to realize the five
@@ -167,11 +154,7 @@ bytes after DX12 parity succeeds; it is not a separate render path. See
 import {
   CjsWebGPUDevice,
   CjsWebGPUPackage,
-  EVE_SPACE_OBJECT_MAIN_RESOURCE_BEHAVIOR,
-  WEBGPU_RGBA8_TEXTURE_RESOURCE_BEHAVIOR,
   buildEveSpaceObjectMainUniformData,
-  createEveSpaceObjectMainResourceBehavior,
-  createWebGPURgba8TextureResourceBehavior,
   getEveSpaceObjectMainMaterialConstants,
   normalizeEffectPath,
   shaderModelSuffix,
@@ -348,94 +331,15 @@ without releasing its CPU payload. Calling the operation again after device
 recreation realizes a fresh generation even when that CPU payload was already
 resident.
 
-The default `adapterKey: "webgpu"` is appropriate for the ordinary one-backend-
-per-library model. Applications deliberately sharing a resource manager across
-renderer sessions must assign one distinct stable key per logical device, such
-as `engine-webgpu:primary`. Do not include the device generation in the key;
-recreation replaces the same logical session slot.
+The default `adapterKey: "webgpu"` identifies one logical device session.
+Callers deliberately sharing a resource object across renderer sessions must
+assign one distinct stable key per session, such as `engine-webgpu:primary`.
+Do not include the device generation in the key; recreation replaces the same
+logical session slot.
 
-```js
-// Application-owned/injected. It must emit the exact canonical RGBA record
-// accepted above; wiring such a real reader is still the open production gate.
-const canonicalRgbaFormat = applicationFormats.png;
-const rgba8Behavior = createWebGPURgba8TextureResourceBehavior({
-  format: canonicalRgbaFormat,
-  matchPath: ({ path }) => /\.png(?:[?#].*)?$/iu.test(path)
-});
-
-library.Register({
-  capabilities: { webgpu: true },
-  behaviors: {
-    [WEBGPU_RGBA8_TEXTURE_RESOURCE_BEHAVIOR]: {
-      behavior: rgba8Behavior,
-      default: true,
-      priority: 50
-    }
-  },
-  resMan: {
-    formats: [canonicalRgbaFormat]
-  }
-});
-
-const textureResource = await library.FetchResource("res:/texture/albedo.png");
-const textureBundle = await webgpu.RealizeRgba8Texture(textureResource, {
-  textureKey: "main",
-  bundleLabel: "decoded albedo",
-  adapterKey: "engine-webgpu:primary"
-});
-const texture = textureBundle.textures.main;
-```
-
-The injected matcher prevents this behavior from claiming every image path.
-An optional synchronous `resolvePath` can combine a configured fallback such
-as DDS-to-PNG rewriting with this presentation recipe because CjsLibrary
-selects one behavior, not a behavior chain. Explicit `behavior: "name"`
-selection remains the caller's intentional force override; `behavior: false`
-opts out. Caller request options still win and must keep `emit` coherent with
-the declared format output. Sampler selection and mapping `textures.main` to a
-shader binding remain renderer/policy work outside this texture resource.
-
-An application preset can register the resource recipe once and let ordinary
-CEWGPU requests use it by default:
-
-```js
-const mainBehavior = createEveSpaceObjectMainResourceBehavior({
-  format: CjsFormatWebgpu
-});
-
-library.Register({
-  capabilities: { webgpu: true },
-  behaviors: {
-    [EVE_SPACE_OBJECT_MAIN_RESOURCE_BEHAVIOR]: {
-      behavior: mainBehavior,
-      default: true,
-      priority: 100
-    }
-  },
-  resMan: {
-    formats: [CjsFormatWebgpu]
-  }
-});
-
-const packageJson = await library.FetchObject("res:/effect/ship.cewgpu", {
-  formatOptions: { source: sourcePath }
-});
-const pkg = CjsWebGPUPackage.from(packageJson);
-const material = extractTr2EffectConstantValues(
-  meshArea.effect,
-  mainBehavior.GetMaterialConstants(pkg)
-);
-const uniformData = mainBehavior.BuildUniformData(pkg, {
-  ...currentValues,
-  material
-});
-```
-
-The behavior is synchronous request policy only. `CjsResMan` sees its `format`
-and `emit: "json"` recipe and publishes that declared CPU result. The engine
-consumer then constructs `CjsWebGPUPackage`; ResMan never sees or invokes
-`BuildUniformData`, because material/frame/object values change after the
-package has been loaded and cached.
+No resource-behavior or renderer-composition interface is exported. Format
+classes from the resource tier may be injected by a future caller, but
+resource selection and Trinity binding remain intentionally undefined.
 
 Exports:
 
@@ -449,11 +353,7 @@ Exports:
 - `CjsWebGPUTexture`
 - `CjsWebGPUSampler`
 - `EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES`
-- `EVE_SPACE_OBJECT_MAIN_RESOURCE_BEHAVIOR`
-- `WEBGPU_RGBA8_TEXTURE_RESOURCE_BEHAVIOR`
 - `buildEveSpaceObjectMainUniformData(...)`
-- `createEveSpaceObjectMainResourceBehavior(...)`
-- `createWebGPURgba8TextureResourceBehavior(...)`
 - `getEveSpaceObjectMainMaterialConstants(...)`
 - `normalizeEffectPath(...)`
 - `shaderModelSuffix(...)`

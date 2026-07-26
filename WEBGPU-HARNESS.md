@@ -130,15 +130,11 @@ capture.
 
 The launcher rejects identical or misordered inputs and any package that is not
 body index `4` with all seven expected selections, including
-`SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`. It requests each file through
-`CjsLibrary -> CjsResMan -> CjsFormatWebgpu`. The launcher registers explicit
-`webgpu: true` capability and the default `webgpu_eve_space_object_main`
-behavior; each file request supplies only its source option. The behavior
-selects the format and declared JSON output. ResMan publishes that JSON, and
-the engine consumer constructs `CjsWebGPUPackage` after the fetch.
+`SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`. It reads each file directly, decodes
+it with `CjsFormatWebgpu`, and constructs `CjsWebGPUPackage`. No runtime
+library, resource manager, or Trinity contract participates in this gate.
 
-The CEWGPU packages therefore enter through the real resource path, while the
-browser harness supplies one packed indexed quad, three 1x1 CPU texture
+The browser harness supplies one packed indexed quad, three 1x1 CPU texture
 payloads, and one explicit filtering-sampler descriptor. Those prepared plain
 inputs are atomically realized and published as one device resource bundle;
 the structural harness slot exercises the same `GetAdapterResource` /
@@ -169,19 +165,17 @@ of unquantized floating-point shader-semantic equivalence. Every WGSL warning
 or WebGPU validation error fails the command.
 
 The harness now supplies semantic material, per-frame, and per-object values
-rather than hand-addressed constant-buffer rows. Each package record retains
-the selected behavior ID, and browser rendering fails closed unless that
-behavior exists before invoking its `BuildUniformData` method. The underlying
-`buildEveSpaceObjectMainUniformData(...)` reflects this package's stage-local
+rather than hand-addressed constant-buffer rows. It calls
+`buildEveSpaceObjectMainUniformData(...)` directly; that serializer reflects
+this package's stage-local
 material `cb0`, then packs Carbon's full `PerFrameVSData` (736 bytes),
 `PerFramePSData` (1888 bytes), `EveSpaceObjectVSData` (464 bytes), and
 `EveSpaceObjectPSData` (464 bytes). The package's WGSL minimum binding sizes
 remain 160, 656, 352, 128, and 208 bytes; WebGPU permits the full Carbon
 payloads because each is at least its canonical minimum. This proves the first
-bounded Carbon ABI serializer, Library policy selection, and engine-owned
-uniform upload path. Runtime-trinity now has GPU-free reflected-material and
-per-object extractors, but the harness still uses deterministic fixture values
-and the renderer must still supply complete per-frame values. The GPU geometry
+bounded Carbon ABI serializer and engine-owned uniform upload path without
+asserting a library policy contract. The harness uses deterministic fixture
+values, and the renderer must still supply complete per-frame values. The GPU geometry
 adapter deliberately begins after mesh packing and semantic-to-location
 mapping; it is not a `TriGeometryRes` loader or CMF conversion stage. The
 bounded decoded-RGBA8-to-texture mapping and complete selected-sampler mapping
@@ -203,11 +197,8 @@ dispatch and does not widen the render-only public `CjsWebGPUDevice` API.
 Unlike `--draw-quadv5`, preparation requires no geometry or live resource
 fixtures.
 
-The QuadV5 command is a monorepo integration gate. Node consumes the sibling
-`runtime-resource/npm/dist` build because the runtime source uses decorators,
-and the launcher rejects a build older than its corresponding source files.
-Build `runtime-resource` before running the command when that freshness check
-fails.
+The QuadV5 command is a direct format/engine integration gate. It does not load
+`runtime-core`, `runtime-resource`, or `runtime-trinity`.
 
 To exercise the real package boundary, pass a CEWGPU package containing the
 generated `Main.pass0.vertex` and `Main.pass0.pixel` shaders plus its canonical

@@ -957,7 +957,7 @@ async function popValidationScope(device, state)
 
 /**
  * Engine-owned WebGPU device boundary. It realizes already-selected CEWGPU
- * descriptors; format/capability policy remains with the caller (CjsLibrary).
+ * descriptors; format/capability policy remains with the caller.
  */
 export class CjsWebGPUDevice
 {

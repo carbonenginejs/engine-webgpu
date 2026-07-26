@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { buildMatrixPipelines } from "../src/core/matrixPipelines.js";
 import { validateQuadV5PackagePair } from "../harness/webgpu/quadV5Fixture.js";
@@ -113,97 +113,29 @@ async function ReadQuadV5Packages(paths)
     {
         throw new Error("--draw-quadv5 requires distinct DX11 and DX12 package files");
     }
-    const runtimeFiles = [ "CjsResMan.js", "CjsMotherLode.js", "CjsResource.js", "CjsResManQueue.js", "resourcePath.js" ];
-    for (const file of runtimeFiles)
-    {
-        const [ sourceInfo, builtInfo ] = await Promise.all([
-            stat(new URL(`../../runtime-resource/src/${file}`, import.meta.url)),
-            stat(new URL(`../../runtime-resource/npm/dist/${file}`, import.meta.url))
-        ]);
-        if (builtInfo.mtimeMs < sourceInfo.mtimeMs)
-        {
-            throw new Error(`runtime-resource npm/dist/${file} is older than src/${file}; rebuild the sibling package`);
-        }
-    }
     const [
-        { default: CjsLibrary },
-        { CjsResMan },
-        { default: CjsFormatWebgpu },
-        {
-            CjsWebGPUPackage,
-            EVE_SPACE_OBJECT_MAIN_RESOURCE_BEHAVIOR,
-            createEveSpaceObjectMainResourceBehavior
-        }
+        { CjsFormatWebgpu },
+        { CjsWebGPUPackage }
     ] = await Promise.all([
-        import("../../runtime-core/src/index.js"),
-        import("../../runtime-resource/npm/dist/CjsResMan.js"),
         import("../../format-webgpu/src/index.js"),
         import("../src/index.js")
     ]);
-    const resMan = new CjsResMan();
-    const library = new CjsLibrary({ resourceManager: resMan }).Initialize();
-    const mainBehavior = createEveSpaceObjectMainResourceBehavior({ format: CjsFormatWebgpu });
     const requests = [ "dx11", "dx12" ].map((backend, index) => ({
         backend,
         filePath: paths[index],
         resourcePath: `res:/webgpu-harness/quadv5/${backend}.cewgpu`
     }));
-    const sourceFiles = new Map(requests.map((entry) => [ entry.resourcePath, entry.filePath ]));
-    const sourceReads = new Map();
-    library.Register({
-        capabilities: { webgpu: true },
-        behaviors: {
-            [EVE_SPACE_OBJECT_MAIN_RESOURCE_BEHAVIOR]: {
-                behavior: mainBehavior,
-                default: true,
-                priority: 100
-            }
-        },
-        resMan: {
-            source: {
-                Read(resourcePath)
-                {
-                    const filePath = sourceFiles.get(resourcePath);
-                    if (!filePath) throw new Error(`Unknown QuadV5 harness resource path ${resourcePath}`);
-                    sourceReads.set(resourcePath, (sourceReads.get(resourcePath) || 0) + 1);
-                    return readFile(filePath);
-                }
-            },
-            formats: [ CjsFormatWebgpu ]
-        }
-    });
 
     const records = [];
-    try
+    for (const request of requests)
     {
-      for (const request of requests)
-      {
-        const options = {
-            formatOptions: { source: request.filePath }
-        };
-        const resolvedRequest = library.ResolveResourceRequest(request.resourcePath, options);
-        if (resolvedRequest.behavior !== mainBehavior)
-        {
-            throw new Error(`${request.resourcePath} did not select the WebGPU space-object Main behavior`);
-        }
-        const resource = library.GetResource(request.resourcePath, options);
-        if (library.GetResource(request.resourcePath, options) !== resource)
-        {
-            throw new Error(`${request.resourcePath} did not retain one MotherLode resource handle`);
-        }
-        const json = await library.FetchObject(request.resourcePath, options);
-        const pkg = CjsWebGPUPackage.from(json);
+        const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
+            read: CjsFormatWebgpu.read,
+            readOptions: { source: request.filePath }
+        });
         if (!(pkg instanceof CjsWebGPUPackage))
         {
             throw new Error(`${request.filePath} did not prepare as CjsWebGPUPackage`);
-        }
-        if (await resource.Ready() !== json)
-        {
-            throw new Error(`${request.resourcePath} readiness did not retain the published JSON payload`);
-        }
-        if (sourceReads.get(request.resourcePath) !== 1)
-        {
-            throw new Error(`${request.resourcePath} was not loaded exactly once`);
         }
         const pipeline = pkg.GetPipeline("Main", 0);
         if (!pipeline || !pipeline.HasCompleteWgsl())
@@ -214,22 +146,16 @@ async function ReadQuadV5Packages(paths)
             backend: request.backend,
             label: basename(request.filePath),
             filePath: request.filePath,
-            resourcePath: resource.GetPath(),
-            loadPath: "CjsLibrary -> CjsResMan -> CjsFormatWebgpu -> CjsWebGPUPackage",
-            resourceBehavior: resolvedRequest.behaviorName,
+            resourcePath: request.resourcePath,
+            loadPath: "readFile -> CjsFormatWebgpu -> CjsWebGPUPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
         };
         records.push(record);
-      }
-      validateQuadV5PackagePair(records);
-      return records;
     }
-    finally
-    {
-        library.Shutdown();
-    }
+    validateQuadV5PackagePair(records);
+    return records;
 }
 
 const PACKAGE_DRAW_RECORD = DRAW_CEWGPU_PATH ? await ReadPackagePipeline(DRAW_CEWGPU_PATH) : null;
@@ -249,7 +175,6 @@ const ASSETS = new Map([
     [ "/CjsWebGPUDevice.js", { path: new URL("../src/CjsWebGPUDevice.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/packageDraw.js", { path: new URL("../src/core/packageDraw.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/spaceObjectMainBindings.js", { path: new URL("../src/core/spaceObjectMainBindings.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
-    [ "/spaceObjectMainBehavior.js", { path: new URL("../src/core/spaceObjectMainBehavior.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadV5Fixture.js", { path: new URL("../harness/webgpu/quadV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/freeze.js", { path: new URL("../src/core/freeze.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/config.json", {
@@ -511,7 +436,7 @@ async function Main()
         {
             console.log(
                 `Rendered PPT-on QuadV5 body ${result.quadV5Comparison.bodyIndex} from ` +
-                `${result.quadV5Comparison.labels.join(" and ")} through CjsLibrary/CjsResMan; ` +
+                `${result.quadV5Comparison.labels.join(" and ")} from direct CEWGPU reads; ` +
                 `${result.quadV5Comparison.pixelCount} pixels matched exactly across both MRTs and backends ` +
                 `with 0 WGSL warnings.`
             );

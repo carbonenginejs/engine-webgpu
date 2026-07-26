@@ -8,10 +8,7 @@ import {
     validateQuadV5PackagePair
 } from "/quadV5Fixture.js";
 import { CjsWebGPUDevice } from "/CjsWebGPUDevice.js";
-import {
-    EVE_SPACE_OBJECT_MAIN_RESOURCE_BEHAVIOR,
-    createEveSpaceObjectMainResourceBehavior
-} from "/spaceObjectMainBehavior.js";
+import { buildEveSpaceObjectMainUniformData } from "/spaceObjectMainBindings.js";
 
 const WIDTH = 4;
 const HEIGHT = 4;
@@ -19,11 +16,6 @@ const BYTES_PER_PIXEL = 4;
 const BYTES_PER_ROW = 256;
 const EXPECTED_PIXEL = Object.freeze([ 255, 0, 0, 255 ]);
 const CONFIG = await fetch("/config.json").then((response) => response.json());
-const RESOURCE_BEHAVIORS = new Map([ [
-    EVE_SPACE_OBJECT_MAIN_RESOURCE_BEHAVIOR,
-    createEveSpaceObjectMainResourceBehavior()
-] ]);
-
 const SOURCE = `
 struct VertexOutput
 {
@@ -615,11 +607,9 @@ async function RunQuadV5Comparison(webgpu)
     {
         for (const record of records)
         {
-            const behavior = RESOURCE_BEHAVIORS.get(record.resourceBehavior);
-            Assert(behavior, `Unknown QuadV5 resource behavior ${record.resourceBehavior || "<missing>"}`);
             const uniformData = ScopeFixtureBindingValues(
                 record.pipeline,
-                new Map(Object.entries(behavior.BuildUniformData(record, fixture.bindingValues))),
+                new Map(Object.entries(buildEveSpaceObjectMainUniformData(record, fixture.bindingValues))),
                 `QuadV5 ${record.label} uniform data`
             );
             const resources = ScopeFixtureBindingValues(
