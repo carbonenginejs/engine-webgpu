@@ -1,6 +1,15 @@
 import { buildCopyblitDrawDescriptor } from "/packageDraw.js";
 import { createHarnessComputePipeline } from "/computePipeline.js";
 import {
+    DECALV5_CLEAR_TARGET,
+    DECALV5_TARGET_HEIGHT,
+    DECALV5_TARGET_WIDTH,
+    DECALV5_VERTEX_BUFFER_LAYOUT,
+    createDecalV5FixtureValues,
+    getDecalV5ResourcePlan,
+    validateDecalV5PackagePair
+} from "/decalV5Fixture.js";
+import {
     QUADV5_CLEAR_TARGETS,
     QUADV5_TARGET_HEIGHT,
     QUADV5_TARGET_WIDTH,
@@ -21,6 +30,7 @@ const HEIGHT = QUADV5_TARGET_HEIGHT;
 const BYTES_PER_PIXEL = 4;
 const BYTES_PER_ROW = 256;
 const TRINITY_BATCH_TYPE_OPAQUE = 0;
+const TRINITY_BATCH_TYPE_DECAL = 1;
 const EXPECTED_PIXEL = Object.freeze([ 255, 0, 0, 255 ]);
 const CONFIG = await fetch("/config.json").then((response) => response.json());
 const SOURCE = `
@@ -656,6 +666,133 @@ async function CreateQuadV5GpuResources(webgpu, records)
     }
 }
 
+async function CreateDecalV5GpuResources(webgpu, records)
+{
+    Assert(
+        DECALV5_TARGET_WIDTH === WIDTH && DECALV5_TARGET_HEIGHT === HEIGHT,
+        "DecalV5 and harness target dimensions must match"
+    );
+    const values = createDecalV5FixtureValues(WIDTH, HEIGHT);
+    const geometrySource = Object.freeze({ kind: "synthetic-decalv5" });
+    const texturePayloads = Object.fromEntries(values.textures
+        .filter((entry) => entry.dimension === "2d")
+        .map((entry) => [
+            entry.name,
+            {
+                label: `DecalV5 ${entry.name}`,
+                width: entry.width,
+                height: entry.height,
+                format: entry.format,
+                bytesPerRow: entry.bytesPerRow,
+                data: entry.data
+            }
+        ]));
+    const samplers = Object.fromEntries(values.samplerNames.map((name) => [
+        name,
+        {
+            label: `DecalV5 ${name}`,
+            minFilter: "linear",
+            magFilter: "linear",
+            mipmapFilter: "linear",
+            addressModeU: name === "Sampler0" ? "repeat" : "clamp-to-edge",
+            addressModeV: name === "Sampler0" ? "repeat" : "clamp-to-edge",
+            addressModeW: "clamp-to-edge",
+            maxAnisotropy: 16
+        }
+    ]));
+    const device = webgpu.GetDevice();
+    const bundle = await PublishPreparedResourceBundle(webgpu, {
+        label: "DecalV5 resources",
+        geometries: {
+            main: {
+                label: "DecalV5 harness-authored silhouette geometry",
+                vertexBuffers: [ {
+                    slot: 0,
+                    data: values.vertices,
+                    layout: DECALV5_VERTEX_BUFFER_LAYOUT
+                } ],
+                indexBuffer: {
+                    data: values.indices,
+                    format: "uint16"
+                }
+            }
+        },
+        textures: texturePayloads,
+        samplers
+    }, "decalv5-resources");
+    const cubeDefinition = values.textures.find((entry) => entry.dimension === "cube");
+    let cubeTexture = null;
+    try
+    {
+        Assert(cubeDefinition, "DecalV5 fixture requires an environment cube");
+        cubeTexture = device.createTexture({
+            label: "DecalV5 EveSpaceSceneEnvMap",
+            size: {
+                width: cubeDefinition.width,
+                height: cubeDefinition.height,
+                depthOrArrayLayers: cubeDefinition.depthOrArrayLayers
+            },
+            mipLevelCount: 1,
+            sampleCount: 1,
+            dimension: "2d",
+            format: cubeDefinition.format,
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+        });
+        for (let face = 0; face < cubeDefinition.depthOrArrayLayers; face += 1)
+        {
+            device.queue.writeTexture(
+                { texture: cubeTexture, origin: { x: 0, y: 0, z: face } },
+                cubeDefinition.data.slice(face * 4, face * 4 + 4),
+                { offset: 0, bytesPerRow: 4, rowsPerImage: 1 },
+                { width: 1, height: 1, depthOrArrayLayers: 1 }
+            );
+        }
+        const cubeView = cubeTexture.createView({
+            label: "DecalV5 EveSpaceSceneEnvMap cube view",
+            dimension: "cube"
+        });
+        const resourcesByBackend = new Map();
+        for (const record of records)
+        {
+            const plan = getDecalV5ResourcePlan(record);
+            const resources = new Map();
+            for (const texture of plan.textures)
+            {
+                const resource = texture.name === "EveSpaceSceneEnvMap"
+                    ? cubeView
+                    : bundle.textures[texture.name];
+                Assert(resource, `DecalV5 fixture is missing texture ${texture.name}`);
+                resources.set(texture.scopeIdentity, resource);
+            }
+            for (const sampler of plan.samplers)
+            {
+                const resource = bundle.samplers[sampler.name];
+                Assert(resource, `DecalV5 fixture is missing sampler ${sampler.name}`);
+                resources.set(sampler.scopeIdentity, resource);
+            }
+            resourcesByBackend.set(record.backend, resources);
+        }
+        return {
+            uniformData: values.uniformData,
+            resourcesByBackend,
+            geometry: bundle.geometries.main,
+            geometrySource,
+            bundle,
+            destroy()
+            {
+                cubeTexture.destroy();
+                bundle.Destroy();
+            }
+        };
+    }
+    catch (error)
+    {
+        cubeTexture?.destroy();
+        bundle.Destroy();
+        throw error;
+    }
+}
+
 function CreateQuadV5TrinityBatch(record, fixture)
 {
     return Object.freeze({
@@ -768,6 +905,116 @@ function CreateQuadV5TrinityDispatcher(webgpu, fixture)
                     record.pipeline,
                     fixture.resourcesByBackend.get(record.backend),
                     `QuadV5 ${record.label} resources`
+                )
+            };
+        }
+    });
+}
+
+function CreateDecalV5TrinityBatch(record, fixture)
+{
+    return Object.freeze({
+        material: record,
+        shader: record.pipeline,
+        geometrySource: Object.freeze({
+            geometry: fixture.geometrySource,
+            meshIndex: 0,
+            areaIndex: 0,
+            count: 1,
+            reversed: false
+        }),
+        objectData: fixture.uniformData,
+        topology: 4,
+        indexCountPerInstance: 0,
+        instanceCount: 0,
+        startIndexLocation: 0,
+        baseVertexLocation: 0,
+        startInstanceLocation: 0,
+        renderingMode: 0,
+        pickingData: 0,
+        groupCount: 1
+    });
+}
+
+function CreateDecalV5TrinityBatchMap(record, fixture)
+{
+    const batches = Object.freeze([ CreateDecalV5TrinityBatch(record, fixture) ]);
+    const gdprBatches = Object.freeze([]);
+    const accumulator = Object.freeze({
+        GetGdprBatches: () => gdprBatches,
+        GetBatches: () => batches,
+        GetBatchCount: () => batches.length,
+        IsChainedByEffect: () => true
+    });
+    const batchTypes = Object.freeze([ TRINITY_BATCH_TYPE_DECAL ]);
+    return Object.freeze({
+        GetBatchTypes: () => batchTypes,
+        GetAccumulator: (value) => value === TRINITY_BATCH_TYPE_DECAL ? accumulator : null,
+        GetBatchCount: () => accumulator.GetBatchCount()
+    });
+}
+
+function CreateDecalV5TrinityDispatcher(webgpu, fixture)
+{
+    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+        ResolveMaterial(record, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_DECAL,
+                "DecalV5 material resolved outside the decal batch type"
+            );
+            return {
+                pipeline: record.pipeline,
+                prepareOptions: { warningsAsErrors: true },
+                recipe: {
+                    label: `DecalV5 ${record.label} Main.pass0`,
+                    vertex: { buffers: fixture.geometry.vertexBufferLayouts },
+                    fragment: { targets: [ { format: "rgba8unorm" } ] },
+                    primitive: { cullMode: "none" }
+                }
+            };
+        },
+        ResolveGeometry(source, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_DECAL
+                    && source?.geometry === fixture.geometrySource
+                    && source.meshIndex === 0
+                    && source.areaIndex === 0
+                    && source.count === 1
+                    && source.reversed === false,
+                "DecalV5 batch references an unknown geometry source"
+            );
+            return {
+                geometry: fixture.geometry,
+                indexed: true,
+                draw: {
+                    indexCount: fixture.geometry.indexCount,
+                    instanceCount: 1,
+                    firstIndex: 0,
+                    baseVertex: 0,
+                    firstInstance: 0
+                }
+            };
+        },
+        ResolveBindings(batch, _livePipeline, context)
+        {
+            const record = batch.material;
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_DECAL
+                    && batch.objectData === fixture.uniformData,
+                `DecalV5 ${record.label} batch references unknown object data`
+            );
+            return {
+                uniformData: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    new Map(Object.entries(fixture.uniformData)),
+                    `DecalV5 ${record.label} uniform data`
+                ),
+                resources: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    fixture.resourcesByBackend.get(record.backend),
+                    `DecalV5 ${record.label} resources`
                 )
             };
         }
@@ -923,6 +1170,64 @@ function GetActiveTargetPixels(bytes)
         pixels.push(...bytes.slice(row, row + WIDTH * BYTES_PER_PIXEL));
     }
     return pixels;
+}
+
+function AssertDecalV5Silhouette(bytes, label)
+{
+    for (const [ x, y ] of [ [ 0, 0 ], [ WIDTH - 1, 0 ], [ 0, HEIGHT - 1 ], [ WIDTH - 1, HEIGHT - 1 ] ])
+    {
+        Assert(
+            PixelEquals(bytes, x, y, DECALV5_CLEAR_TARGET),
+            `${label} corner (${x}, ${y}) did not remain clear`
+        );
+    }
+    for (const [ name, x, y ] of [
+        [ "nose", 32, 10 ],
+        [ "center", 32, 32 ],
+        [ "left wing", 13, 31 ],
+        [ "right wing", 50, 31 ],
+        [ "left tail", 24, 52 ],
+        [ "right tail", 40, 52 ]
+    ])
+    {
+        Assert(
+            PixelNeighborhoodHasDraw(bytes, x, y, DECALV5_CLEAR_TARGET, 1),
+            `${label} ${name} anchor neighborhood (${x}, ${y}) remained clear`
+        );
+    }
+    let coverage = 0;
+    let minimumX = WIDTH;
+    let maximumX = -1;
+    let minimumY = HEIGHT;
+    let maximumY = -1;
+    const colors = new Set();
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            if (!PixelEquals(bytes, x, y, DECALV5_CLEAR_TARGET))
+            {
+                coverage += 1;
+                minimumX = Math.min(minimumX, x);
+                maximumX = Math.max(maximumX, x);
+                minimumY = Math.min(minimumY, y);
+                maximumY = Math.max(maximumY, y);
+                const offset = PixelOffset(x, y);
+                colors.add(`${bytes[offset]},${bytes[offset + 1]},${bytes[offset + 2]},${bytes[offset + 3]}`);
+            }
+        }
+    }
+    Assert(coverage >= 700 && coverage <= 2000, `${label} has implausible decal coverage ${coverage}`);
+    Assert(
+        minimumX <= 20 && maximumX >= 48 && minimumY <= 12 && maximumY >= 50,
+        `${label} has implausible decal bounds ${minimumX}..${maximumX}, ${minimumY}..${maximumY}`
+    );
+    Assert(colors.size >= 8, `${label} must contain varied decal shading rather than a constant fill`);
+    return {
+        coverage,
+        bounds: { minimumX, maximumX, minimumY, maximumY },
+        distinctColors: colors.size
+    };
 }
 
 async function RunQuadV5Comparison(webgpu)
@@ -1096,6 +1401,153 @@ async function RunQuadV5Comparison(webgpu)
     }
 }
 
+async function RunDecalV5Comparison(webgpu)
+{
+    if (!CONFIG.drawDecalV5) return null;
+    const response = await fetch("/draw-decalv5.json");
+    Assert(response.ok, `Failed to load DecalV5 package records: HTTP ${response.status}`);
+    const records = await response.json();
+    Assert(Array.isArray(records) && records.length === 2, "DecalV5 comparison requires two package records");
+    validateDecalV5PackagePair(records);
+
+    const device = webgpu.GetDevice();
+    const fixture = await CreateDecalV5GpuResources(webgpu, records);
+    const dispatcher = CreateDecalV5TrinityDispatcher(webgpu, fixture);
+    const passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+    const instances = [];
+    let warningCount = 0;
+    try
+    {
+        for (const record of records)
+        {
+            let preparedBatchMap = null;
+            let target = null;
+            let readback = null;
+            try
+            {
+                preparedBatchMap = await dispatcher.PrepareBatchMap(
+                    CreateDecalV5TrinityBatchMap(record, fixture)
+                );
+                warningCount += preparedBatchMap.entries.reduce(
+                    (mapTotal, entry) => mapTotal + entry.accumulator.batches.reduce(
+                        (batchTotal, batch) => batchTotal
+                            + batch.prepared.diagnostics.filter((item) => item.type === "warning").length,
+                        0
+                    ),
+                    0
+                );
+                target = device.createTexture({
+                    label: `DecalV5 ${record.label} color target`,
+                    size: { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 },
+                    format: "rgba8unorm",
+                    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
+                });
+                readback = device.createBuffer({
+                    label: `DecalV5 ${record.label} readback`,
+                    size: BYTES_PER_ROW * HEIGHT,
+                    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+                });
+                instances.push({
+                    record,
+                    preparedBatchMap,
+                    target,
+                    readback,
+                    snapshot: null,
+                    statistics: null
+                });
+            }
+            catch (error)
+            {
+                if (preparedBatchMap) dispatcher.DestroyBatchMap(preparedBatchMap);
+                readback?.destroy();
+                target?.destroy();
+                throw error;
+            }
+        }
+
+        const encoder = device.createCommandEncoder({
+            label: "DecalV5 DX11/DX12 comparison encoder"
+        });
+        for (const instance of instances)
+        {
+            passEncoder.Encode(encoder, [ {
+                descriptor: {
+                    label: `DecalV5 ${instance.record.label} Main.pass0`,
+                    colorAttachments: [ {
+                        view: instance.target.createView(),
+                        clearValue: {
+                            r: DECALV5_CLEAR_TARGET[0] / 255,
+                            g: DECALV5_CLEAR_TARGET[1] / 255,
+                            b: DECALV5_CLEAR_TARGET[2] / 255,
+                            a: DECALV5_CLEAR_TARGET[3] / 255
+                        },
+                        loadOp: "clear",
+                        storeOp: "store"
+                    } ]
+                },
+                selections: [ {
+                    preparedBatchMap: instance.preparedBatchMap,
+                    batchType: TRINITY_BATCH_TYPE_DECAL
+                } ]
+            } ]);
+            encoder.copyTextureToBuffer(
+                { texture: instance.target },
+                {
+                    buffer: instance.readback,
+                    bytesPerRow: BYTES_PER_ROW,
+                    rowsPerImage: HEIGHT
+                },
+                { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 }
+            );
+        }
+        webgpu.Submit([ encoder.finish() ]);
+        await device.queue.onSubmittedWorkDone();
+        await Promise.all(instances.map((instance) =>
+            instance.readback.mapAsync(GPUMapMode.READ)));
+
+        for (const instance of instances)
+        {
+            instance.snapshot = new Uint8Array(instance.readback.getMappedRange()).slice();
+            instance.statistics = AssertDecalV5Silhouette(
+                instance.snapshot,
+                `${instance.record.label} color target`
+            );
+        }
+        AssertExactTargetMatch(
+            instances[0].snapshot,
+            instances[1].snapshot,
+            "DX11/DX12 DecalV5 color target"
+        );
+        return {
+            bodyIndex: 0,
+            labels: records.map((record) => `${record.backend}:${record.label}`),
+            loadPath: records[0].loadPath,
+            pixelCount: WIDTH * HEIGHT,
+            targetCount: 1,
+            drawKind: "indexed synthetic decal silhouette",
+            indexCount: fixture.geometry.indexCount,
+            warningCount,
+            clearTarget: DECALV5_CLEAR_TARGET,
+            topLeftClearPixel: Array.from(instances[0].snapshot.slice(0, 4)),
+            statistics: instances[0].statistics,
+            targetWidth: WIDTH,
+            targetHeight: HEIGHT,
+            targetPixels: GetActiveTargetPixels(instances[0].snapshot)
+        };
+    }
+    finally
+    {
+        for (const instance of instances)
+        {
+            dispatcher.DestroyBatchMap(instance.preparedBatchMap);
+            if (instance.readback.mapState === "mapped") instance.readback.unmap();
+            instance.readback.destroy();
+            instance.target.destroy();
+        }
+        fixture.destroy();
+    }
+}
+
 async function PreparePackage(webgpu)
 {
     if (!CONFIG.prepareCewgpu) return null;
@@ -1205,6 +1657,7 @@ async function RunHarness()
     let generatedDraw = null;
     let phaseZeroDraw = null;
     let quadV5Comparison = null;
+    let decalV5Comparison = null;
     let errorScopeOpen = true;
 
     device.pushErrorScope("validation");
@@ -1216,6 +1669,7 @@ async function RunHarness()
         generatedDraw = await CreateGeneratedDraw(webgpu);
         phaseZeroDraw = generatedDraw ? null : await CreatePhaseZeroDraw(webgpu);
         quadV5Comparison = await RunQuadV5Comparison(webgpu);
+        decalV5Comparison = await RunDecalV5Comparison(webgpu);
         const shaderModule = device.createShaderModule({
             label: "engine-webgpu phase-0 shader",
             code: SOURCE
@@ -1293,7 +1747,8 @@ async function RunHarness()
             samplerPreparation: phaseZeroDraw
                 ? "complete selected WebGPU state -> sampler bundle -> atomic adapter slot"
                 : null,
-            quadV5Comparison
+            quadV5Comparison,
+            decalV5Comparison
         };
     }
     finally

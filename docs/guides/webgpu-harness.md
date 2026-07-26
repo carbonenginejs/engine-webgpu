@@ -153,6 +153,13 @@ Use the skinned family gate with the corresponding pair:
 npm.cmd run test:webgpu:required -- --draw-skinned-quadv5 .\artifacts\quadv5-skinned-dx11.cewgpu .\artifacts\quadv5-skinned-dx12.cewgpu
 ```
 
+The first decal-family gate uses the explicitly selected non-bindless
+`unpacked_decalv5` Main pass:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-decalv5 .\artifacts\decalv5-dx11.cewgpu .\artifacts\decalv5-dx12.cewgpu
+```
+
 Add `--capture-quadv5 .\artifacts\quadv5-ppt-on.png` to save a browser-rendered
 PNG visualization of the DX11 package's two 64x64 active-pixel MRT readbacks
 after the silhouette invariants and byte-exact DX11/DX12 checks pass. DX12 is not
@@ -218,7 +225,22 @@ equality is measured after `rgba8unorm` target quantization; it is not a claim
 of unquantized floating-point shader-semantic equivalence. Every WGSL warning
 or WebGPU validation error fails the command.
 
-The harness now supplies semantic material, per-frame, and per-object values
+The DecalV5 command independently requires canonical DX11/DX12
+`unpacked_decalv5` provenance, body index `0`, all three default selections,
+and a complete `Main.pass0` vertex/pixel pair. Bindless DX12 permutations are
+not admitted because their sampled-resource array is outside the current WGSL
+slice. The fixture supplies five active vertex attributes, four exact-size raw
+GPU-register uniform buffers, one generated environment cube, eight generated
+2D textures, and two explicit WebGPU samplers. `SSAOMap` receives a neutral
+white texture; this gate implements no ambient-occlusion behavior. The decal
+material textures shift by one register after `NormalMap` on DX12, so resources
+are mapped through reflected Carbon names. The draw travels through numeric
+decal batch type `1`, renders one `rgba8unorm` target, checks clear corners,
+silhouette anchors, bounded coverage and varied shading, then requires
+byte-exact DX11/DX12 equality after target quantization. These fixture bytes
+are deliberately not presented as production per-frame/per-object defaults.
+
+The QuadV5 path supplies semantic material, per-frame, and per-object values
 rather than hand-addressed constant-buffer rows. It calls
 `buildEveSpaceObjectMainUniformData(...)` directly; that serializer reflects
 this package's stage-local
@@ -253,11 +275,11 @@ modes deliberately stop before render-pipeline creation and drawing. The
 matrix mode additionally creates validation-only native compute pipelines
 through a harness-private helper served to the probe page; it performs no
 dispatch and does not widen the render-only public `CjsWebGPUDevice` API.
-Unlike `--draw-quadv5`, preparation requires no geometry or live resource
-fixtures.
+Unlike the ship-family draw flags, preparation requires no geometry or live
+resource fixtures.
 
-The QuadV5 command is a direct format/engine integration gate. It does not load
-`runtime-core`, `runtime-resource`, or `runtime-trinity`.
+The QuadV5 and DecalV5 commands are direct format/engine integration gates.
+They do not load `runtime-core`, `runtime-resource`, or `runtime-trinity`.
 
 To exercise the real package boundary, pass a CEWGPU package containing the
 generated `Main.pass0.vertex` and `Main.pass0.pixel` shaders plus its canonical

@@ -106,8 +106,10 @@ immutable preparation context. The batch-map path supplies its numeric
 technique without the dispatcher importing or interpreting `TriBatchType`.
 
 This class is internal and is not exported from the package root. It is a
-conformance prototype, not a frozen renderer API. The static and skinned
-QuadV5 browser gates use its one-type batch-map path, and actual
+conformance prototype, not a frozen renderer API. The static/skinned QuadV5
+and non-bindless DecalV5 browser gates use its one-type batch-map path, with
+the decal fixture proving that numeric batch type `1` stays caller-selected,
+and actual
 `runtime-trinity` `Tr2RenderBatch`, `TriRenderBatchAccumulator`, and
 `TriRenderBatchMap` instances pass the duck-typed contract. A later render-step
 executor still needs to own frame/pass planning and select the pass for each
