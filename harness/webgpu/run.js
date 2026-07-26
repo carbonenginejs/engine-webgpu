@@ -9,6 +9,14 @@ import {
     validateDecalCounterV5PackagePair
 } from "/decalCounterV5Fixture.js";
 import {
+    DECAL_CYLINDRIC_V5_TARGET_HEIGHT,
+    DECAL_CYLINDRIC_V5_TARGET_WIDTH,
+    DECAL_CYLINDRIC_V5_VERTEX_BUFFER_LAYOUT,
+    createDecalCylindricV5FixtureValues,
+    getDecalCylindricV5ResourcePlan,
+    validateDecalCylindricV5PackagePair
+} from "/decalCylindricV5Fixture.js";
+import {
     DECAL_GLOW_V5_TARGET_HEIGHT,
     DECAL_GLOW_V5_TARGET_WIDTH,
     DECAL_GLOW_V5_VERTEX_BUFFER_LAYOUT,
@@ -68,6 +76,20 @@ const DECAL_FAMILY_V5_PROFILES = Object.freeze({
         getResourcePlan: getDecalV5ResourcePlan,
         validatePair: validateDecalV5PackagePair,
         resolveUniformData: (_record, values) => values.uniformData
+    }),
+    cylindric: Object.freeze({
+        label: "DecalCylindricV5",
+        route: "/draw-decalcylindricv5.json",
+        width: DECAL_CYLINDRIC_V5_TARGET_WIDTH,
+        height: DECAL_CYLINDRIC_V5_TARGET_HEIGHT,
+        vertexLayout: DECAL_CYLINDRIC_V5_VERTEX_BUFFER_LAYOUT,
+        createValues: createDecalCylindricV5FixtureValues,
+        getResourcePlan: getDecalCylindricV5ResourcePlan,
+        validatePair: validateDecalCylindricV5PackagePair,
+        resolveUniformData: (record, values) => Object.freeze({
+            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
+            ...values.decalUniformData
+        })
     }),
     counter: Object.freeze({
         label: "DecalCounterV5",
@@ -1567,6 +1589,91 @@ function AssertCylindricGlowControls(instances)
     };
 }
 
+function AssertCylindricSurfaceAlpha(instances)
+{
+    const snapshots = Object.fromEntries(instances
+        .filter((instance) => instance.record.backend === "dx11")
+        .map((instance) => [ instance.resourceVariant, instance.snapshot ]));
+    for (const name of [ "base", "axialTransparency", "whiteTransparency" ])
+    {
+        Assert(snapshots[name], `DecalCylindricV5 ${name} output is missing`);
+    }
+    let activePixels = 0;
+    let angularError = 0;
+    let axialError = 0;
+    let angularMaximumError = 0;
+    let axialMaximumError = 0;
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            const clear = PixelEquals(
+                snapshots.whiteTransparency,
+                x,
+                y,
+                DECALV5_CLEAR_TARGET
+            );
+            for (const name of Object.keys(snapshots))
+            {
+                Assert(
+                    PixelEquals(snapshots[name], x, y, DECALV5_CLEAR_TARGET) === clear,
+                    `DecalCylindricV5 ${name} changed the active silhouette at (${x}, ${y})`
+                );
+            }
+            if (clear) continue;
+            activePixels += 1;
+            const worldX = 2 * (x + 0.5) / WIDTH - 1;
+            const worldY = 1 - 2 * (y + 0.5) / HEIGHT;
+            const cylindricalU =
+                (Math.atan2(0.5, worldY) + Math.PI) / (2 * Math.PI);
+            const cylindricalV = worldX * 0.5 + 0.5;
+            const expectedAngular = SampleRepeatBilinear8x8(
+                cylindricalU,
+                cylindricalV,
+                (texelX) => 48 + 24 * texelX
+            ) * 255;
+            const expectedAxial = SampleRepeatBilinear8x8(
+                cylindricalU,
+                cylindricalV,
+                (_texelX, texelY) => 48 + 24 * texelY
+            ) * 255;
+            const offset = PixelOffset(x, y);
+            const angularPixelError =
+                Math.abs(snapshots.base[offset + 3] - expectedAngular);
+            const axialPixelError =
+                Math.abs(snapshots.axialTransparency[offset + 3] - expectedAxial);
+            Assert(
+                snapshots.whiteTransparency[offset + 3] === 255,
+                `DecalCylindricV5 white transparency alpha drifted at (${x}, ${y})`
+            );
+            angularError += angularPixelError;
+            axialError += axialPixelError;
+            angularMaximumError = Math.max(angularMaximumError, angularPixelError);
+            axialMaximumError = Math.max(axialMaximumError, axialPixelError);
+        }
+    }
+    Assert(activePixels > 0, "DecalCylindricV5 controls have no active pixels");
+    const angularMeanAbsoluteError = angularError / activePixels;
+    const axialMeanAbsoluteError = axialError / activePixels;
+    Assert(
+        angularMaximumError <= 2 && angularMeanAbsoluteError <= 1.5,
+        `DecalCylindricV5 angular alpha oracle drifted: max ${angularMaximumError}, ` +
+            `MAE ${angularMeanAbsoluteError}`
+    );
+    Assert(
+        axialMaximumError <= 2 && axialMeanAbsoluteError <= 1.5,
+        `DecalCylindricV5 axial alpha oracle drifted: max ${axialMaximumError}, ` +
+            `MAE ${axialMeanAbsoluteError}`
+    );
+    return {
+        activePixels,
+        angularMaximumError,
+        axialMaximumError,
+        angularMeanAbsoluteError,
+        axialMeanAbsoluteError
+    };
+}
+
 async function RunQuadV5Comparison(webgpu)
 {
     if (!CONFIG.drawQuadV5) return null;
@@ -1740,13 +1847,16 @@ async function RunQuadV5Comparison(webgpu)
 
 async function RunDecalV5Comparison(webgpu)
 {
-    const variant = CONFIG.drawDecalGlowCylindricV5
-        ? "glowCylindric"
-        : (CONFIG.drawDecalGlowV5
-            ? "glow"
-            : (CONFIG.drawDecalCounterV5 ? "counter" : "standard"));
+    const variant = CONFIG.drawDecalCylindricV5
+        ? "cylindric"
+        : (CONFIG.drawDecalGlowCylindricV5
+            ? "glowCylindric"
+            : (CONFIG.drawDecalGlowV5
+                ? "glow"
+                : (CONFIG.drawDecalCounterV5 ? "counter" : "standard")));
     if (!CONFIG.drawDecalV5 && !CONFIG.drawDecalCounterV5
-        && !CONFIG.drawDecalGlowV5 && !CONFIG.drawDecalGlowCylindricV5)
+        && !CONFIG.drawDecalCylindricV5 && !CONFIG.drawDecalGlowV5
+        && !CONFIG.drawDecalGlowCylindricV5)
     {
         return null;
     }
@@ -1927,6 +2037,12 @@ async function RunDecalV5Comparison(webgpu)
                     AssertCylindricGlowControls(instances);
             }
         }
+        else if (variant === "cylindric")
+        {
+            textureInfluence = {
+                cylindricalAlpha: AssertCylindricSurfaceAlpha(instances)
+            };
+        }
         return {
             bodyIndex: 0,
             variant,
@@ -2071,6 +2187,7 @@ async function RunHarness()
     let phaseZeroDraw = null;
     let quadV5Comparison = null;
     let decalV5Comparison = null;
+    let decalCylindricV5Comparison = null;
     let decalCounterV5Comparison = null;
     let decalGlowV5Comparison = null;
     let decalGlowCylindricV5Comparison = null;
@@ -2086,7 +2203,11 @@ async function RunHarness()
         phaseZeroDraw = generatedDraw ? null : await CreatePhaseZeroDraw(webgpu);
         quadV5Comparison = await RunQuadV5Comparison(webgpu);
         const decalComparison = await RunDecalV5Comparison(webgpu);
-        if (decalComparison?.variant === "counter") decalCounterV5Comparison = decalComparison;
+        if (decalComparison?.variant === "cylindric")
+        {
+            decalCylindricV5Comparison = decalComparison;
+        }
+        else if (decalComparison?.variant === "counter") decalCounterV5Comparison = decalComparison;
         else if (decalComparison?.variant === "glow") decalGlowV5Comparison = decalComparison;
         else if (decalComparison?.variant === "glowCylindric")
         {
@@ -2172,6 +2293,7 @@ async function RunHarness()
                 : null,
             quadV5Comparison,
             decalV5Comparison,
+            decalCylindricV5Comparison,
             decalCounterV5Comparison,
             decalGlowV5Comparison,
             decalGlowCylindricV5Comparison

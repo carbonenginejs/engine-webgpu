@@ -160,6 +160,13 @@ The first decal-family gate uses the explicitly selected non-bindless
 npm.cmd run test:webgpu:required -- --draw-decalv5 .\artifacts\decalv5-dx11.cewgpu .\artifacts\decalv5-dx12.cewgpu
 ```
 
+The full cylindrical surface sibling uses the separately qualified default
+`unpacked_decalcylindricv5` Main pass:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-decalcylindricv5 .\artifacts\decalcylindricv5-dx11.cewgpu .\artifacts\decalcylindricv5-dx12.cewgpu
+```
+
 The kill-counter slice uses the separately qualified default
 `unpacked_decalcounterv5` Main pass:
 
@@ -260,6 +267,38 @@ decal batch type `1`, renders one `rgba8unorm` target, checks clear corners,
 silhouette anchors, bounded coverage and varied shading, then requires
 byte-exact DX11/DX12 equality after target quantization. These fixture bytes
 are deliberately not presented as production per-frame/per-object defaults.
+
+The DecalCylindricV5 command gates the canonical
+`unpacked_decalcylindricv5` sibling rather than implementing the shader. It
+retains the full DecalV5 BRDF/resource family: environment cube, neutral
+`SSAOMap`, shadow, mesh normal, and five authored decal textures. DX11 uses
+the authored decal textures at `t4..t8`; DX12 uses `t5..t9`. The canonical
+WebGPU layout maps both semantic sets to the same binding sequence, alongside
+two filtering samplers and five uniform buffers. Its additional local
+`cb0` is exactly one `DecalTextureScaling` vec4; the fixture sets `.w` to `1`
+so the cylindrical angle cannot collapse.
+
+Every synthetic vertex uses z `0.5`. The browser renders angular-gradient,
+axial-gradient, and white transparency cases for both backends. Because the
+default shader writes sampled transparency directly to output alpha,
+a CPU bilinear oracle can predict the angular
+`atan2(Z,Y)` and axial `X/2+0.5` coordinates independently at every active
+pixel. Each case must preserve the same bounded silhouette, compile with zero
+warnings, and match byte-for-byte across DX11 and DX12; the angular and axial
+alpha predictions may differ by at most two target bytes.
+
+The bounded semantic serializer supplies synthetic `cb0` through `cb2`.
+Decal-specific bytes then replace its incompatible generic space-object
+payloads with the exact active default spans: `320` bytes for vertex `cb3`
+and `16` bytes for fragment `cb4`, whose only consumed lane is
+`displayData.y`. These reflected minima are not production struct sizes. Full
+renderer-resolved Decal RawData shapes remain `384` bytes for
+`DecalVSPerObjectData` and `176` bytes for `DecalPSPerObjectData`, with WebGPU
+and WebGL packing kept independent. Identity matrices do not prove production
+transforms or transposition. The authored cylindrical UVs keep every
+single-mip sample footprint inside the texture, making clamp-to-edge
+equivalent to DX11's zero-border sampler for this fixture only; the reflected
+`-0.75` mip bias remains outside this one-mip gate.
 
 The DecalCounterV5 command applies the same canonical provenance, default
 selection, complete-pass, batch-type, warning, validation, and exact
