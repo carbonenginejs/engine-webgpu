@@ -9,6 +9,7 @@ const TOPOLOGIES = Object.freeze({
 });
 
 const PREPARED_BATCHES = new WeakMap();
+const PREPARED_ACCUMULATORS = new WeakMap();
 
 function fail(message)
 {
@@ -220,5 +221,85 @@ export class CjsWebGPUTrinityBatchDispatcher
     if (state.destroyed) return;
     state.destroyed = true;
     handle.bindingSet.Destroy();
+  }
+
+  /**
+   * Snapshots and prepares the ordinary batch vector of one finalized
+   * TriRenderBatchAccumulator-compatible object. GDPR batches remain rejected
+   * until their grouped state-sharing contract is implemented.
+   */
+  async PrepareAccumulator(accumulator)
+  {
+    if (!accumulator || typeof accumulator.GetGdprBatches !== "function"
+      || typeof accumulator.GetBatches !== "function")
+    {
+      fail("accumulator requires GetGdprBatches and GetBatches");
+    }
+    const gdprBatches = accumulator.GetGdprBatches();
+    const batches = accumulator.GetBatches();
+    if (!Array.isArray(gdprBatches) || !Array.isArray(batches))
+    {
+      fail("accumulator batch getters must return arrays");
+    }
+    if (gdprBatches.length)
+    {
+      fail("GDPR batch dispatch is not implemented");
+    }
+    if (typeof accumulator.GetBatchCount === "function"
+      && accumulator.GetBatchCount() !== batches.length)
+    {
+      fail("accumulator batch count does not match its batch vectors");
+    }
+
+    const preparedBatches = [];
+    try
+    {
+      for (const batch of batches)
+      {
+        preparedBatches.push(await this.Prepare(batch));
+      }
+      const handle = Object.freeze({
+        accumulator,
+        batches: Object.freeze(preparedBatches.slice())
+      });
+      PREPARED_ACCUMULATORS.set(handle, {
+        owner: this,
+        destroyed: false
+      });
+      return handle;
+    }
+    catch (error)
+    {
+      for (let index = preparedBatches.length - 1; index >= 0; index -= 1)
+      {
+        this.Destroy(preparedBatches[index]);
+      }
+      throw error;
+    }
+  }
+
+  /** Encodes every ordinary prepared batch in accumulator order. */
+  EncodeAccumulator(pass, handle)
+  {
+    const state = PREPARED_ACCUMULATORS.get(handle);
+    if (!state || state.owner !== this) fail("prepared accumulator belongs to another dispatcher");
+    if (state.destroyed) fail("prepared accumulator is destroyed");
+    for (const batch of handle.batches)
+    {
+      this.Encode(pass, batch);
+    }
+  }
+
+  /** Releases every binding set owned by a prepared accumulator. */
+  DestroyAccumulator(handle)
+  {
+    const state = PREPARED_ACCUMULATORS.get(handle);
+    if (!state || state.owner !== this) fail("prepared accumulator belongs to another dispatcher");
+    if (state.destroyed) return;
+    state.destroyed = true;
+    for (let index = handle.batches.length - 1; index >= 0; index -= 1)
+    {
+      this.Destroy(handle.batches[index]);
+    }
   }
 }

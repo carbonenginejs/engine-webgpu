@@ -679,6 +679,18 @@ function CreateQuadV5TrinityBatch(record, fixture)
     });
 }
 
+function CreateQuadV5TrinityAccumulator(record, fixture)
+{
+    const batches = Object.freeze([ CreateQuadV5TrinityBatch(record, fixture) ]);
+    const gdprBatches = Object.freeze([]);
+    return Object.freeze({
+        GetGdprBatches: () => gdprBatches,
+        GetBatches: () => batches,
+        GetBatchCount: () => batches.length,
+        IsChainedByEffect: () => true
+    });
+}
+
 function CreateQuadV5TrinityDispatcher(webgpu, fixture)
 {
     return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
@@ -904,14 +916,19 @@ async function RunQuadV5Comparison(webgpu)
     {
         for (const record of records)
         {
-            let preparedBatch = null;
+            let preparedAccumulator = null;
             const targets = [];
             const readbacks = [];
             try
             {
-                preparedBatch = await dispatcher.Prepare(CreateQuadV5TrinityBatch(record, fixture));
-                warningCount += preparedBatch.prepared.diagnostics
-                    .filter((entry) => entry.type === "warning").length;
+                preparedAccumulator = await dispatcher.PrepareAccumulator(
+                    CreateQuadV5TrinityAccumulator(record, fixture)
+                );
+                warningCount += preparedAccumulator.batches.reduce(
+                    (total, batch) => total
+                        + batch.prepared.diagnostics.filter((entry) => entry.type === "warning").length,
+                    0
+                );
                 for (let targetIndex = 0; targetIndex < QUADV5_CLEAR_TARGETS.length; targetIndex += 1)
                 {
                     targets.push(device.createTexture({
@@ -929,11 +946,11 @@ async function RunQuadV5Comparison(webgpu)
                         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
                     }));
                 }
-                instances.push({ record, preparedBatch, targets, readbacks, snapshots: [] });
+                instances.push({ record, preparedAccumulator, targets, readbacks, snapshots: [] });
             }
             catch (error)
             {
-                if (preparedBatch) dispatcher.Destroy(preparedBatch);
+                if (preparedAccumulator) dispatcher.DestroyAccumulator(preparedAccumulator);
                 for (const buffer of readbacks)
                 {
                     buffer.destroy();
@@ -963,7 +980,7 @@ async function RunQuadV5Comparison(webgpu)
                     storeOp: "store"
                 }))
             });
-            dispatcher.Encode(pass, instance.preparedBatch);
+            dispatcher.EncodeAccumulator(pass, instance.preparedAccumulator);
             pass.end();
             instance.targets.forEach((texture, targetIndex) =>
             {
@@ -1032,7 +1049,7 @@ async function RunQuadV5Comparison(webgpu)
     {
         for (const instance of instances)
         {
-            dispatcher.Destroy(instance.preparedBatch);
+            dispatcher.DestroyAccumulator(instance.preparedAccumulator);
             for (const buffer of instance.readbacks)
             {
                 if (buffer.mapState === "mapped") buffer.unmap();

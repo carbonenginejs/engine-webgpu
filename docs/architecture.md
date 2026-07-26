@@ -80,11 +80,18 @@ resolvers. It maps indexed and non-indexed draw arguments, rejects unsupported
 topologies and incompatible pipeline recipes, and rolls back its binding set
 when draw creation fails.
 
+It also snapshots the ordinary `GetBatches()` vector of a finalized
+`TriRenderBatchAccumulator`-compatible object, preserves its order, and owns
+the collected binding-set lifecycle as one unit. `GetGdprBatches()` must
+currently be empty: grouped state sharing remains explicitly unsupported and
+fails before any batch allocation.
+
 This class is internal and is not exported from the package root. It is a
 conformance prototype, not a frozen renderer API. The static and skinned
-QuadV5 browser gates use it, and an actual `runtime-trinity` `Tr2RenderBatch`
-passes its duck-typed contract. A later render-step executor still needs to
-own frame/pass planning and batch-map dispatch.
+QuadV5 browser gates use its accumulator path, and actual `runtime-trinity`
+`Tr2RenderBatch` and `TriRenderBatchAccumulator` instances pass the duck-typed
+contract. A later render-step executor still needs to own frame/pass planning
+and batch-map dispatch.
 
 The contract consumes already-decoded pipeline data. Moving shader format
 readers between format and resource packages therefore does not change this
