@@ -160,6 +160,13 @@ The first decal-family gate uses the explicitly selected non-bindless
 npm.cmd run test:webgpu:required -- --draw-decalv5 .\artifacts\decalv5-dx11.cewgpu .\artifacts\decalv5-dx12.cewgpu
 ```
 
+The kill-counter slice uses the separately qualified default
+`unpacked_decalcounterv5` Main pass:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-decalcounterv5 .\artifacts\decalcounterv5-dx11.cewgpu .\artifacts\decalcounterv5-dx12.cewgpu
+```
+
 Add `--capture-quadv5 .\artifacts\quadv5-ppt-on.png` to save a browser-rendered
 PNG visualization of the DX11 package's two 64x64 active-pixel MRT readbacks
 after the silhouette invariants and byte-exact DX11/DX12 checks pass. DX12 is not
@@ -239,6 +246,24 @@ decal batch type `1`, renders one `rgba8unorm` target, checks clear corners,
 silhouette anchors, bounded coverage and varied shading, then requires
 byte-exact DX11/DX12 equality after target quantization. These fixture bytes
 are deliberately not presented as production per-frame/per-object defaults.
+
+The DecalCounterV5 command applies the same canonical provenance, default
+selection, complete-pass, batch-type, warning, validation, and exact
+DX11/DX12 target checks to `unpacked_decalcounterv5`. Its smaller layout has
+five uniform buffers, one `DecalTransparencyMap`, and one sampler. DX11 and
+DX12 reflect the three local material values in different `cb0` orders, so
+the gate packs `DecalTextureScaling`, `DecalIntensityData`, and
+`DecalGlowColor` by reflected name. Without importing Trinity, the
+harness-authored per-object bytes provide the complete six-matrix
+`DecalVSPerObjectData` layout and the two-register active prefix of
+`DecalPSPerObjectData`: `displayData` followed by `shipData`. It writes the
+chosen three-digit ship kill count `731`—inside the shader's `0..999` display
+domain—to `displayData.x`, visibility `1` to `displayData.y`, and explicit ship
+data to the following register. The runtime transports this value as a
+`uint32` and does not itself clamp that display domain. The result must retain
+clear corners, produce bounded and varied counter coverage, and match
+byte-for-byte across backends. These are conformance inputs, not production
+defaults or a finalized RawData integration.
 
 The QuadV5 path supplies semantic material, per-frame, and per-object values
 rather than hand-addressed constant-buffer rows. It calls
