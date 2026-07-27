@@ -1,5 +1,6 @@
 import {
   QUADV5_CLEAR_TARGETS,
+  QUADV5_SKINNED_VERTEX_BUFFER_LAYOUT,
   QUADV5_TARGET_HEIGHT,
   QUADV5_TARGET_WIDTH,
   QUADV5_VERTEX_BUFFER_LAYOUT,
@@ -7,11 +8,14 @@ import {
   createQuadV5MainBindingValues
 } from "./quadV5Fixture.js";
 
-const TARGET_BODY_INDEX = 0;
+const STATIC_BODY_INDEX = 0;
+const SKINNED_BODY_INDEX = 4;
 
 export const QUAD_GLASS_V5_TARGET_WIDTH = QUADV5_TARGET_WIDTH;
 export const QUAD_GLASS_V5_TARGET_HEIGHT = QUADV5_TARGET_HEIGHT;
 export const QUAD_GLASS_V5_VERTEX_BUFFER_LAYOUT = QUADV5_VERTEX_BUFFER_LAYOUT;
+export const QUAD_GLASS_V5_SKINNED_VERTEX_BUFFER_LAYOUT =
+  QUADV5_SKINNED_VERTEX_BUFFER_LAYOUT;
 export const QUAD_GLASS_V5_CLEAR_TARGETS = QUADV5_CLEAR_TARGETS;
 
 /**
@@ -40,6 +44,14 @@ export const QUAD_GLASS_V5_SELECTION = Object.freeze({
   SPACE_OBJECT_TRANSPARENCY: "SOT_OPAQUE",
   V5_DEBUG: "OFF",
   SPACE_OBJECT_INSTANCED_ATTACHMENT: "SOIA_DISABLED"
+});
+
+export const QUAD_GLASS_V5_SKINNED_PPT_SELECTION = Object.freeze({
+  BINDLESS_RENDERING: "BINDLESS_RENDERING_DISABLED",
+  SPACE_OBJECT_CLIPPING: "SOC_DISABLED",
+  SPACE_OBJECT_PPT_ENABLED: "SOPPT_ENABLED",
+  SPACE_OBJECT_TRANSPARENCY: "SOT_OPAQUE",
+  V5_DEBUG: "OFF"
 });
 
 const SELECTION_PROVENANCE = Object.freeze({
@@ -72,6 +84,15 @@ const SELECTION_PROVENANCE = Object.freeze({
     optionIndex: 0,
     defaultOption: 0,
     defaultValue: "SOIA_DISABLED"
+  })
+});
+
+const SKINNED_SELECTION_PROVENANCE = Object.freeze({
+  ...SELECTION_PROVENANCE,
+  SPACE_OBJECT_PPT_ENABLED: Object.freeze({
+    optionIndex: 1,
+    defaultOption: 0,
+    defaultValue: "SOPPT_DISABLED"
   })
 });
 
@@ -139,8 +160,8 @@ const RESOURCE_REGISTERS = Object.freeze({
 });
 
 const SAMPLERS = Object.freeze([
-  Object.freeze({ name: "SurfaceSampler", registerIndex: 0, binding: 12 }),
-  Object.freeze({ name: "FogSampler", registerIndex: 1, binding: 13 })
+  Object.freeze({ name: "SurfaceSampler", registerIndex: 0 }),
+  Object.freeze({ name: "FogSampler", registerIndex: 1 })
 ]);
 
 const MATERIAL_CONSTANTS = Object.freeze([
@@ -169,7 +190,28 @@ function normalizedPath(value)
   return typeof value === "string" ? value.replace(/\\/gu, "/").toLowerCase() : "";
 }
 
-function expectedResources(backend)
+function expectedUniforms(skinned)
+{
+  return UNIFORMS.map((entry) => Object.freeze({
+    ...entry,
+    ...(skinned && entry.identity === "uniform-buffer:0:3"
+      ? { minBindingSize: 432 }
+      : {})
+  }));
+}
+
+function expectedBoneBinding()
+{
+  return Object.freeze({
+    name: "BoneTransforms",
+    identity: "sampled-resource:0:0",
+    scopeIdentity: "sampled-resource:0:0@vertex",
+    registerIndex: 0,
+    binding: 5
+  });
+}
+
+function expectedResources(backend, skinned)
 {
   const registers = RESOURCE_REGISTERS[backend];
   if (!registers) fail(`unsupported package backend ${String(backend)}`);
@@ -178,23 +220,34 @@ function expectedResources(backend)
     identity: `sampled-resource:0:${registers[index]}`,
     scopeIdentity: `sampled-resource:0:${registers[index]}@fragment`,
     registerIndex: registers[index],
-    binding: 5 + index,
-    viewDimension: RESOURCE_DIMENSIONS[index]
+    binding: (skinned ? 6 : 5) + index,
+    viewDimension: RESOURCE_DIMENSIONS[index],
+    registerType: index === 0 ? 41 : (index === 1 ? 37 : 36),
+    carbonType: index === 0 ? 4 : (index === 1 ? 5 : 2),
+    isSRGB: index === 0,
+    isAutoregister: index === 1
   }));
 }
 
-function expectedSamplers()
+function expectedSamplers(skinned)
 {
   return SAMPLERS.map((entry) => Object.freeze({
     ...entry,
     identity: `sampler:0:${entry.registerIndex}`,
-    scopeIdentity: `sampler:0:${entry.registerIndex}@fragment`
+    scopeIdentity: `sampler:0:${entry.registerIndex}@fragment`,
+    binding: (skinned ? 13 : 12) + entry.registerIndex
   }));
 }
 
-function assertSelections(options, owner)
+function assertSelections(options, owner, skinned)
 {
-  if (!Array.isArray(options) || options.length !== Object.keys(QUAD_GLASS_V5_SELECTION).length)
+  const selection = skinned
+    ? QUAD_GLASS_V5_SKINNED_PPT_SELECTION
+    : QUAD_GLASS_V5_SELECTION;
+  const provenanceTable = skinned
+    ? SKINNED_SELECTION_PROVENANCE
+    : SELECTION_PROVENANCE;
+  if (!Array.isArray(options) || options.length !== Object.keys(selection).length)
   {
     fail(`${owner} must contain every QuadGlassV5 permutation selection`);
   }
@@ -207,10 +260,10 @@ function assertSelections(options, owner)
     }
     selected.set(entry.name, entry);
   }
-  for (const [ name, value ] of Object.entries(QUAD_GLASS_V5_SELECTION))
+  for (const [ name, value ] of Object.entries(selection))
   {
     const entry = selected.get(name);
-    const provenance = SELECTION_PROVENANCE[name];
+    const provenance = provenanceTable[name];
     if (!entry || entry.value !== value) fail(`${owner} requires ${name}=${value}`);
     if (entry.optionIndex !== provenance.optionIndex
       || entry.defaultOption !== provenance.defaultOption
@@ -235,19 +288,25 @@ function mainStage(record, passIndex, stageName)
   return matches[0];
 }
 
-function assertVertexInputs(record, passIndex)
+function assertVertexInputs(record, passIndex, skinned)
 {
   const active = (mainStage(record, passIndex, "vertex").pipelineInputs || [])
     .filter((entry) => entry.usedMask !== 0)
-    .map(({ registerIndex, dimension, type }) => ({ registerIndex, dimension, type }))
+    .map(({ registerIndex, usedMask, dimension, type }) => ({
+      registerIndex,
+      usedMask,
+      dimension,
+      type
+    }))
     .sort((left, right) => left.registerIndex - right.registerIndex);
   const expected = [
-    { registerIndex: 0, dimension: 3, type: 0 },
-    { registerIndex: 2, dimension: 2, type: 0 },
-    { registerIndex: 3, dimension: 3, type: 0 },
-    { registerIndex: 4, dimension: 3, type: 0 },
-    { registerIndex: 5, dimension: 3, type: 0 },
-    { registerIndex: 6, dimension: 2, type: 0 }
+    { registerIndex: 0, usedMask: 7, dimension: 3, type: 0 },
+    ...(skinned ? [ { registerIndex: 1, usedMask: 1, dimension: 4, type: 2 } ] : []),
+    { registerIndex: 2, usedMask: 3, dimension: 2, type: 0 },
+    { registerIndex: 3, usedMask: 7, dimension: 3, type: 0 },
+    { registerIndex: 4, usedMask: 7, dimension: 3, type: 0 },
+    { registerIndex: 5, usedMask: 7, dimension: 3, type: 0 },
+    { registerIndex: 6, usedMask: 3, dimension: 2, type: 0 }
   ];
   if (JSON.stringify(active) !== JSON.stringify(expected))
   {
@@ -255,7 +314,7 @@ function assertVertexInputs(record, passIndex)
   }
 }
 
-function assertPixelInputs(record, passIndex)
+function assertPixelInputs(record, passIndex, skinned)
 {
   const active = (mainStage(record, passIndex, "pixel").pipelineInputs || [])
     .filter((entry) => entry.usedMask !== 0)
@@ -272,7 +331,7 @@ function assertPixelInputs(record, passIndex)
     { registerIndex: 3, usedMask: 7, dimension: 3, type: 0 },
     { registerIndex: 4, usedMask: 7, dimension: 3, type: 0 },
     { registerIndex: 5, usedMask: 15, dimension: 4, type: 0 },
-    { registerIndex: 8, usedMask: 11, dimension: 4, type: 0 }
+    { registerIndex: skinned ? 9 : 8, usedMask: 11, dimension: 4, type: 0 }
   ];
   if (JSON.stringify(active) !== JSON.stringify(expected))
   {
@@ -280,7 +339,7 @@ function assertPixelInputs(record, passIndex)
   }
 }
 
-function assertShaderModules(pipeline, passIndex)
+function assertShaderModules(pipeline, passIndex, skinned)
 {
   if (!Array.isArray(pipeline.shaderModules) || pipeline.shaderModules.length !== 2)
   {
@@ -299,13 +358,18 @@ function assertShaderModules(pipeline, passIndex)
     }
     if (stageName === "vertex")
     {
-      for (const location of [ 0, 2, 3, 4, 5, 6 ])
+      for (const location of [ 0, ...(skinned ? [ 1 ] : []), 2, 3, 4, 5, 6 ])
       {
         if (!new RegExp(`@location\\(${location}\\)\\s+input${location}:`, "u")
           .test(matches[0].wgsl))
         {
           fail(`vertex WGSL is missing location ${location}`);
         }
+      }
+      if (skinned
+        && !/@location\(1\)\s+input1:\s*vec4<u32>/u.test(matches[0].wgsl))
+      {
+        fail(`Main.pass${passIndex}.vertex WGSL must use uint4 blend indices`);
       }
     }
     else if (!/@builtin\(position\)\s+position:\s*vec4<f32>/u.test(matches[0].wgsl)
@@ -343,7 +407,7 @@ function assertBindingSlot(binding, expected, kind, visibility)
   }
 }
 
-function assertMaterialReflection(record, passIndex)
+function assertMaterialReflection(record, passIndex, skinned)
 {
   const material = mainStage(record, passIndex, "pixel").bindings?.filter((entry) =>
     entry?.kind === "constantBuffer"
@@ -354,6 +418,13 @@ function assertMaterialReflection(record, passIndex)
     || material[0].carbon?.constantValueSize !== 224)
   {
     fail("pixel cb0 must expose the exact 224-byte local material layout");
+  }
+  if (skinned && (material[0].generatedSymbol !== "cb0"
+    || material[0].registerType !== 0 || material[0].registerCount !== 1
+    || material[0].arrayCount !== 1 || material[0].dynamic !== true
+    || material[0].metadataName !== "$LocalConstants"))
+  {
+    fail("pixel cb0 has unexpected skinned Glass metadata");
   }
   const constants = material[0].carbon.constants;
   if (!Array.isArray(constants) || constants.length !== MATERIAL_CONSTANTS.length)
@@ -373,9 +444,62 @@ function assertMaterialReflection(record, passIndex)
   }
 }
 
-function assertAnalysisResources(record, passIndex, resources)
+function assertSkinnedAnalysisBuffers(record, passIndex)
 {
+  const vertex = mainStage(record, passIndex, "vertex");
+  const pixel = mainStage(record, passIndex, "pixel");
+  const vertexBuffers = (vertex.bindings || [])
+    .filter((entry) => entry?.kind === "constantBuffer");
+  const pixelBuffers = (pixel.bindings || [])
+    .filter((entry) => entry?.kind === "constantBuffer");
+  if (JSON.stringify(vertexBuffers.map((entry) => entry.registerIndex)) !== "[1,3]"
+    || JSON.stringify(pixelBuffers.map((entry) => entry.registerIndex)) !== "[0,2,4]")
+  {
+    fail(`Main.pass${passIndex} has an unexpected skinned Glass constant-buffer inventory`);
+  }
+  for (const entry of [ ...vertexBuffers, ...pixelBuffers ])
+  {
+    const local = entry.registerIndex === 0;
+    if (entry.generatedSymbol !== `cb${entry.registerIndex}`
+      || entry.registerType !== 0 || entry.registerSpace !== 0
+      || entry.registerCount !== 1 || entry.arrayCount !== 1 || entry.dynamic !== true
+      || entry.metadataName !== (local ? "$LocalConstants" : null)
+      || entry.carbon?.hasLocalConstants !== local
+      || (!local && (entry.carbon.constantValueSize !== 0
+        || JSON.stringify(entry.carbon.constants) !== "[]")))
+    {
+      fail(`Main.pass${passIndex} cb${entry.registerIndex} has unexpected skinned Glass metadata`);
+    }
+  }
+}
+
+function assertAnalysisResources(record, passIndex, resources, skinned)
+{
+  const vertexBindings = mainStage(record, passIndex, "vertex").bindings || [];
+  const bones = vertexBindings.filter((entry) => entry?.kind === "resource"
+    && entry.registerSpace === 0 && entry.registerIndex === 0);
+  if ((skinned && bones.length !== 1) || (!skinned && bones.length !== 0))
+  {
+    fail(`Main.pass${passIndex}.vertex BoneTransforms reflection does not match the variant`);
+  }
+  if (skinned)
+  {
+    const bone = bones[0];
+    if (vertexBindings.filter((entry) => entry?.kind === "resource").length !== 1
+      || bone.registerType !== 33 || bone.carbon?.name !== "BoneTransforms"
+      || bone.carbon?.type !== 7 || bone.carbon?.arrayElements !== 1
+      || bone.carbon?.isSRGB !== false || bone.carbon?.isAutoregister !== false)
+    {
+      fail(`Main.pass${passIndex}.vertex has unexpected BoneTransforms metadata`);
+    }
+    assertSkinnedAnalysisBuffers(record, passIndex);
+  }
   const bindings = mainStage(record, passIndex, "pixel").bindings || [];
+  if (skinned
+    && bindings.filter((entry) => entry?.kind === "resource").length !== resources.length)
+  {
+    fail(`Main.pass${passIndex}.pixel has an unexpected skinned Glass resource inventory`);
+  }
   for (const expected of resources)
   {
     const matches = bindings.filter((entry) => entry?.kind === "resource"
@@ -384,6 +508,18 @@ function assertAnalysisResources(record, passIndex, resources)
     if (matches.length !== 1 || matches[0].carbon?.name !== expected.name)
     {
       fail(`${expected.identity} must reflect ${expected.name}`);
+    }
+    if (skinned)
+    {
+      const reflected = matches[0];
+      if (reflected.registerType !== expected.registerType
+        || reflected.carbon?.type !== expected.carbonType
+        || reflected.carbon?.arrayElements !== 1
+        || reflected.carbon?.isSRGB !== expected.isSRGB
+        || reflected.carbon?.isAutoregister !== expected.isAutoregister)
+      {
+        fail(`${expected.identity} has unexpected skinned Glass Carbon metadata`);
+      }
     }
   }
   const samplerBindings = bindings.filter((entry) => entry?.kind === "sampler");
@@ -419,7 +555,7 @@ function assertAnalysisResources(record, passIndex, resources)
   }
 }
 
-function assertBindings(record, pipeline, passIndex)
+function assertBindings(record, pipeline, passIndex, skinned)
 {
   const groups = pipeline?.bindGroups;
   if (!Array.isArray(groups) || groups.length !== 1 || groups[0]?.group !== 0)
@@ -427,19 +563,24 @@ function assertBindings(record, pipeline, passIndex)
     fail(`Main.pass${passIndex} requires exactly canonical bind group 0`);
   }
   const bindings = groups[0].bindings;
-  const resources = expectedResources(record.backend);
-  const samplers = expectedSamplers();
+  const uniforms = expectedUniforms(skinned);
+  const bone = skinned ? expectedBoneBinding() : null;
+  const resources = expectedResources(record.backend, skinned);
+  const samplers = expectedSamplers(skinned);
   if (!Array.isArray(bindings)
-    || bindings.length !== UNIFORMS.length + resources.length + samplers.length)
+    || bindings.length
+      !== uniforms.length + (bone ? 1 : 0) + resources.length + samplers.length)
   {
-    fail(`Main.pass${passIndex} requires exactly 14 canonical bindings`);
+    fail(
+      `Main.pass${passIndex} requires exactly ${skinned ? 15 : 14} canonical bindings`
+    );
   }
   const byScope = new Map(bindings.map((entry) => [ entry.scopeIdentity, entry ]));
   if (byScope.size !== bindings.length)
   {
     fail(`Main.pass${passIndex} contains duplicate binding scopes`);
   }
-  for (const expected of UNIFORMS)
+  for (const expected of uniforms)
   {
     const binding = byScope.get(expected.scopeIdentity);
     assertBindingSlot(binding, expected, "buffer", expected.visibility);
@@ -448,6 +589,18 @@ function assertBindings(record, pipeline, passIndex)
       || binding.layout.buffer.minBindingSize !== expected.minBindingSize)
     {
       fail(`${expected.identity} has an unexpected uniform-buffer layout`);
+    }
+  }
+  if (bone)
+  {
+    const binding = byScope.get(bone.scopeIdentity);
+    assertBindingSlot(binding, bone, "buffer", "vertex");
+    if (binding.layout.buffer.type !== "read-only-storage"
+      || binding.layout.buffer.hasDynamicOffset !== false
+      || binding.layout.buffer.minBindingSize !== 48
+      || binding.structureStride !== 48)
+    {
+      fail("BoneTransforms has an unexpected read-only storage layout");
     }
   }
   for (const expected of resources)
@@ -460,6 +613,14 @@ function assertBindings(record, pipeline, passIndex)
     {
       fail(`${expected.identity} has an unexpected texture layout`);
     }
+    if (skinned && (binding.layout.type
+        !== `texture_${expected.viewDimension.replace("-", "_")}<f32>`
+      || binding.textureKind !== expected.viewDimension
+      || binding.arrayElements !== 1
+      || binding.isSRGB !== expected.isSRGB))
+    {
+      fail(`${expected.identity} has unexpected skinned Glass texture metadata`);
+    }
   }
   for (const expected of samplers)
   {
@@ -470,13 +631,14 @@ function assertBindings(record, pipeline, passIndex)
       fail(`${expected.identity} has an unexpected sampler layout`);
     }
   }
-  assertMaterialReflection(record, passIndex);
-  assertAnalysisResources(record, passIndex, resources);
+  assertMaterialReflection(record, passIndex, skinned);
+  assertAnalysisResources(record, passIndex, resources, skinned);
 }
 
 /**
- * Fail closed unless the record is the exact default, non-bindless,
- * PPT-disabled unpacked QuadGlassV5 package containing both Main passes.
+ * Fail closed unless the record is either the exact default PPT-disabled
+ * static package or the exact PPT-enabled skinned package containing both
+ * complementary Main passes.
  *
  * @param {object} record Resource provenance plus a pipeline descriptor.
  * @returns {object} The validated input record.
@@ -484,6 +646,12 @@ function assertBindings(record, pipeline, passIndex)
 export function validateQuadGlassV5PackageRecord(record)
 {
   if (!record || typeof record !== "object") fail("package record is required");
+  const variant = record.variant ?? "static";
+  if (variant !== "static" && variant !== "skinned")
+  {
+    fail("package variant must be static or skinned");
+  }
+  const skinned = variant === "skinned";
   if (record.backend !== "dx11" && record.backend !== "dx12")
   {
     fail("package backend must be dx11 or dx12");
@@ -495,33 +663,43 @@ export function validateQuadGlassV5PackageRecord(record)
   {
     fail(`package source provenance must match ${record.backend}`);
   }
-  if (!analysisSource.endsWith(
+  const staticSource = analysisSource.endsWith(
     "/managed/space/spaceobject/v5/quad/unpacked_quadglassv5.sm_hi"
-  ) && !analysisSource.endsWith(
+  ) || analysisSource.endsWith(
     "/managed/space/spaceobject/v5/quad/unpacked_quadglassv5.sm_lo"
-  ))
+  );
+  const skinnedSource = analysisSource.endsWith(
+    "/managed/space/spaceobject/v5/quad/unpackedskinned_quadglassv5.sm_hi"
+  );
+  if ((skinned && !skinnedSource) || (!skinned && !staticSource))
   {
-    fail("package source must be the unpacked_quadglassv5 ship shader");
+    fail(
+      `package source must be the ${skinned
+        ? "unpackedskinned_quadglassv5.sm_hi"
+        : "unpacked_quadglassv5 ship shader"}`
+    );
   }
-  if (record.analysis?.bodyIndex !== TARGET_BODY_INDEX
-    || record.metadata?.bodyIndex !== TARGET_BODY_INDEX)
+  const bodyIndex = skinned ? SKINNED_BODY_INDEX : STATIC_BODY_INDEX;
+  if (record.analysis?.bodyIndex !== bodyIndex
+    || record.metadata?.bodyIndex !== bodyIndex)
   {
-    fail(`package must resolve body index ${TARGET_BODY_INDEX}`);
+    fail(`package must resolve body index ${bodyIndex}`);
   }
-  assertSelections(record.analysis.selectedOptions, "analysis.selectedOptions");
-  assertSelections(record.metadata.selectedOptions, "metadata.selectedOptions");
+  assertSelections(record.analysis.selectedOptions, "analysis.selectedOptions", skinned);
+  assertSelections(record.metadata.selectedOptions, "metadata.selectedOptions", skinned);
   const selection = record.metadata.wgslSelection;
+  const selectedStageKeys = [
+    "Main.pass0.vertex",
+    "Main.pass0.pixel",
+    "Main.pass1.vertex",
+    "Main.pass1.pixel"
+  ];
   if (selection?.mode !== "explicit"
     || selection.techniqueName !== "Main" || selection.passIndex !== null
     || selection.completePasses !== true
     || !Array.isArray(selection.requestedStageNames)
     || selection.requestedStageNames.length !== 0
-    || !Array.isArray(selection.selectedStageKeys)
-    || selection.selectedStageKeys.length !== 4
-    || !selection.selectedStageKeys.includes("Main.pass0.vertex")
-    || !selection.selectedStageKeys.includes("Main.pass0.pixel")
-    || !selection.selectedStageKeys.includes("Main.pass1.vertex")
-    || !selection.selectedStageKeys.includes("Main.pass1.pixel"))
+    || JSON.stringify(selection.selectedStageKeys) !== JSON.stringify(selectedStageKeys))
   {
     fail("package selection must contain both complete Main render passes");
   }
@@ -554,10 +732,10 @@ export function validateQuadGlassV5PackageRecord(record)
     {
       fail(`pipeline Main.pass${passIndex} has an unexpected complementary cull state`);
     }
-    assertVertexInputs(record, passIndex);
-    assertPixelInputs(record, passIndex);
-    assertShaderModules(pipeline, passIndex);
-    assertBindings(record, pipeline, passIndex);
+    assertVertexInputs(record, passIndex, skinned);
+    assertPixelInputs(record, passIndex, skinned);
+    assertShaderModules(pipeline, passIndex, skinned);
+    assertBindings(record, pipeline, passIndex, skinned);
   }
   for (const stageName of [ "vertex", "pixel" ])
   {
@@ -575,14 +753,17 @@ export function validateQuadGlassV5PackageRecord(record)
  * Return backend-local binding identities for the shared semantic fixture.
  *
  * @param {object} record One validated QuadGlassV5 package record.
- * @returns {{textures: object[], samplers: object[]}} Frozen resource plan.
+ * @returns {{storage: object[], textures: object[], samplers: object[]}}
+ * Frozen resource plan.
  */
 export function getQuadGlassV5ResourcePlan(record)
 {
   validateQuadGlassV5PackageRecord(record);
+  const skinned = (record.variant ?? "static") === "skinned";
   return Object.freeze({
-    textures: Object.freeze(expectedResources(record.backend)),
-    samplers: Object.freeze(expectedSamplers())
+    storage: Object.freeze(skinned ? [ expectedBoneBinding() ] : []),
+    textures: Object.freeze(expectedResources(record.backend, skinned)),
+    samplers: Object.freeze(expectedSamplers(skinned))
   });
 }
 
@@ -599,6 +780,10 @@ export function validateQuadGlassV5PackagePair(records)
     fail("comparison requires exactly one DX11 and one DX12 package");
   }
   records.forEach(validateQuadGlassV5PackageRecord);
+  if ((records[0].variant ?? "static") !== (records[1].variant ?? "static"))
+  {
+    fail("comparison packages must use the same QuadGlassV5 variant");
+  }
   if (records[0].backend !== "dx11" || records[1].backend !== "dx12")
   {
     fail("comparison package order must be DX11 then DX12");
@@ -628,14 +813,19 @@ export function validateQuadGlassV5PackagePair(records)
 
 /**
  * Create deterministic synthetic geometry, semantic buffers, and textures for
- * the exact gb2-style QuadGlassV5 active binding contract.
+ * the exact QuadGlassV5 active binding contract.
  *
  * @param {number} width Render-target width.
  * @param {number} height Render-target height.
+ * @param {"static"|"skinned"} [variant="static"] Fixture shader variant.
  * @returns {object} Typed-array fixture values.
  */
-export function createQuadGlassV5FixtureValues(width, height)
+export function createQuadGlassV5FixtureValues(width, height, variant = "static")
 {
+  if (variant !== "static" && variant !== "skinned")
+  {
+    throw new RangeError("QuadGlassV5 fixture variant must be static or skinned");
+  }
   const base = createQuadV5FixtureValues(width, height);
   const sourceVertexCount = base.vertices.length / 16;
   const vertices = new Float32Array(base.vertices.length * 2);
@@ -651,6 +841,9 @@ export function createQuadGlassV5FixtureValues(width, height)
       vertices[targetOffset + 1] = base.vertices[sourceOffset + 1] * 0.8;
     }
   }
+  const boneIndices = new Uint16Array(base.boneIndices.length * 2);
+  boneIndices.set(base.boneIndices);
+  boneIndices.set(base.boneIndices, base.boneIndices.length);
   const indices = new Uint16Array(base.indices.length * 2);
   indices.set(base.indices);
   for (let index = 0; index < base.indices.length; index += 3)
@@ -697,6 +890,7 @@ export function createQuadGlassV5FixtureValues(width, height)
   });
   return Object.freeze({
     vertices,
+    boneIndices,
     indices,
     bindingValues: Object.freeze({
       ...bindingValues,

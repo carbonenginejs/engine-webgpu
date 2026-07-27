@@ -108,7 +108,8 @@ technique without the dispatcher importing or interpreting `TriBatchType`.
 This class is internal and is not exported from the package root. It is a
 conformance prototype, not a frozen renderer API. The static/skinned QuadV5,
 common PPT-on skinned QuadHeatV5, PPT-on skinned QuadHeatDetailV5 material-block
-high-water gate, independently gated QuadGlassV5 Main passes, cold/hot PPT-off
+high-water gate, independently gated static and common PPT-on skinned
+QuadGlassV5 Main passes, cold/hot PPT-off
 static QuadHeatV5, non-bindless
 DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter DecalCounterV5,
 DecalGlowV5, and DecalGlowCylindricV5 browser gates use its one-type batch-map
@@ -128,6 +129,13 @@ graph. The duck-typed boundary is shaped for future
 package does not yet run an integration gate against them. A later
 render-step executor still needs to own frame/pass planning and select the
 pass for each batch type.
+
+The build-3444265 common skinned-Glass evidence (57 ship areas across 57
+hulls) is likewise synthetic and library-free. Its body-4 PPT-on gate adds an
+indexed `BoneTransforms` storage buffer to the two complementary Main-pass
+draws and observes non-identity transformed bounds. All current probes still
+use numeric opaque batch type `0`; the three audited transparent SOF uses do
+not yet qualify production transparent classification or scheduling.
 
 The internal `CjsWebGPUTrinityStepRecorder` proves the synchronous
 `Tr2RenderContext.SetStepExecutor(...)` seam separately. It delegates the

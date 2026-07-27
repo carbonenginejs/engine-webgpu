@@ -72,6 +72,7 @@ import {
     QUAD_GLASS_V5_CLEAR_TARGETS,
     QUAD_GLASS_V5_TARGET_HEIGHT,
     QUAD_GLASS_V5_TARGET_WIDTH,
+    QUAD_GLASS_V5_SKINNED_VERTEX_BUFFER_LAYOUT,
     QUAD_GLASS_V5_VERTEX_BUFFER_LAYOUT,
     createQuadGlassV5FixtureValues,
     getQuadGlassV5PrimitiveRecipe,
@@ -834,13 +835,18 @@ async function CreateQuadV5GpuResources(webgpu, records)
 
 async function CreateQuadGlassV5GpuResources(webgpu, records)
 {
+    const variant = records[0]?.variant ?? "static";
+    const skinned = variant === "skinned";
     Assert(
         QUAD_GLASS_V5_TARGET_WIDTH === WIDTH
             && QUAD_GLASS_V5_TARGET_HEIGHT === HEIGHT,
         "QuadGlassV5 and harness target dimensions must match"
     );
-    const values = createQuadGlassV5FixtureValues(WIDTH, HEIGHT);
-    const geometrySource = Object.freeze({ kind: "synthetic-quadglassv5" });
+    const values = createQuadGlassV5FixtureValues(WIDTH, HEIGHT, variant);
+    const geometrySource = Object.freeze({
+        kind: "synthetic-quadglassv5",
+        variant
+    });
     const texturePayloads = Object.fromEntries(values.textures
         .filter((entry) => entry.dimension === "2d")
         .map((entry) => [
@@ -866,11 +872,18 @@ async function CreateQuadGlassV5GpuResources(webgpu, records)
         geometries: {
             main: {
                 label: "QuadGlassV5 complementary-winding silhouette geometry",
-                vertexBuffers: [ {
-                    slot: 0,
-                    data: values.vertices,
-                    layout: QUAD_GLASS_V5_VERTEX_BUFFER_LAYOUT
-                } ],
+                vertexBuffers: [
+                    {
+                        slot: 0,
+                        data: values.vertices,
+                        layout: QUAD_GLASS_V5_VERTEX_BUFFER_LAYOUT
+                    },
+                    ...(skinned ? [ {
+                        slot: 1,
+                        data: values.boneIndices,
+                        layout: QUAD_GLASS_V5_SKINNED_VERTEX_BUFFER_LAYOUT
+                    } ] : [])
+                ],
                 indexBuffer: {
                     data: values.indices,
                     format: "uint16"
@@ -882,8 +895,26 @@ async function CreateQuadGlassV5GpuResources(webgpu, records)
     }, "quadglassv5-resources");
     const device = webgpu.GetDevice();
     const ownedTextures = [];
+    let boneBuffer = null;
     try
     {
+        if (skinned)
+        {
+            const boneTransform = new Float32Array([
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0.8, 0, 0, 0.1,
+                0, 1, 0, 0,
+                0, 0, 1, 0
+            ]);
+            boneBuffer = device.createBuffer({
+                label: "QuadGlassV5 indexed non-identity BoneTransforms",
+                size: boneTransform.byteLength,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            });
+            device.queue.writeBuffer(boneBuffer, 0, boneTransform);
+        }
         const cubeViews = new Map();
         for (const definition of values.textures.filter((entry) => entry.dimension === "cube"))
         {
@@ -987,6 +1018,18 @@ async function CreateQuadGlassV5GpuResources(webgpu, records)
             {
                 const resources = new Map();
                 const overrides = values.textureResourceVariants[variantName];
+                for (const storage of plan.storage)
+                {
+                    Assert(
+                        boneBuffer,
+                        `QuadGlassV5 fixture is missing storage ${storage.name}`
+                    );
+                    resources.set(storage.scopeIdentity, {
+                        buffer: boneBuffer,
+                        offset: 0,
+                        size: boneBuffer.size
+                    });
+                }
                 for (const texture of plan.textures)
                 {
                     const resourceName = overrides[texture.name] ?? texture.name;
@@ -1016,6 +1059,7 @@ async function CreateQuadGlassV5GpuResources(webgpu, records)
         }
         return {
             label: "QuadGlassV5",
+            variant,
             bindingValues: values.bindingValues,
             resourcesByBackend,
             resourceVariantNames,
@@ -1024,6 +1068,7 @@ async function CreateQuadGlassV5GpuResources(webgpu, records)
             bundle,
             destroy()
             {
+                boneBuffer?.destroy();
                 ownedTextures.forEach((texture) => texture.destroy());
                 bundle.Destroy();
             }
@@ -1031,6 +1076,7 @@ async function CreateQuadGlassV5GpuResources(webgpu, records)
     }
     catch (error)
     {
+        boneBuffer?.destroy();
         ownedTextures.forEach((texture) => texture.destroy());
         bundle.Destroy();
         throw error;
@@ -2148,6 +2194,10 @@ function AssertQuadGlassV5Pass(instance)
     let coverage = 0;
     let leftCoverage = 0;
     let rightCoverage = 0;
+    let minimumX = WIDTH;
+    let maximumX = -1;
+    let minimumY = HEIGHT;
+    let maximumY = -1;
     const colors = new Set();
     for (let y = 0; y < HEIGHT; y += 1)
     {
@@ -2162,6 +2212,10 @@ function AssertQuadGlassV5Pass(instance)
             );
             if (!active) continue;
             coverage += 1;
+            minimumX = Math.min(minimumX, x);
+            maximumX = Math.max(maximumX, x);
+            minimumY = Math.min(minimumY, y);
+            maximumY = Math.max(maximumY, y);
             if (x < WIDTH / 2) leftCoverage += 1;
             else rightCoverage += 1;
             const offset = PixelOffset(x, y);
@@ -2197,10 +2251,17 @@ function AssertQuadGlassV5Pass(instance)
         `QuadGlassV5 ${instance.record.label} pass ${instance.passIndex} ` +
             "must contain varied shaded RGB"
     );
-    return { coverage, leftCoverage, rightCoverage, side, distinctColors: colors.size };
+    return {
+        coverage,
+        leftCoverage,
+        rightCoverage,
+        side,
+        bounds: { minimumX, maximumX, minimumY, maximumY },
+        distinctColors: colors.size
+    };
 }
 
-function AssertQuadGlassV5Controls(instances)
+function AssertQuadGlassV5Controls(instances, variant)
 {
     const byKey = new Map(instances.map((instance) => [
         `${instance.record.backend}:${instance.passIndex}:${instance.resourceVariant}`,
@@ -2257,7 +2318,9 @@ function AssertQuadGlassV5Controls(instances)
         Assert(
             passSides[0] === "left" && passSides[1] === "right",
             `QuadGlassV5 ${backend} cull mapping was ${passSides.join("/")}, ` +
-                "expected pass0/pass1 left/right"
+                "expected pass0/pass1 left/right; bounds " +
+                `${JSON.stringify(byKey.get(`${backend}:0:base`).statistics.bounds)}/` +
+                JSON.stringify(byKey.get(`${backend}:1:base`).statistics.bounds)
         );
         const pass0 = byKey.get(`${backend}:0:base`);
         const pass1 = byKey.get(`${backend}:1:base`);
@@ -2275,6 +2338,23 @@ function AssertQuadGlassV5Controls(instances)
         }
         Assert(overlap === 0, `QuadGlassV5 ${backend} complementary winding probes overlap`);
     }
+    let skinningOracle = null;
+    if (variant === "skinned")
+    {
+        const left = byKey.get("dx11:0:base").statistics.bounds;
+        const right = byKey.get("dx11:1:base").statistics.bounds;
+        Assert(
+            left.minimumX >= 12 && left.maximumX <= 31
+                && right.minimumX >= 36 && right.maximumX <= 56,
+            "QuadGlassV5 skinned passes did not retain the indexed non-identity " +
+                `bone-transform bounds ${JSON.stringify(left)}/${JSON.stringify(right)}`
+        );
+        skinningOracle = {
+            transform: "indexed non-identity BoneTransforms entry 1",
+            leftBounds: left,
+            rightBounds: right
+        };
+    }
     return {
         opaqueAlpha: 255,
         transparentAlpha: 0,
@@ -2283,7 +2363,8 @@ function AssertQuadGlassV5Controls(instances)
         passSides: [
             byKey.get("dx11:0:base").statistics.side,
             byKey.get("dx11:1:base").statistics.side
-        ]
+        ],
+        skinningOracle
     };
 }
 
@@ -3465,19 +3546,22 @@ async function RunQuadGlassV5Comparison(webgpu)
                 }
             }
         }
-        const paintMaskOracle = AssertQuadGlassV5Controls(instances);
+        const paintMaskOracle = AssertQuadGlassV5Controls(instances, fixture.variant);
         const baseline = instances.filter((instance) =>
             instance.record.backend === "dx11"
                 && instance.resourceVariant === "base");
         return {
-            bodyIndex: 0,
+            bodyIndex: fixture.variant === "skinned" ? 4 : 0,
+            variant: fixture.variant,
             labels: records.map((record) => `${record.backend}:${record.label}`),
             loadPath: records[0].loadPath,
             pixelCount: WIDTH * HEIGHT,
             passCount: 2,
             targetCount: QUAD_GLASS_V5_CLEAR_TARGETS.length,
             renderCaseCount: fixture.resourceVariantNames.length,
-            drawKind: "indexed complementary-winding synthetic silhouettes",
+            drawKind: fixture.variant === "skinned"
+                ? "indexed skinned complementary-winding synthetic silhouettes"
+                : "indexed complementary-winding synthetic silhouettes",
             indexCount: fixture.geometry.indexCount,
             warningCount,
             clearTargets: QUAD_GLASS_V5_CLEAR_TARGETS,

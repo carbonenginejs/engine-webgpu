@@ -53,7 +53,8 @@ copying already GPU-form custom-mask slots unchanged.
 The standalone harness qualifies synthetic static/skinned QuadV5, common
 PPT-on skinned QuadHeatV5, the PPT-on skinned QuadHeatDetailV5 material-block
 high-water and tied-largest active-binding contract, both independently
-rendered QuadGlassV5 Main passes, cold/hot PPT-off static QuadHeatV5, non-bindless
+rendered static and common PPT-on skinned QuadGlassV5 Main passes, cold/hot
+PPT-off static QuadHeatV5, non-bindless
 DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter DecalCounterV5, and
 two-texture DecalGlowV5/DecalGlowCylindricV5 draws through a provisional
 Trinity-shaped batch dispatcher without loading SOF, a Trinity graph,
@@ -66,6 +67,10 @@ areas across 205 hulls in EVE build 3444265. Its synthetic cold/hot cases
 require a spatially varied red response, invariant coverage/MRT1, byte-exact
 DX11/DX12 `rgba8unorm` readbacks after target quantization, and zero WGSL
 warnings.
+The skinned Glass gate covers a build-3444265 shader correlated to 57 ship
+areas across 57 hulls. It requires both complementary Main passes, an observed
+non-identity indexed bone transform, two PaintMask controls, byte-exact
+DX11/DX12 MRT readbacks, and zero WGSL warnings.
 
 ## Documentation
 

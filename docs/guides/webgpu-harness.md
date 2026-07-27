@@ -48,8 +48,8 @@ Fixture creation and pixel expectations remain harness responsibilities, so
 the reusable engine class does not acquire resource paths or infer format/
 geometry policy.
 
-The static/skinned QuadV5, PPT-on skinned QuadHeatV5, two-pass QuadGlassV5,
-and cold/hot PPT-off static QuadHeatV5 modes
+The static/skinned QuadV5, PPT-on skinned QuadHeatV5, static and PPT-on
+skinned two-pass QuadGlassV5, and cold/hot PPT-off static QuadHeatV5 modes
 additionally route each draw through the internal
 `CjsWebGPUTrinityBatchDispatcher`. The fixtures
 construct the duck-typed fields of a transient `Tr2RenderBatch` inside a
@@ -213,6 +213,29 @@ or silently running only one pass cannot pass.
 Each pass/case is rendered independently into separate attachments. The gate
 does not yet prove pass 0 then pass 1 ordering or same-target composition.
 
+The common skinned sibling has a separate PPT-on gate:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-skinned-quadglassv5 .\artifacts\skinned-quadglassv5-ppt-dx11.cewgpu .\artifacts\skinned-quadglassv5-ppt-dx12.cewgpu
+```
+
+The build-3444265 SOF/resource audit correlates
+`unpackedskinned_quadglassv5` to 57 ship areas across 57 hulls. It requires
+the exact high-quality body-4 five-axis selection, including
+`SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`, both complete Main passes, and 15
+canonical bindings. An 8-byte-stride `uint16x4` blend-index stream selects palette
+entry 1; entry 0 is zero and entry 1 applies a non-identity horizontal scale
+and translation. The two pass readbacks must retain the transformed,
+non-overlapping bounds, so an ignored, identity-only, hard-coded-zero, or
+wrong-stride skinning path cannot pass.
+
+The SOF uses audited for this effect comprise 54 opaque and three transparent
+areas. This synthetic gate deliberately keeps the existing numeric opaque
+batch path for both probes; it does not claim production transparent batch
+classification, pass scheduling, or composition. It does not load SOF,
+runtime-trinity, a Trinity graph, production textures, or authoritative
+per-object defaults.
+
 The older PPT-off static heat gate requires explicitly selected high-quality
 `unpacked_quadheatv5` `Main.pass0` packages:
 
@@ -350,9 +373,11 @@ for both MRTs. That equality is measured after `rgba8unorm` target
 quantization; it is not a claim of unquantized floating-point shader-semantic
 equivalence. Every WGSL warning or WebGPU validation error fails the command.
 
-The QuadGlassV5 gate reuses the bounded semantic space-object buffer packer
-and common 64-byte static vertex layout, but exercises its own exact
-14-binding contract in both Main passes. The active textures are the scene
+The QuadGlassV5 gates reuse the bounded semantic space-object buffer packer
+and common 64-byte vertex stream. The static gate exercises its exact
+14-binding contract; the skinned PPT-on gate adds the location-1 blend-index
+stream and vertex-stage read-only `BoneTransforms` storage buffer for 15
+bindings. Both variants exercise both Main passes. The active textures are the scene
 environment cube, autoregistered 2D-array fog volume, NormalMap, GlowMap,
 RoughnessMap, MaterialMap, and PaintMaskMap, plus two samplers. The audited
 SOF effect also authors AlbedoMap, DirtMap, and DustNoiseMap; they are inactive
@@ -370,8 +395,8 @@ normalization path, so the control must visibly change almost all covered RGB
 pixels. Finally, both MRTs must match byte-for-byte between independently
 derived DX11 and DX12 packages for every pass and mask case with zero WGSL
 warnings. This verifies selected shader execution and paired backend parity;
-it does not qualify Depth/Picking techniques, skinned glass, production
-textures, authoritative per-object values, or renderer pass scheduling.
+it does not qualify Depth/Picking techniques, production textures,
+authoritative per-object values, or renderer pass scheduling.
 
 The PPT-off static QuadHeatV5 gate reuses the bounded semantic space-object
 serializer, 64-byte unpacked static vertex layout, and synthetic ship
