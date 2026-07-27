@@ -90,6 +90,19 @@ import {
     getQuadHeatV5ResourcePlan,
     validateQuadHeatV5PackagePair
 } from "/quadHeatV5Fixture.js";
+import {
+    QUAD_SAILS_V5_CASES,
+    QUAD_SAILS_V5_CLEAR_TARGETS,
+    QUAD_SAILS_V5_TARGET_HEIGHT,
+    QUAD_SAILS_V5_TARGET_WIDTH,
+    QUAD_SAILS_V5_SKINNED_VERTEX_BUFFER_LAYOUT,
+    QUAD_SAILS_V5_VERTEX_BUFFER_LAYOUT,
+    createQuadSailsV5BindingCases,
+    createQuadSailsV5FixtureValues,
+    getQuadSailsV5PrimitiveRecipe,
+    getQuadSailsV5ResourcePlan,
+    validateQuadSailsV5PackagePair
+} from "/quadSailsV5Fixture.js";
 import { CjsWebGPUDevice } from "/CjsWebGPUDevice.js";
 import { buildEveSpaceObjectMainUniformData } from "/spaceObjectMainBindings.js";
 import { CjsWebGPUTrinityBatchDispatcher } from "/trinityBatchDispatcher.js";
@@ -833,6 +846,180 @@ async function CreateQuadV5GpuResources(webgpu, records)
     }
 }
 
+async function CreateQuadSailsV5GpuResources(webgpu, records)
+{
+    Assert(
+        QUAD_SAILS_V5_TARGET_WIDTH === WIDTH
+            && QUAD_SAILS_V5_TARGET_HEIGHT === HEIGHT,
+        "QuadSailsV5 and harness target dimensions must match"
+    );
+    const values = createQuadSailsV5FixtureValues(WIDTH, HEIGHT);
+    const cases = createQuadSailsV5BindingCases(WIDTH, HEIGHT);
+    Assert(
+        JSON.stringify(values.caseNames) === JSON.stringify(cases.caseNames),
+        "QuadSailsV5 fixture values and binding cases must agree"
+    );
+    const geometrySource = Object.freeze({
+        kind: "synthetic-quadsailsv5",
+        variant: "skinned"
+    });
+    const texturePayloads = Object.fromEntries(values.textures
+        .filter((entry) => entry.dimension === "2d")
+        .map((entry) => [
+            entry.name,
+            {
+                label: `QuadSailsV5 ${entry.name}`,
+                width: entry.width,
+                height: entry.height,
+                format: entry.format,
+                bytesPerRow: entry.bytesPerRow,
+                data: entry.data
+            }
+        ]));
+    const samplerPayloads = Object.fromEntries(values.samplers.map(({ name, ...descriptor }) => [
+        name,
+        {
+            label: `QuadSailsV5 ${name}`,
+            ...descriptor
+        }
+    ]));
+    const bundle = await PublishPreparedResourceBundle(webgpu, {
+        label: "QuadSailsV5 resources",
+        geometries: {
+            main: {
+                label: "QuadSailsV5 skinned silhouette geometry",
+                vertexBuffers: [
+                    {
+                        slot: 0,
+                        data: values.vertices,
+                        layout: QUAD_SAILS_V5_VERTEX_BUFFER_LAYOUT
+                    },
+                    {
+                        slot: 1,
+                        data: values.boneIndices,
+                        layout: QUAD_SAILS_V5_SKINNED_VERTEX_BUFFER_LAYOUT
+                    }
+                ],
+                indexBuffer: {
+                    data: values.indices,
+                    format: "uint16"
+                }
+            }
+        },
+        textures: texturePayloads,
+        samplers: samplerPayloads
+    }, "quadsailsv5-resources");
+    const device = webgpu.GetDevice();
+    const cubeDefinition = values.textures.find((entry) => entry.dimension === "cube");
+    let cubeTexture = null;
+    let boneBuffer = null;
+    try
+    {
+        Assert(cubeDefinition, "QuadSailsV5 fixture requires an environment cube");
+        cubeTexture = device.createTexture({
+            label: "QuadSailsV5 EveSpaceSceneEnvMap",
+            size: {
+                width: cubeDefinition.width,
+                height: cubeDefinition.height,
+                depthOrArrayLayers: cubeDefinition.depthOrArrayLayers
+            },
+            mipLevelCount: 1,
+            sampleCount: 1,
+            dimension: "2d",
+            format: cubeDefinition.format,
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+        });
+        const cubeLayerSize =
+            cubeDefinition.width * cubeDefinition.height * BYTES_PER_PIXEL;
+        for (let layer = 0; layer < cubeDefinition.depthOrArrayLayers; layer += 1)
+        {
+            device.queue.writeTexture(
+                { texture: cubeTexture, origin: { x: 0, y: 0, z: layer } },
+                cubeDefinition.data.slice(
+                    layer * cubeLayerSize,
+                    (layer + 1) * cubeLayerSize
+                ),
+                {
+                    offset: 0,
+                    bytesPerRow: cubeDefinition.width * BYTES_PER_PIXEL,
+                    rowsPerImage: cubeDefinition.height
+                },
+                {
+                    width: cubeDefinition.width,
+                    height: cubeDefinition.height,
+                    depthOrArrayLayers: 1
+                }
+            );
+        }
+        const cubeView = cubeTexture.createView({
+            label: "QuadSailsV5 EveSpaceSceneEnvMap cube view",
+            dimension: "cube"
+        });
+        const boneTransform = new Float32Array([
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0.8660253882408142, 0, -0.5, 0.125,
+            0, 1, 0, 0,
+            0.5, 0, 0.8660253882408142, 0
+        ]);
+        boneBuffer = device.createBuffer({
+            label: "QuadSailsV5 indexed non-identity BoneTransforms",
+            size: boneTransform.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+        });
+        device.queue.writeBuffer(boneBuffer, 0, boneTransform);
+
+        const resourcesByBackend = new Map();
+        for (const record of records)
+        {
+            const plan = getQuadSailsV5ResourcePlan(record);
+            const resources = new Map();
+            resources.set(plan.bone.scopeIdentity, {
+                buffer: boneBuffer,
+                offset: 0,
+                size: boneBuffer.size
+            });
+            for (const texture of plan.textures)
+            {
+                const resource = texture.name === "EveSpaceSceneEnvMap"
+                    ? cubeView
+                    : bundle.textures[texture.name];
+                Assert(resource, `QuadSailsV5 fixture is missing texture ${texture.name}`);
+                resources.set(texture.scopeIdentity, resource);
+            }
+            for (const sampler of plan.samplers)
+            {
+                const resource = bundle.samplers[sampler.name];
+                Assert(resource, `QuadSailsV5 fixture is missing sampler ${sampler.name}`);
+                resources.set(sampler.scopeIdentity, resource);
+            }
+            resourcesByBackend.set(record.backend, resources);
+        }
+        return {
+            caseNames: cases.caseNames,
+            bindingValuesByCase: cases.bindingValuesByCase,
+            resourcesByBackend,
+            geometry: bundle.geometries.main,
+            geometrySource,
+            bundle,
+            destroy()
+            {
+                boneBuffer.destroy();
+                cubeTexture.destroy();
+                bundle.Destroy();
+            }
+        };
+    }
+    catch (error)
+    {
+        boneBuffer?.destroy();
+        cubeTexture?.destroy();
+        bundle.Destroy();
+        throw error;
+    }
+}
+
 async function CreateQuadGlassV5GpuResources(webgpu, records)
 {
     const variant = records[0]?.variant ?? "static";
@@ -1486,6 +1673,126 @@ function CreateQuadV5TrinityDispatcher(webgpu, fixture)
                     record.pipeline,
                     fixture.resourcesByBackend.get(record.backend),
                     `QuadV5 ${record.label} resources`
+                )
+            };
+        }
+    });
+}
+
+function CreateQuadSailsV5TrinityBatchMap(record, fixture, renderCase)
+{
+    const objectData = fixture.bindingValuesByCase[renderCase];
+    const batch = Object.freeze({
+        material: record,
+        shader: record.pipeline,
+        renderCase,
+        geometrySource: Object.freeze({
+            geometry: fixture.geometrySource,
+            meshIndex: 0,
+            areaIndex: 0,
+            count: 1,
+            reversed: false
+        }),
+        objectData,
+        topology: 4,
+        indexCountPerInstance: 0,
+        instanceCount: 0,
+        startIndexLocation: 0,
+        baseVertexLocation: 0,
+        startInstanceLocation: 0,
+        renderingMode: 0,
+        pickingData: 0,
+        groupCount: 1
+    });
+    const batches = Object.freeze([ batch ]);
+    const gdprBatches = Object.freeze([]);
+    const accumulator = Object.freeze({
+        GetGdprBatches: () => gdprBatches,
+        GetBatches: () => batches,
+        GetBatchCount: () => batches.length,
+        IsChainedByEffect: () => true
+    });
+    const batchTypes = Object.freeze([ TRINITY_BATCH_TYPE_OPAQUE ]);
+    return Object.freeze({
+        GetBatchTypes: () => batchTypes,
+        GetAccumulator: (value) =>
+            value === TRINITY_BATCH_TYPE_OPAQUE ? accumulator : null,
+        GetBatchCount: () => accumulator.GetBatchCount()
+    });
+}
+
+function CreateQuadSailsV5TrinityDispatcher(webgpu, fixture)
+{
+    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+        ResolveMaterial(record, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE,
+                "QuadSailsV5 material resolved outside the opaque batch type"
+            );
+            return {
+                pipeline: record.pipeline,
+                prepareOptions: { warningsAsErrors: true },
+                recipe: {
+                    label: `QuadSailsV5 ${record.label} Main.pass0`,
+                    vertex: { buffers: fixture.geometry.vertexBufferLayouts },
+                    fragment: {
+                        targets: [ { format: "rgba8unorm" }, { format: "rgba8unorm" } ]
+                    },
+                    primitive: getQuadSailsV5PrimitiveRecipe(),
+                    depthStencil: {
+                        format: "depth24plus",
+                        depthWriteEnabled: true,
+                        depthCompare: "less"
+                    }
+                }
+            };
+        },
+        ResolveGeometry(source, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && source?.geometry === fixture.geometrySource
+                    && source.meshIndex === 0
+                    && source.areaIndex === 0
+                    && source.count === 1
+                    && source.reversed === false,
+                "QuadSailsV5 batch references an unknown geometry source"
+            );
+            return {
+                geometry: fixture.geometry,
+                indexed: true,
+                draw: {
+                    indexCount: fixture.geometry.indexCount,
+                    instanceCount: 1,
+                    firstIndex: 0,
+                    baseVertex: 0,
+                    firstInstance: 0
+                }
+            };
+        },
+        ResolveBindings(batch, _livePipeline, context)
+        {
+            const record = batch.material;
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && fixture.caseNames.includes(batch.renderCase)
+                    && batch.objectData === fixture.bindingValuesByCase[batch.renderCase],
+                `QuadSailsV5 ${record.label} batch references unknown fixture data`
+            );
+            return {
+                uniformData: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    new Map(Object.entries(buildEveSpaceObjectMainUniformData(
+                        record,
+                        batch.objectData
+                    ))),
+                    `QuadSailsV5 ${record.label} ${batch.renderCase} uniform data`
+                ),
+                resources: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    fixture.resourcesByBackend.get(record.backend),
+                    `QuadSailsV5 ${record.label} resources`
                 )
             };
         }
@@ -3366,6 +3673,276 @@ async function RunQuadV5Comparison(webgpu)
     }
 }
 
+async function RunQuadSailsV5Comparison(webgpu)
+{
+    if (!CONFIG.drawQuadSailsV5) return null;
+    const response = await fetch("/draw-quadsailsv5.json");
+    Assert(
+        response.ok,
+        `Failed to load QuadSailsV5 package records: HTTP ${response.status}`
+    );
+    const records = await response.json();
+    Assert(
+        Array.isArray(records) && records.length === 2,
+        "QuadSailsV5 comparison requires two package records"
+    );
+    validateQuadSailsV5PackagePair(records);
+    Assert(
+        QUAD_SAILS_V5_TARGET_WIDTH === WIDTH
+            && QUAD_SAILS_V5_TARGET_HEIGHT === HEIGHT,
+        "QuadSailsV5 and harness target dimensions must match"
+    );
+    Assert(
+        JSON.stringify(QUAD_SAILS_V5_CLEAR_TARGETS)
+            === JSON.stringify(QUADV5_CLEAR_TARGETS),
+        "QuadSailsV5 must retain the shared QuadV5 clear targets"
+    );
+    Assert(
+        JSON.stringify(QUAD_SAILS_V5_CASES)
+            === JSON.stringify([ "unrotated", "authored" ]),
+        "QuadSailsV5 cases must be unrotated then authored"
+    );
+
+    const device = webgpu.GetDevice();
+    const fixture = await CreateQuadSailsV5GpuResources(webgpu, records);
+    let dispatcher = null;
+    let passEncoder = null;
+    const instances = [];
+    let warningCount = 0;
+    try
+    {
+        dispatcher = CreateQuadSailsV5TrinityDispatcher(webgpu, fixture);
+        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+        for (const record of records)
+        {
+            for (const renderCase of fixture.caseNames)
+            {
+                let preparedBatchMap = null;
+                const targets = [];
+                const readbacks = [];
+                let depthTexture = null;
+                try
+                {
+                    preparedBatchMap = await dispatcher.PrepareBatchMap(
+                        CreateQuadSailsV5TrinityBatchMap(record, fixture, renderCase)
+                    );
+                    warningCount += preparedBatchMap.entries.reduce(
+                        (mapTotal, entry) => mapTotal + entry.accumulator.batches.reduce(
+                            (batchTotal, batch) => batchTotal
+                                + batch.prepared.diagnostics
+                                    .filter((item) => item.type === "warning").length,
+                            0
+                        ),
+                        0
+                    );
+                    for (let targetIndex = 0;
+                        targetIndex < QUAD_SAILS_V5_CLEAR_TARGETS.length;
+                        targetIndex += 1)
+                    {
+                        targets.push(device.createTexture({
+                            label:
+                                `QuadSailsV5 ${record.label} ${renderCase} ` +
+                                `MRT${targetIndex}`,
+                            size: { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 },
+                            format: "rgba8unorm",
+                            usage:
+                                GPUTextureUsage.RENDER_ATTACHMENT
+                                | GPUTextureUsage.COPY_SRC
+                        }));
+                        readbacks.push(device.createBuffer({
+                            label:
+                                `QuadSailsV5 ${record.label} ${renderCase} ` +
+                                `MRT${targetIndex} readback`,
+                            size: BYTES_PER_ROW * HEIGHT,
+                            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+                        }));
+                    }
+                    depthTexture = device.createTexture({
+                        label: `QuadSailsV5 ${record.label} ${renderCase} depth`,
+                        size: { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 },
+                        format: "depth24plus",
+                        usage: GPUTextureUsage.RENDER_ATTACHMENT
+                    });
+                    instances.push({
+                        record,
+                        renderCase,
+                        preparedBatchMap,
+                        targets,
+                        readbacks,
+                        depthTexture,
+                        snapshots: []
+                    });
+                }
+                catch (error)
+                {
+                    if (preparedBatchMap)
+                    {
+                        dispatcher.DestroyBatchMap(preparedBatchMap);
+                    }
+                    readbacks.forEach((buffer) => buffer.destroy());
+                    targets.forEach((texture) => texture.destroy());
+                    depthTexture?.destroy();
+                    throw error;
+                }
+            }
+        }
+
+        const encoder = device.createCommandEncoder({
+            label: "QuadSailsV5 DX11/DX12 comparison encoder"
+        });
+        for (const instance of instances)
+        {
+            passEncoder.Encode(encoder, [ {
+                descriptor: {
+                    label:
+                        `QuadSailsV5 ${instance.record.label} Main.pass0 ` +
+                        `${instance.renderCase}`,
+                    colorAttachments: instance.targets.map((texture, targetIndex) => ({
+                        view: texture.createView(),
+                        clearValue: {
+                            r: QUAD_SAILS_V5_CLEAR_TARGETS[targetIndex][0] / 255,
+                            g: QUAD_SAILS_V5_CLEAR_TARGETS[targetIndex][1] / 255,
+                            b: QUAD_SAILS_V5_CLEAR_TARGETS[targetIndex][2] / 255,
+                            a: QUAD_SAILS_V5_CLEAR_TARGETS[targetIndex][3] / 255
+                        },
+                        loadOp: "clear",
+                        storeOp: "store"
+                    })),
+                    depthStencilAttachment: {
+                        view: instance.depthTexture.createView(),
+                        depthClearValue: 1,
+                        depthLoadOp: "clear",
+                        depthStoreOp: "store"
+                    }
+                },
+                selections: [ {
+                    preparedBatchMap: instance.preparedBatchMap,
+                    batchType: TRINITY_BATCH_TYPE_OPAQUE
+                } ]
+            } ]);
+            instance.targets.forEach((texture, targetIndex) =>
+            {
+                encoder.copyTextureToBuffer(
+                    { texture },
+                    {
+                        buffer: instance.readbacks[targetIndex],
+                        bytesPerRow: BYTES_PER_ROW,
+                        rowsPerImage: HEIGHT
+                    },
+                    { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 }
+                );
+            });
+        }
+        webgpu.Submit([ encoder.finish() ]);
+        await device.queue.onSubmittedWorkDone();
+        await Promise.all(instances.flatMap((instance) => instance.readbacks.map(
+            (buffer) => buffer.mapAsync(GPUMapMode.READ)
+        )));
+
+        for (const instance of instances)
+        {
+            instance.snapshots = instance.readbacks.map((buffer) =>
+                new Uint8Array(buffer.getMappedRange()).slice());
+            instance.statistics = instance.snapshots.map((bytes, targetIndex) =>
+                AssertQuadV5Silhouette(
+                    bytes,
+                    targetIndex,
+                    `${instance.record.label} ${instance.renderCase} MRT${targetIndex}`,
+                    "skinned"
+                ));
+            Assert(
+                instance.statistics[0].coverage === instance.statistics[1].coverage,
+                `${instance.record.label} ${instance.renderCase} MRT coverage does not match`
+            );
+            AssertQuadV5MrtCoverage(
+                instance.snapshots[0],
+                instance.snapshots[1],
+                `${instance.record.label} ${instance.renderCase}`
+            );
+        }
+        for (const renderCase of fixture.caseNames)
+        {
+            const paired = records.map((record) => instances.find((instance) =>
+                instance.record.backend === record.backend
+                    && instance.renderCase === renderCase));
+            Assert(
+                paired.every(Boolean),
+                `QuadSailsV5 ${renderCase} DX11/DX12 pair is incomplete`
+            );
+            for (let targetIndex = 0;
+                targetIndex < QUAD_SAILS_V5_CLEAR_TARGETS.length;
+                targetIndex += 1)
+            {
+                AssertExactTargetMatch(
+                    paired[0].snapshots[targetIndex],
+                    paired[1].snapshots[targetIndex],
+                    `DX11/DX12 QuadSailsV5 ${renderCase} MRT${targetIndex}`
+                );
+            }
+        }
+
+        const byKey = new Map(instances.map((instance) => [
+            `${instance.record.backend}:${instance.renderCase}`,
+            instance
+        ]));
+        let sailsDetailOracle = null;
+        for (const backend of [ "dx11", "dx12" ])
+        {
+            const unrotated = byKey.get(`${backend}:unrotated`);
+            const authored = byKey.get(`${backend}:authored`);
+            Assert(
+                unrotated && authored,
+                `QuadSailsV5 ${backend} detail cases are incomplete`
+            );
+            AssertExactTargetMatch(
+                unrotated.snapshots[1],
+                authored.snapshots[1],
+                `${backend} QuadSailsV5 detail-invariant MRT1`
+            );
+            const oracle = MeasureQuadV5ColorControl(
+                unrotated.snapshots[0],
+                authored.snapshots[0],
+                unrotated.snapshots[1],
+                `QuadSailsV5 ${backend} SailsDetailData control`
+            );
+            if (backend === "dx11") sailsDetailOracle = oracle;
+        }
+        const baseline = byKey.get("dx11:authored");
+        Assert(baseline, "QuadSailsV5 authored DX11 baseline is missing");
+        return {
+            bodyIndex: 4,
+            variant: "skinned",
+            labels: records.map((record) => `${record.backend}:${record.label}`),
+            loadPath: records[0].loadPath,
+            pixelCount: WIDTH * HEIGHT,
+            targetCount: QUAD_SAILS_V5_CLEAR_TARGETS.length,
+            renderCaseCount: fixture.caseNames.length,
+            drawKind: "indexed skinned synthetic silhouette",
+            indexCount: fixture.geometry.indexCount,
+            warningCount,
+            clearTargets: QUAD_SAILS_V5_CLEAR_TARGETS,
+            statistics: baseline.statistics,
+            sailsDetailOracle,
+            depthWriteEnabled: true
+        };
+    }
+    finally
+    {
+        for (const instance of instances)
+        {
+            dispatcher?.DestroyBatchMap(instance.preparedBatchMap);
+            for (const buffer of instance.readbacks)
+            {
+                if (buffer.mapState === "mapped") buffer.unmap();
+                buffer.destroy();
+            }
+            instance.targets.forEach((texture) => texture.destroy());
+            instance.depthTexture.destroy();
+        }
+        fixture.destroy();
+    }
+}
+
 async function RunQuadGlassV5Comparison(webgpu)
 {
     if (!CONFIG.drawQuadGlassV5) return null;
@@ -4145,6 +4722,7 @@ async function RunHarness()
     let quadV5Comparison = null;
     let quadGlassV5Comparison = null;
     let quadHeatV5Comparison = null;
+    let quadSailsV5Comparison = null;
     let decalV5Comparison = null;
     let decalCylindricV5Comparison = null;
     let decalHoleV5Comparison = null;
@@ -4164,6 +4742,7 @@ async function RunHarness()
         quadV5Comparison = await RunQuadV5Comparison(webgpu);
         quadGlassV5Comparison = await RunQuadGlassV5Comparison(webgpu);
         quadHeatV5Comparison = await RunQuadHeatV5Comparison(webgpu);
+        quadSailsV5Comparison = await RunQuadSailsV5Comparison(webgpu);
         const decalComparison = await RunDecalV5Comparison(webgpu);
         if (decalComparison?.variant === "cylindric")
         {
@@ -4260,6 +4839,7 @@ async function RunHarness()
             quadV5Comparison,
             quadGlassV5Comparison,
             quadHeatV5Comparison,
+            quadSailsV5Comparison,
             decalV5Comparison,
             decalCylindricV5Comparison,
             decalHoleV5Comparison,

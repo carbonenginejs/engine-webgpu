@@ -49,7 +49,8 @@ the reusable engine class does not acquire resource paths or infer format/
 geometry policy.
 
 The static/skinned QuadV5, PPT-on skinned QuadHeatV5, static and PPT-on
-skinned two-pass QuadGlassV5, and cold/hot PPT-off static QuadHeatV5 modes
+skinned two-pass QuadGlassV5, PPT-on skinned QuadSailsV5, and cold/hot
+PPT-off static QuadHeatV5 modes
 additionally route each draw through the internal
 `CjsWebGPUTrinityBatchDispatcher`. The fixtures
 construct the duck-typed fields of a transient `Tr2RenderBatch` inside a
@@ -236,6 +237,45 @@ classification, pass scheduling, or composition. It does not load SOF,
 runtime-trinity, a Trinity graph, production textures, or authoritative
 per-object defaults.
 
+The skinned Sails family has a separate explicit PPT-on gate:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-skinned-quadsailsv5 .\artifacts\skinned-quadsailsv5-ppt-dx11.cewgpu .\artifacts\skinned-quadsailsv5-ppt-dx12.cewgpu
+```
+
+The build-3444265 resource audit correlates the logical
+`unpackedskinned_quadsailsv5` family to 72 opaque ship areas across 33 hulls.
+That count is family-frequency evidence, not a claim that the selected
+PPT-on body is the representative SOF-authored default. The command requires
+the exact non-bindless, unclipped, PPT-on, debug-off body-4 selection and one
+complete `Main.pass0`; this effect exposes no local transparency option. The
+older static `unpacked_quadsailsv5` family remains a separate future gate.
+
+The fixture supplies synthetic skinned silhouette geometry, textures,
+per-frame/per-object values, and a two-entry `BoneTransforms` table whose
+second entry is non-identity. It renders two otherwise-identical
+`SailsDetailData` cases: unrotated `[16, 0, 1, 0.65]` and authored
+`[16, pi / 2, 1, 0.65]`, using a patterned `SailsDetailMap`. Changing only
+that rotation must change at least half of covered MRT0 pixels with spatial
+variation while preserving coverage and every MRT1 byte. Both cases and both
+MRTs must then match byte-for-byte between the independently derived DX11 and
+DX12 packages.
+
+The exact contract has 17 canonical bindings: five uniform buffers, a
+vertex-stage read-only bone buffer, ten textures, and one filtering sampler.
+The sparse material buffer reaches 464 bytes because `SailsDetailData` begins
+at byte 448. The DX12 package reflects `SailsDetailMap` at `t13`, so resource
+binding follows reflected Carbon names rather than assuming DX11 register
+numbers. The selected pass also carries
+`RS_ZWRITEENABLE=true`; the provisional caller recipe attaches
+`depth24plus`, enables depth writes, and compares with `less` so that state is
+actually exercised. This is not yet a frozen WebGL/WebGPU render-state rule.
+The harness clears and stores but does not read depth back, overlap multiple
+draws, or verify depth ordering.
+The command loads no SOF, runtime-trinity, Trinity graph, production texture,
+ship mesh, or authoritative default value, and it does not qualify production
+scene construction or pass scheduling.
+
 The older PPT-off static heat gate requires explicitly selected high-quality
 `unpacked_quadheatv5` `Main.pass0` packages:
 
@@ -304,14 +344,15 @@ The launcher rejects identical or misordered inputs and any package that is not
 body index `4` with the complete expected selection set, including
 `SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`. Static QuadV5 packages carry seven
 selections, ordinary skinned QuadV5 carries six, and skinned QuadHeatV5 and
-QuadHeatDetailV5 each carry their exact five-axis effect contract. The launcher
+QuadHeatDetailV5 each carry their exact five-axis effect contract.
+QuadSailsV5 carries its exact four-axis effect contract. The launcher
 reads each file directly, decodes it with `CjsFormatWebgpu`, and constructs
 `CjsWebGPUPackage`. No runtime library, resource manager, or Trinity contract
 participates in this gate.
 
-The browser harness supplies an authored 13-vertex, 36-index silhouette and
-three explicit filtering-sampler descriptors. The base QuadV5 variants use ten
-generated 8x8 2D texture payloads plus one generated six-face environment
+The browser harness supplies an authored 13-vertex, 36-index silhouette.
+The base QuadV5 variants use three explicit filtering-sampler descriptors and
+ten generated 8x8 2D texture payloads plus one generated six-face environment
 cube; skinned QuadHeatV5 uses 11 generated 2D payloads plus that cube, while
 skinned QuadHeatDetailV5 uses 13 generated 2D payloads plus the cube. Geometry,
 textures, and material/per-frame/per-object values are
@@ -610,8 +651,8 @@ dispatch and does not widen the render-only public `CjsWebGPUDevice` API.
 Unlike the ship-family draw flags, preparation requires no geometry or live
 resource fixtures.
 
-The QuadV5, QuadGlassV5, QuadHeatV5, and decal-family commands are direct
-format/engine integration gates. They do not load `runtime-core`,
+The QuadV5, QuadGlassV5, QuadHeatV5, QuadSailsV5, and decal-family commands
+are direct format/engine integration gates. They do not load `runtime-core`,
 `runtime-resource`, or `runtime-trinity`.
 
 To exercise the real package boundary, pass a CEWGPU package containing the

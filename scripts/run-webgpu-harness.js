@@ -10,6 +10,7 @@ import { validateDecalHoleV5PackagePair } from "../harness/webgpu/decalHoleV5Fix
 import { validateDecalV5PackagePair } from "../harness/webgpu/decalV5Fixture.js";
 import { validateQuadGlassV5PackagePair } from "../harness/webgpu/quadGlassV5Fixture.js";
 import { validateQuadHeatV5PackagePair } from "../harness/webgpu/quadHeatV5Fixture.js";
+import { validateQuadSailsV5PackagePair } from "../harness/webgpu/quadSailsV5Fixture.js";
 import { validateQuadV5PackagePair } from "../harness/webgpu/quadV5Fixture.js";
 
 import { chromium } from "playwright";
@@ -48,6 +49,8 @@ const DRAW_QUADGLASSV5_INDEX = process.argv.indexOf("--draw-quadglassv5");
 const DRAW_SKINNED_QUADGLASSV5_INDEX =
     process.argv.indexOf("--draw-skinned-quadglassv5");
 const DRAW_QUADHEATV5_INDEX = process.argv.indexOf("--draw-quadheatv5");
+const DRAW_SKINNED_QUADSAILSV5_INDEX =
+    process.argv.indexOf("--draw-skinned-quadsailsv5");
 const DRAW_DECALV5_INDEX = process.argv.indexOf("--draw-decalv5");
 const DRAW_DECALCYLINDRICV5_INDEX = process.argv.indexOf("--draw-decalcylindricv5");
 const DRAW_DECALHOLEV5_INDEX = process.argv.indexOf("--draw-decalholev5");
@@ -142,6 +145,31 @@ const DRAW_QUADHEATV5_PATHS = DRAW_QUADHEATV5_INDEX >= 0
         resolve(process.argv[DRAW_QUADHEATV5_INDEX + 2])
     ]
     : null;
+if (DRAW_SKINNED_QUADSAILSV5_INDEX >= 0
+  && (!process.argv[DRAW_SKINNED_QUADSAILSV5_INDEX + 1]
+    || !process.argv[DRAW_SKINNED_QUADSAILSV5_INDEX + 2]
+    || process.argv[DRAW_SKINNED_QUADSAILSV5_INDEX + 1].startsWith("--")
+    || process.argv[DRAW_SKINNED_QUADSAILSV5_INDEX + 2].startsWith("--")))
+{
+    throw new Error(
+        "--draw-skinned-quadsailsv5 requires DX11-derived and DX12-derived CEWGPU file paths"
+    );
+}
+if (DRAW_SKINNED_QUADSAILSV5_INDEX >= 0
+  && (ACTIVE_QUADV5_INDEX >= 0
+    || ACTIVE_QUADGLASSV5_INDEX >= 0
+    || DRAW_QUADHEATV5_INDEX >= 0))
+{
+    throw new Error(
+        "--draw-skinned-quadsailsv5 cannot be combined with another QuadV5 draw flag"
+    );
+}
+const DRAW_SKINNED_QUADSAILSV5_PATHS = DRAW_SKINNED_QUADSAILSV5_INDEX >= 0
+    ? [
+        resolve(process.argv[DRAW_SKINNED_QUADSAILSV5_INDEX + 1]),
+        resolve(process.argv[DRAW_SKINNED_QUADSAILSV5_INDEX + 2])
+    ]
+    : null;
 if ([
     DRAW_DECALV5_INDEX,
     DRAW_DECALCYLINDRICV5_INDEX,
@@ -195,6 +223,10 @@ if (ACTIVE_DECALV5_INDEX >= 0 && DRAW_QUADHEATV5_INDEX >= 0)
 {
     throw new Error(`${DECALV5_FLAG} cannot be combined with --draw-quadheatv5`);
 }
+if (ACTIVE_DECALV5_INDEX >= 0 && DRAW_SKINNED_QUADSAILSV5_INDEX >= 0)
+{
+    throw new Error(`${DECALV5_FLAG} cannot be combined with --draw-skinned-quadsailsv5`);
+}
 if (ACTIVE_DECALV5_INDEX >= 0
   && (!process.argv[ACTIVE_DECALV5_INDEX + 1] || !process.argv[ACTIVE_DECALV5_INDEX + 2]
     || process.argv[ACTIVE_DECALV5_INDEX + 1].startsWith("--")
@@ -219,7 +251,8 @@ const CAPTURE_QUADV5_PATH = CAPTURE_QUADV5_INDEX >= 0
     ? resolve(process.argv[CAPTURE_QUADV5_INDEX + 1])
     : null;
 if ((ACTIVE_QUADV5_INDEX >= 0 || ACTIVE_QUADGLASSV5_INDEX >= 0
-  || DRAW_QUADHEATV5_INDEX >= 0 || ACTIVE_DECALV5_INDEX >= 0)
+  || DRAW_QUADHEATV5_INDEX >= 0 || DRAW_SKINNED_QUADSAILSV5_INDEX >= 0
+  || ACTIVE_DECALV5_INDEX >= 0)
   && (DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0))
 {
     throw new Error("a ship-family draw flag cannot be combined with another draw input");
@@ -233,6 +266,7 @@ if (PREPARE_CEWGPU_INDEX >= 0
   && (DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0
     || ACTIVE_QUADV5_INDEX >= 0 || ACTIVE_QUADGLASSV5_INDEX >= 0
     || DRAW_QUADHEATV5_INDEX >= 0
+    || DRAW_SKINNED_QUADSAILSV5_INDEX >= 0
     || ACTIVE_DECALV5_INDEX >= 0))
 {
     throw new Error("--prepare-cewgpu cannot be combined with a draw input");
@@ -247,6 +281,7 @@ if (PREPARE_MATRIX_INDEX >= 0
   && (PREPARE_CEWGPU_INDEX >= 0 || DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0
     || ACTIVE_QUADV5_INDEX >= 0 || ACTIVE_QUADGLASSV5_INDEX >= 0
     || DRAW_QUADHEATV5_INDEX >= 0
+    || DRAW_SKINNED_QUADSAILSV5_INDEX >= 0
     || ACTIVE_DECALV5_INDEX >= 0))
 {
     throw new Error("--prepare-matrix cannot be combined with another package or draw input");
@@ -451,6 +486,62 @@ async function ReadQuadHeatV5Packages(paths)
     return records;
 }
 
+async function ReadQuadSailsV5Packages(paths)
+{
+    const comparablePath = (value) => process.platform === "win32"
+        ? value.toLowerCase()
+        : value;
+    if (comparablePath(paths[0]) === comparablePath(paths[1]))
+    {
+        throw new Error(
+            "--draw-skinned-quadsailsv5 requires distinct DX11 and DX12 package files"
+        );
+    }
+    const [
+        { CjsFormatWebgpu },
+        { CjsWebGPUPackage }
+    ] = await Promise.all([
+        import("@carbonenginejs/format-webgpu"),
+        import("../src/index.js")
+    ]);
+    const requests = [ "dx11", "dx12" ].map((backend, index) => ({
+        backend,
+        variant: "skinned",
+        filePath: paths[index],
+        resourcePath: `res:/webgpu-harness/quadsailsv5/skinned/${backend}.cewgpu`
+    }));
+    const records = [];
+    for (const request of requests)
+    {
+        const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
+            read: CjsFormatWebgpu.read,
+            readOptions: { source: request.filePath }
+        });
+        if (!(pkg instanceof CjsWebGPUPackage))
+        {
+            throw new Error(`${request.filePath} did not prepare as CjsWebGPUPackage`);
+        }
+        const pipeline = pkg.GetPipeline("Main", 0);
+        if (!pipeline || !pipeline.HasCompleteWgsl())
+        {
+            throw new Error(`${request.filePath} has no complete Main.pass0 pipeline`);
+        }
+        records.push({
+            backend: request.backend,
+            variant: request.variant,
+            label: basename(request.filePath),
+            filePath: request.filePath,
+            resourcePath: request.resourcePath,
+            loadPath: "readFile -> CjsFormatWebgpu -> CjsWebGPUPackage",
+            analysis: pkg.analysis,
+            metadata: pkg.metadata,
+            pipeline: pipeline.ToJSON()
+        });
+    }
+    validateQuadSailsV5PackagePair(records);
+    return records;
+}
+
 async function ReadDecalV5Packages(paths, variant)
 {
     const comparablePath = (value) => process.platform === "win32" ? value.toLowerCase() : value;
@@ -531,6 +622,9 @@ const QUADGLASSV5_DRAW = DRAW_QUADGLASSV5_PATHS
 const QUADHEATV5_DRAW = DRAW_QUADHEATV5_PATHS
     ? await ReadQuadHeatV5Packages(DRAW_QUADHEATV5_PATHS)
     : null;
+const QUADSAILSV5_DRAW = DRAW_SKINNED_QUADSAILSV5_PATHS
+    ? await ReadQuadSailsV5Packages(DRAW_SKINNED_QUADSAILSV5_PATHS)
+    : null;
 const DECALV5_DRAW = DRAW_DECALV5_PATHS
     ? await ReadDecalV5Packages(DRAW_DECALV5_PATHS, DECALV5_VARIANT)
     : null;
@@ -553,6 +647,7 @@ const ASSETS = new Map([
     [ "/decalV5Fixture.js", { path: new URL("../harness/webgpu/decalV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadGlassV5Fixture.js", { path: new URL("../harness/webgpu/quadGlassV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadHeatV5Fixture.js", { path: new URL("../harness/webgpu/quadHeatV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/quadSailsV5Fixture.js", { path: new URL("../harness/webgpu/quadSailsV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadV5Fixture.js", { path: new URL("../harness/webgpu/quadV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/freeze.js", { path: new URL("../src/core/freeze.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/config.json", {
@@ -564,6 +659,7 @@ const ASSETS = new Map([
             drawQuadV5: !!QUADV5_DRAW,
             drawQuadGlassV5: !!QUADGLASSV5_DRAW,
             drawQuadHeatV5: !!QUADHEATV5_DRAW,
+            drawQuadSailsV5: !!QUADSAILSV5_DRAW,
             drawDecalV5: !!DECALV5_DRAW && DECALV5_VARIANT === "standard",
             drawDecalCylindricV5: !!DECALV5_DRAW && DECALV5_VARIANT === "cylindric",
             drawDecalHoleV5: !!DECALV5_DRAW && DECALV5_VARIANT === "hole",
@@ -575,6 +671,7 @@ const ASSETS = new Map([
             quadV5Variant: QUADV5_DRAW ? QUADV5_VARIANT : null,
             quadGlassV5Variant:
                 QUADGLASSV5_DRAW ? QUADGLASSV5_VARIANT : null,
+            quadSailsV5Variant: QUADSAILSV5_DRAW ? "skinned" : null,
             prepareCewgpu: !!PACKAGE_PREPARE,
             prepareMatrix: !!MATRIX_PREPARE,
             packageLabel: DRAW_CEWGPU_PATH ? basename(DRAW_CEWGPU_PATH) : null,
@@ -583,6 +680,8 @@ const ASSETS = new Map([
                 DRAW_QUADGLASSV5_PATHS?.map((path) => basename(path)) || [],
             quadHeatV5Labels:
                 DRAW_QUADHEATV5_PATHS?.map((path) => basename(path)) || [],
+            quadSailsV5Labels:
+                DRAW_SKINNED_QUADSAILSV5_PATHS?.map((path) => basename(path)) || [],
             decalV5Labels: DRAW_DECALV5_PATHS?.map((path) => basename(path)) || [],
             preparePackageLabel: PREPARE_CEWGPU_PATH ? basename(PREPARE_CEWGPU_PATH) : null,
             prepareMatrixLabel: PREPARE_MATRIX_PATH ? basename(PREPARE_MATRIX_PATH) : null,
@@ -640,6 +739,13 @@ if (QUADHEATV5_DRAW)
 {
     ASSETS.set("/draw-quadheatv5.json", {
         body: JSON.stringify(QUADHEATV5_DRAW),
+        type: "application/json; charset=utf-8"
+    });
+}
+if (QUADSAILSV5_DRAW)
+{
+    ASSETS.set("/draw-quadsailsv5.json", {
+        body: JSON.stringify(QUADSAILSV5_DRAW),
         type: "application/json; charset=utf-8"
     });
 }
@@ -917,6 +1023,21 @@ async function Main()
                 `(${heat.heatOracle.changedPixels}/${heat.heatOracle.coveredPixels} ` +
                 `covered pixels gained red heat with ` +
                 `${heat.heatOracle.distinctRedDeltas} distinct byte deltas).`
+            );
+        }
+        if (result.quadSailsV5Comparison)
+        {
+            const sails = result.quadSailsV5Comparison;
+            console.log(
+                `Rendered non-bindless PPT-on skinned QuadSailsV5 body ${sails.bodyIndex} ` +
+                `from ${sails.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `${sails.pixelCount} pixels matched exactly across ${sails.renderCaseCount} ` +
+                `sails-detail cases, both MRTs, and both backends with 0 WGSL warnings ` +
+                `(${sails.sailsDetailOracle.changedPixels}/` +
+                `${sails.sailsDetailOracle.coveredPixels} covered pixels changed with ` +
+                `${sails.sailsDetailOracle.distinctDeltas} distinct byte deltas; ` +
+                `indexed non-identity BoneTransforms observed; provisional depth-write ` +
+                `attachment exercised).`
             );
         }
         if (result.decalV5Comparison)
