@@ -5,12 +5,14 @@ import {
   QUADV5_CLEAR_TARGETS,
   QUADV5_PPT_SELECTION,
   QUADV5_SKINNED_HEAT_DETAIL_PPT_SELECTION,
+  QUADV5_SKINNED_HEAT_PPT_SELECTION,
   QUADV5_SKINNED_PPT_SELECTION,
   QUADV5_SKINNED_VERTEX_BUFFER_LAYOUT,
   QUADV5_TARGET_HEIGHT,
   QUADV5_TARGET_WIDTH,
   QUADV5_VERTEX_BUFFER_LAYOUT,
   createQuadV5FixtureValues,
+  createQuadV5HeatBindingCases,
   createQuadV5HeatDetailBindingCases,
   createQuadV5MainBindingValues,
   getQuadV5ResourcePlan,
@@ -44,9 +46,19 @@ const HEAT_DETAIL_RESOURCE_NAMES = [
   "Detail2Map"
 ];
 
+const HEAT_RESOURCE_NAMES = [
+  ...RESOURCE_NAMES,
+  "HeatGlowNoiseMap"
+];
+
 const HEAT_DETAIL_RESOURCE_REGISTERS = {
   dx11: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 ],
   dx12: [ 0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13, 14, 15 ]
+};
+
+const HEAT_RESOURCE_REGISTERS = {
+  dx11: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 ],
+  dx12: [ 0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13 ]
 };
 
 const HEAT_DETAIL_MATERIAL_CONSTANTS = [
@@ -82,6 +94,8 @@ const HEAT_DETAIL_MATERIAL_CONSTANTS = [
   [ "DetailFresnelColor", 544 ],
   [ "DetailSelector", 624 ]
 ];
+
+const HEAT_MATERIAL_CONSTANTS = HEAT_DETAIL_MATERIAL_CONSTANTS.slice(0, 24);
 
 const HEAT_DETAIL_VERTEX_INPUTS = [
   { usageName: "POSITION", usageIndex: 0, registerIndex: 0, usedMask: 7, type: 0, dimension: 3 },
@@ -175,9 +189,11 @@ function selections(variant = "static")
     SPACE_OBJECT_INSTANCED_ATTACHMENT: [ 0, 0, "SOIA_DISABLED" ],
     BLEND_MODE: [ 0, 0, "BLEND_MODE_OVERLAY" ]
   };
-  const selection = variant === "skinnedHeatDetail"
-    ? QUADV5_SKINNED_HEAT_DETAIL_PPT_SELECTION
-    : (variant === "skinned" ? QUADV5_SKINNED_PPT_SELECTION : QUADV5_PPT_SELECTION);
+  const selection = variant === "skinnedHeat"
+    ? QUADV5_SKINNED_HEAT_PPT_SELECTION
+    : (variant === "skinnedHeatDetail"
+      ? QUADV5_SKINNED_HEAT_DETAIL_PPT_SELECTION
+      : (variant === "skinned" ? QUADV5_SKINNED_PPT_SELECTION : QUADV5_PPT_SELECTION));
   return Object.entries(selection).map(([ name, value ]) => ({
     name,
     value,
@@ -206,10 +222,39 @@ function binding(resourceKind, registerIndex, bindingIndex, visibility, layout)
   };
 }
 
-function analysisPixelBindings(backend, heatDetail = false)
+function analysisConstantBuffer(registerIndex, localConstants = null)
 {
-  const names = heatDetail ? HEAT_DETAIL_RESOURCE_NAMES : RESOURCE_NAMES;
-  const registers = (heatDetail ? HEAT_DETAIL_RESOURCE_REGISTERS : RESOURCE_REGISTERS)[backend];
+  return {
+    kind: "constantBuffer",
+    generatedSymbol: `cb${registerIndex}`,
+    registerIndex,
+    registerType: 0,
+    registerSpace: 0,
+    registerCount: 1,
+    arrayCount: 1,
+    dynamic: true,
+    metadataName: localConstants ? "$LocalConstants" : null,
+    carbon: localConstants
+      ? {
+        hasLocalConstants: true,
+        ...localConstants
+      }
+      : {
+        hasLocalConstants: false,
+        constantValueSize: 0,
+        constants: []
+      }
+  };
+}
+
+function analysisPixelBindings(backend, heat = false, heatDetail = false)
+{
+  const names = heatDetail
+    ? HEAT_DETAIL_RESOURCE_NAMES
+    : (heat ? HEAT_RESOURCE_NAMES : RESOURCE_NAMES);
+  const registers = (heatDetail
+    ? HEAT_DETAIL_RESOURCE_REGISTERS
+    : (heat ? HEAT_RESOURCE_REGISTERS : RESOURCE_REGISTERS))[backend];
   const resources = registers.map((registerIndex, index) => ({
     kind: "resource",
     registerSpace: 0,
@@ -246,14 +291,11 @@ function analysisPixelBindings(backend, heatDetail = false)
       carbon: { name: "PatternMask2MapSampler", sampler: samplerState(true) }
     }
   ];
-  const material = heatDetail ? [ {
-    kind: "constantBuffer",
-    registerSpace: 0,
-    registerIndex: 0,
-    carbon: {
-      hasLocalConstants: true,
-      constantValueSize: 640,
-      constants: HEAT_DETAIL_MATERIAL_CONSTANTS.map(([ name, offset ]) => ({
+  const strictHeat = heat || heatDetail;
+  const material = strictHeat ? [ analysisConstantBuffer(0, {
+      constantValueSize: heatDetail ? 640 : 464,
+      constants: (heatDetail ? HEAT_DETAIL_MATERIAL_CONSTANTS : HEAT_MATERIAL_CONSTANTS)
+        .map(([ name, offset ]) => ({
         name,
         offset,
         size: 16,
@@ -261,19 +303,21 @@ function analysisPixelBindings(backend, heatDetail = false)
         type: 0,
         elements: 0
       }))
-    }
-  } ] : [];
-  return [ ...resources, ...samplers, ...material ];
+  }) ] : [];
+  const sharedBuffers = strictHeat
+    ? [ analysisConstantBuffer(2), analysisConstantBuffer(4) ]
+    : [];
+  return [ ...resources, ...samplers, ...material, ...sharedBuffers ];
 }
 
-function pipelineBindings(backend, skinned = false, heatDetail = false)
+function pipelineBindings(backend, skinned = false, heat = false, heatDetail = false)
 {
   const uniforms = [
     binding("uniform-buffer", 0, 0, "fragment", {
       buffer: {
         type: "uniform",
         hasDynamicOffset: false,
-        minBindingSize: heatDetail ? 640 : 384
+        minBindingSize: heatDetail ? 640 : (heat ? 464 : 384)
       }
     }),
     binding("uniform-buffer", 1, 1, "vertex", {
@@ -295,18 +339,27 @@ function pipelineBindings(backend, skinned = false, heatDetail = false)
     }),
     structureStride: 48
   } ] : [];
-  const registers = (heatDetail ? HEAT_DETAIL_RESOURCE_REGISTERS : RESOURCE_REGISTERS)[backend];
-  const textures = registers.map((registerIndex, index) =>
-    binding("sampled-resource", registerIndex, (skinned ? 6 : 5) + index, "fragment", {
+  const registers = (heatDetail
+    ? HEAT_DETAIL_RESOURCE_REGISTERS
+    : (heat ? HEAT_RESOURCE_REGISTERS : RESOURCE_REGISTERS))[backend];
+  const textures = registers.map((registerIndex, index) => ({
+    ...binding("sampled-resource", registerIndex, (skinned ? 6 : 5) + index, "fragment", {
+      type: `texture_${index === 0 ? "cube" : "2d"}<f32>`,
       texture: {
         sampleType: "float",
         viewDimension: index === 0 ? "cube" : "2d",
         multisampled: false
       }
-    }));
+    }),
+    textureKind: index === 0 ? "cube" : "2d",
+    arrayElements: 1,
+    isSRGB: index === 0 || (heatDetail
+      ? HEAT_DETAIL_RESOURCE_NAMES
+      : (heat ? HEAT_RESOURCE_NAMES : RESOURCE_NAMES))[index] === "AlbedoMap"
+  }));
   const samplers = [ 0, 1, 2 ].map((registerIndex) =>
     binding("sampler", registerIndex,
-      (heatDetail ? 20 : (skinned ? 17 : 16)) + registerIndex, "fragment", {
+      (heatDetail ? 20 : (heat ? 18 : (skinned ? 17 : 16))) + registerIndex, "fragment", {
       sampler: { type: "filtering" }
     }));
   return [ ...uniforms, ...bone, ...textures, ...samplers ];
@@ -314,12 +367,18 @@ function pipelineBindings(backend, skinned = false, heatDetail = false)
 
 function validRecord(backend = "dx11", variant = "static")
 {
-  const skinned = variant === "skinned" || variant === "skinnedHeatDetail";
+  const skinned = variant === "skinned"
+    || variant === "skinnedHeat"
+    || variant === "skinnedHeatDetail";
+  const heat = variant === "skinnedHeat";
   const heatDetail = variant === "skinnedHeatDetail";
+  const strictHeat = heat || heatDetail;
   const selectedOptions = selections(variant);
   const stem = heatDetail
     ? "unpackedskinned_quadheatdetailv5"
-    : (skinned ? "unpackedskinned_quadv5" : "unpacked_quadv5");
+    : (heat
+      ? "unpackedskinned_quadheatv5"
+      : (skinned ? "unpackedskinned_quadv5" : "unpacked_quadv5"));
   const source = `fixtures/shaders/effect.${backend}/managed/space/spaceobject/v5/quad/${stem}.sm_hi`;
   return {
     backend,
@@ -344,7 +403,7 @@ function validRecord(backend = "dx11", variant = "static")
           passIndex: 0,
           stageName: "vertex",
           stageType: 0,
-          pipelineInputs: heatDetail ? HEAT_DETAIL_VERTEX_INPUTS.map((entry) => ({ ...entry })) : [
+          pipelineInputs: strictHeat ? HEAT_DETAIL_VERTEX_INPUTS.map((entry) => ({ ...entry })) : [
             { registerIndex: 0, dimension: 3, type: 0, usedMask: 7 },
             { registerIndex: 1, dimension: 4, type: 2, usedMask: skinned ? 1 : 0 },
             { registerIndex: 2, dimension: 2, type: 0, usedMask: 3 },
@@ -353,19 +412,24 @@ function validRecord(backend = "dx11", variant = "static")
             { registerIndex: 5, dimension: 3, type: 0, usedMask: 7 },
             { registerIndex: 6, dimension: 2, type: 0, usedMask: 3 }
           ],
-          bindings: skinned ? [ {
-            kind: "resource",
-            registerSpace: 0,
-            registerIndex: 0,
-            registerType: 33,
-            carbon: {
-              name: "BoneTransforms",
-              type: 7,
-              arrayElements: 1,
-              isSRGB: false,
-              isAutoregister: false
+          bindings: skinned ? [
+            ...(strictHeat
+              ? [ analysisConstantBuffer(1), analysisConstantBuffer(3) ]
+              : []),
+            {
+              kind: "resource",
+              registerSpace: 0,
+              registerIndex: 0,
+              registerType: 33,
+              carbon: {
+                name: "BoneTransforms",
+                type: 7,
+                arrayElements: 1,
+                isSRGB: false,
+                isAutoregister: false
+              }
             }
-          } ] : []
+          ] : []
         },
         {
           key: "Main.pass0.pixel",
@@ -373,10 +437,10 @@ function validRecord(backend = "dx11", variant = "static")
           passIndex: 0,
           stageName: "pixel",
           stageType: 1,
-          pipelineInputs: heatDetail
+          pipelineInputs: strictHeat
             ? HEAT_DETAIL_PIXEL_INPUTS.map((entry) => ({ ...entry }))
             : [],
-          bindings: analysisPixelBindings(backend, heatDetail)
+          bindings: analysisPixelBindings(backend, heat, heatDetail)
         }
       ]
     },
@@ -406,7 +470,7 @@ function validRecord(backend = "dx11", variant = "static")
           stageName: "vertex",
           stageType: 0,
           entryPoint: "main",
-          wgsl: heatDetail ? heatDetailVertexWgsl() : [
+          wgsl: strictHeat ? heatDetailVertexWgsl() : [
             "@location(0) input0: vec3f,",
             ...(skinned ? [ "@location(1) input1: vec4u," ] : []),
             "@location(2) input2: vec2f,",
@@ -423,14 +487,14 @@ function validRecord(backend = "dx11", variant = "static")
           stageName: "pixel",
           stageType: 1,
           entryPoint: "main",
-          wgsl: heatDetail
+          wgsl: strictHeat
             ? heatDetailPixelWgsl()
             : "@location(0) output0: vec4f, @location(1) output1: vec4f"
         }
       ],
       bindGroups: [ {
         group: 0,
-        bindings: pipelineBindings(backend, skinned, heatDetail)
+        bindings: pipelineBindings(backend, skinned, heat, heatDetail)
       } ]
     }
   };
@@ -494,6 +558,149 @@ test("QuadV5 heat-detail fixture exposes ordered isolated binding cases", () =>
   assert.deepEqual(cases.bindingValuesByCase.hotDetail.perObjectPS.shipData, [ 1, 1, 0, 0 ]);
 });
 
+test("QuadV5 heat fixture exposes exact ordered cold and hot binding cases", () =>
+{
+  const cases = createQuadV5HeatBindingCases(
+    QUADV5_TARGET_WIDTH,
+    QUADV5_TARGET_HEIGHT
+  );
+  assert.equal(Object.isFrozen(cases), true);
+  assert.equal(Object.isFrozen(cases.caseNames), true);
+  assert.equal(Object.isFrozen(cases.bindingValuesByCase), true);
+  assert.deepEqual(cases.caseNames, [ "cold", "hot" ]);
+
+  const expectedMaterialNames = HEAT_MATERIAL_CONSTANTS.map(([ name ]) => name);
+  for (const caseName of cases.caseNames)
+  {
+    const values = cases.bindingValuesByCase[caseName];
+    assert.equal(Object.isFrozen(values), true);
+    assert.equal(Object.isFrozen(values.material), true);
+    assert.deepEqual(Object.keys(values.material), expectedMaterialNames);
+    assert.equal(Object.keys(values.material).length, 24);
+    assert.equal(Object.hasOwn(values.material, "GeneralGlowColor"), false);
+    assert.equal(Object.hasOwn(values.material, "DetailSelector"), false);
+  }
+  assert.deepEqual(cases.bindingValuesByCase.cold.perObjectVS.shipData, [ 0, 1, 0, 0 ]);
+  assert.deepEqual(cases.bindingValuesByCase.cold.perObjectPS.shipData, [ 0, 1, 0, 0 ]);
+  assert.deepEqual(cases.bindingValuesByCase.hot.perObjectVS.shipData, [ 1, 1, 0, 0 ]);
+  assert.deepEqual(cases.bindingValuesByCase.hot.perObjectPS.shipData, [ 1, 1, 0, 0 ]);
+});
+
+test("QuadV5 fixture validates the common PPT-on skinned heat contract", () =>
+{
+  const dx11 = validRecord("dx11", "skinnedHeat");
+  const dx12 = validRecord("dx12", "skinnedHeat");
+  dx12.pipeline.shaderModules[0].wgsl += " // SM5.1";
+  assert.deepEqual(validateQuadV5PackagePair([ dx11, dx12 ]), [ dx11, dx12 ]);
+
+  const fixture = createQuadV5FixtureValues(
+    QUADV5_TARGET_WIDTH,
+    QUADV5_TARGET_HEIGHT,
+    "skinnedHeat"
+  );
+  assert.equal(fixture.textures.length, 12);
+  assert.equal(fixture.textures.at(-1).name, "HeatGlowNoiseMap");
+  assert.equal(fixture.textures.some((entry) => entry.name === "Detail1Map"), false);
+
+  const plan = getQuadV5ResourcePlan(dx12);
+  assert.equal(plan.storage.length, 1);
+  assert.equal(plan.textures.length, 12);
+  assert.equal(plan.samplers.length, 3);
+  assert.deepEqual(
+    plan.textures.find((entry) => entry.name === "HeatGlowNoiseMap"),
+    {
+      name: "HeatGlowNoiseMap",
+      identity: "sampled-resource:0:13",
+      scopeIdentity: "sampled-resource:0:13@fragment",
+      registerIndex: 13,
+      binding: 17,
+      viewDimension: "2d",
+      registerType: 36,
+      carbonType: 2,
+      arrayElements: 1,
+      isSRGB: false,
+      isAutoregister: false
+    }
+  );
+  assert.equal(plan.samplers[0].binding, 18);
+
+  const wrongMaterial = structuredClone(dx11);
+  wrongMaterial.analysis.stages[1].bindings
+    .find((entry) => entry.kind === "constantBuffer")
+    .carbon.constants.at(-1).offset = 432;
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongMaterial),
+    /GeneralHeatGlowColor layout/u
+  );
+
+  const wrongHeatResource = structuredClone(dx11);
+  wrongHeatResource.analysis.stages[1].bindings
+    .find((entry) => entry.carbon?.name === "HeatGlowNoiseMap")
+    .carbon.type = 4;
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongHeatResource),
+    /sampled-resource:0:11 has unexpected skinned-heat Carbon metadata/u
+  );
+
+  const lowQuality = structuredClone(dx11);
+  lowQuality.analysis.source = lowQuality.analysis.source.replace(".sm_hi", ".sm_lo");
+  lowQuality.metadata.sourcePath = lowQuality.metadata.sourcePath.replace(".sm_hi", ".sm_lo");
+  assert.throws(
+    () => validateQuadV5PackageRecord(lowQuality),
+    /unpackedskinned_quadheatv5 ship shader/u
+  );
+
+  const missingPerFrame = structuredClone(dx11);
+  missingPerFrame.analysis.stages[1].bindings = missingPerFrame.analysis.stages[1].bindings
+    .filter((entry) => entry.kind !== "constantBuffer" || entry.registerIndex !== 2);
+  assert.throws(
+    () => validateQuadV5PackageRecord(missingPerFrame),
+    /exact skinned-heat constant-buffer inventory/u
+  );
+
+  const wrongMaterialMetadata = structuredClone(dx11);
+  wrongMaterialMetadata.analysis.stages[1].bindings
+    .find((entry) => entry.kind === "constantBuffer" && entry.registerIndex === 0)
+    .metadataName = "Material";
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongMaterialMetadata),
+    /cb0 has unexpected skinned-heat metadata/u
+  );
+
+  const wrongCanonicalSrgb = structuredClone(dx11);
+  wrongCanonicalSrgb.pipeline.bindGroups[0].bindings
+    .find((entry) => entry.name === undefined
+      && entry.scopeIdentity === "sampled-resource:0:5@fragment")
+    .isSRGB = false;
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongCanonicalSrgb),
+    /sampled-resource:0:5 has an unexpected texture layout/u
+  );
+
+  const wrongStageOrder = structuredClone(dx11);
+  wrongStageOrder.metadata.wgslSelection.selectedStageKeys.reverse();
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongStageOrder),
+    /complete Main\.pass0 vertex\/pixel pair/u
+  );
+
+  const wrongInterface = structuredClone(dx11);
+  wrongInterface.analysis.stages[0].pipelineInputs[1].usedMask = 15;
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongInterface),
+    /unexpected skinned-heat used-mask interface/u
+  );
+
+  const wrongDynamicSampler = structuredClone(dx11);
+  wrongDynamicSampler.analysis.stages[1].bindings
+    .find((entry) => entry.kind === "sampler" && entry.registerIndex === 1)
+    .carbon.sampler.maxAnisotropy = 1;
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongDynamicSampler),
+    /unexpected dynamic sampler state/u
+  );
+});
+
 test("QuadV5 fixture validates the PPT-on skinned heat-detail contract", () =>
 {
   const dx11 = validRecord("dx11", "skinnedHeatDetail");
@@ -535,14 +742,14 @@ test("QuadV5 heat-detail validator rejects stage, interface, and WGSL drift", ()
   wrongAnalysisState.analysis.passes[0].renderStates = 0;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongAnalysisState),
-    /exact heat-detail Main\.pass0 render state/u
+    /exact skinned-heat Main\.pass0 render state/u
   );
 
   const wrongPipelineState = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
   wrongPipelineState.pipeline.renderStates = 0;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongPipelineState),
-    /exact heat-detail Main\.pass0 render state/u
+    /exact skinned-heat Main\.pass0 render state/u
   );
 
   const extraMainStage = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -555,21 +762,21 @@ test("QuadV5 heat-detail validator rejects stage, interface, and WGSL drift", ()
   });
   assert.throws(
     () => validateQuadV5PackageRecord(extraMainStage),
-    /exactly the heat-detail Main\.pass0 stage pair/u
+    /exactly the skinned-heat Main\.pass0 stage pair/u
   );
 
   const wrongVertexMask = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
   wrongVertexMask.analysis.stages[0].pipelineInputs[1].usedMask = 15;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongVertexMask),
-    /unexpected heat-detail used-mask interface/u
+    /unexpected skinned-heat used-mask interface/u
   );
 
   const wrongInactivePixelMask = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
   wrongInactivePixelMask.analysis.stages[1].pipelineInputs[5].usedMask = 1;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongInactivePixelMask),
-    /unexpected heat-detail used-mask interface/u
+    /unexpected skinned-heat used-mask interface/u
   );
 
   const wrongVertexOutput = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -598,10 +805,12 @@ test("QuadV5 heat-detail validator rejects stage, interface, and WGSL drift", ()
 test("QuadV5 heat-detail validator rejects reflected resource and sampler drift", () =>
 {
   const wrongBoneType = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
-  wrongBoneType.analysis.stages[0].bindings[0].registerType = 36;
+  wrongBoneType.analysis.stages[0].bindings
+    .find((entry) => entry.kind === "resource")
+    .registerType = 36;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongBoneType),
-    /BoneTransforms has unexpected heat-detail Carbon metadata/u
+    /BoneTransforms has unexpected skinned-heat Carbon metadata/u
   );
 
   const wrongAlbedoSrgb = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -610,7 +819,7 @@ test("QuadV5 heat-detail validator rejects reflected resource and sampler drift"
     .carbon.isSRGB = false;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongAlbedoSrgb),
-    /sampled-resource:0:5 has unexpected heat-detail Carbon metadata/u
+    /sampled-resource:0:5 has unexpected skinned-heat Carbon metadata/u
   );
 
   const wrongShadowAutoreg = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -619,7 +828,7 @@ test("QuadV5 heat-detail validator rejects reflected resource and sampler drift"
     .carbon.isAutoregister = false;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongShadowAutoreg),
-    /sampled-resource:0:2 has unexpected heat-detail Carbon metadata/u
+    /sampled-resource:0:2 has unexpected skinned-heat Carbon metadata/u
   );
 
   const wrongDetailArray = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -628,7 +837,7 @@ test("QuadV5 heat-detail validator rejects reflected resource and sampler drift"
     .carbon.arrayElements = 2;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongDetailArray),
-    /sampled-resource:0:13 has unexpected heat-detail Carbon metadata/u
+    /sampled-resource:0:13 has unexpected skinned-heat Carbon metadata/u
   );
 
   const extraTexture = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -647,7 +856,7 @@ test("QuadV5 heat-detail validator rejects reflected resource and sampler drift"
   });
   assert.throws(
     () => validateQuadV5PackageRecord(extraTexture),
-    /exact heat-detail inventory/u
+    /exact skinned-heat inventory/u
   );
 
   const wrongSamplerAddress = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -677,7 +886,7 @@ test("QuadV5 heat-detail validator rejects reflected resource and sampler drift"
   });
   assert.throws(
     () => validateQuadV5PackageRecord(extraSampler),
-    /exact heat-detail inventory/u
+    /exact skinned-heat inventory/u
   );
 });
 
@@ -819,4 +1028,12 @@ test("QuadV5 fixture requires distinct ordered backend provenance", () =>
   const identicalWgsl = structuredClone(dx12);
   identicalWgsl.pipeline.shaderModules = structuredClone(dx11.pipeline.shaderModules);
   assert.throws(() => validateQuadV5PackagePair([ dx11, identicalWgsl ]), /identical WGSL/u);
+
+  const heatDx11 = validRecord("dx11", "skinnedHeat");
+  const heatDetailDx12 = validRecord("dx12", "skinnedHeatDetail");
+  heatDetailDx12.pipeline.shaderModules[0].wgsl += " // SM5.1";
+  assert.throws(
+    () => validateQuadV5PackagePair([ heatDx11, heatDetailDx12 ]),
+    /variants must match/u
+  );
 });

@@ -48,7 +48,8 @@ Fixture creation and pixel expectations remain harness responsibilities, so
 the reusable engine class does not acquire resource paths or infer format/
 geometry policy.
 
-The static/skinned QuadV5, two-pass QuadGlassV5, and cold/hot QuadHeatV5 modes
+The static/skinned QuadV5, PPT-on skinned QuadHeatV5, two-pass QuadGlassV5,
+and cold/hot PPT-off static QuadHeatV5 modes
 additionally route each draw through the internal
 `CjsWebGPUTrinityBatchDispatcher`. The fixtures
 construct the duck-typed fields of a transient `Tr2RenderBatch` inside a
@@ -154,6 +155,27 @@ Use the skinned family gate with the corresponding pair:
 npm.cmd run test:webgpu:required -- --draw-skinned-quadv5 .\artifacts\quadv5-skinned-dx11.cewgpu .\artifacts\quadv5-skinned-dx12.cewgpu
 ```
 
+The representative skinned heat gate requires current high-quality
+`unpackedskinned_quadheatv5` packages with the explicit PPT-on `Main.pass0`
+vertex/pixel pair:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-skinned-quadheatv5 .\artifacts\quadheatv5-skinned-ppt-dx11.cewgpu .\artifacts\quadheatv5-skinned-ppt-dx12.cewgpu
+```
+
+The build-3444265 SOF/resource audit correlates this compiled family to 313
+ship areas across 205 hulls. The high-quality body-4 gate requires the exact
+five local selections, including `SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`.
+The browser command deliberately does not load SOF, production textures,
+geometry, per-object defaults, runtime-trinity, or a Trinity graph. It supplies
+exact synthetic resources for the 21-binding contract: five uniform buffers,
+the vertex bone-transform storage buffer, 12 fragment textures, and three
+fragment samplers. Cold and hot cases differ only in `shipData.x`. Heat must
+add a spatially varied red response while coverage and MRT1 remain
+byte-identical; both MRTs must also match exactly between the DX11- and
+DX12-derived packages after `rgba8unorm` target quantization with zero WGSL
+warnings.
+
 The skinned heat/detail material-block high-water mark is gated separately
 with explicit PPT-on `unpackedskinned_quadheatdetailv5` packages:
 
@@ -191,7 +213,7 @@ or silently running only one pass cannot pass.
 Each pass/case is rendered independently into separate attachments. The gate
 does not yet prove pass 0 then pass 1 ordering or same-target composition.
 
-The hull-derived heat gate requires explicitly selected high-quality
+The older PPT-off static heat gate requires explicitly selected high-quality
 `unpacked_quadheatv5` `Main.pass0` packages:
 
 ```powershell
@@ -202,8 +224,9 @@ This is a synthetic conformance gate for the shader family identified on the
 audited `gb2_t1:gallentebase:gallente` `area_booster`; the command does not
 load SOF, GB2 geometry, or production textures. It requires body `0`, the six
 default non-bindless/PPT-disabled/opaque selections, and the complete static
-Main pass. Packed, skinned, detail, Depth, Picking, and shadow variants remain
-separate work.
+Main pass. This older static gate does not substitute for the PPT-on skinned
+or HeatDetail gates above. Packed Heat, Depth, Picking, and shadow variants
+remain separate work.
 
 The first decal-family gate uses the explicitly selected non-bindless
 `unpacked_decalv5` Main pass:
@@ -257,8 +280,8 @@ capture.
 The launcher rejects identical or misordered inputs and any package that is not
 body index `4` with the complete expected selection set, including
 `SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`. Static QuadV5 packages carry seven
-selections, ordinary skinned QuadV5 carries six, and skinned
-QuadHeatDetailV5 carries its exact five-axis effect contract. The launcher
+selections, ordinary skinned QuadV5 carries six, and skinned QuadHeatV5 and
+QuadHeatDetailV5 each carry their exact five-axis effect contract. The launcher
 reads each file directly, decodes it with `CjsFormatWebgpu`, and constructs
 `CjsWebGPUPackage`. No runtime library, resource manager, or Trinity contract
 participates in this gate.
@@ -266,8 +289,9 @@ participates in this gate.
 The browser harness supplies an authored 13-vertex, 36-index silhouette and
 three explicit filtering-sampler descriptors. The base QuadV5 variants use ten
 generated 8x8 2D texture payloads plus one generated six-face environment
-cube; skinned QuadHeatDetailV5 uses 13 generated 8x8 2D payloads plus that
-cube. Geometry, textures, and material/per-frame/per-object values are
+cube; skinned QuadHeatV5 uses 11 generated 2D payloads plus that cube, while
+skinned QuadHeatDetailV5 uses 13 generated 2D payloads plus the cube. Geometry,
+textures, and material/per-frame/per-object values are
 synthetic harness inputs. The gate does not read SOF, source per-object data
 from it, or infer production defaults. The 2D textures, geometry, and samplers
 are atomically realized and published as one device resource bundle. Its
@@ -305,6 +329,11 @@ native bind group, and destroys only those owned buffers. Static
 `Main.pass0` uses six active vertex attributes and 19 canonical bindings.
 Skinned `Main.pass0` uses seven attributes and 20 bindings, including its
 vertex-stage read-only bone-transform storage buffer.
+Skinned QuadHeatV5 retains those seven attributes and uses 21 bindings: 12
+textures, three samplers, five uniform buffers, and the bone buffer. The two
+controlled cases are cold and hot. Activating heat must increase only the red
+output for at least half of covered pixels, must produce a spatially varied
+response, and must leave coverage, alpha, green/blue, and MRT1 invariant.
 Skinned QuadHeatDetailV5 retains those seven attributes while expanding to 23
 bindings: 14 textures, three samplers, five uniform buffers, and the bone
 buffer. Each backend renders three controlled cases: cold/detail-neutral with
@@ -344,8 +373,9 @@ warnings. This verifies selected shader execution and paired backend parity;
 it does not qualify Depth/Picking techniques, skinned glass, production
 textures, authoritative per-object values, or renderer pass scheduling.
 
-The QuadHeatV5 gate reuses the bounded semantic space-object serializer,
-64-byte unpacked static vertex layout, and synthetic ship silhouette. Its
+The PPT-off static QuadHeatV5 gate reuses the bounded semantic space-object
+serializer, 64-byte unpacked static vertex layout, and synthetic ship
+silhouette. Its
 exact group-zero contract contains five uniform buffers, the environment
 cube, neutral white `SSAOMap` and shadow inputs, NormalMap, GlowMap,
 AlbedoMap, RoughnessMap, MaterialMap, PaintMaskMap, HeatGlowNoiseMap, and one

@@ -50,10 +50,10 @@ remain explicit caller inputs. The bounded Eve space-object Main serializer
 transposes logical matrices once into Carbon cbuffer register-row order while
 copying already GPU-form custom-mask slots unchanged.
 
-The standalone harness qualifies synthetic static/skinned QuadV5, the PPT-on
-skinned QuadHeatDetailV5 material-block high-water and tied-largest active-
-binding contract, both independently rendered QuadGlassV5 Main passes, cold/hot
-QuadHeatV5, non-bindless
+The standalone harness qualifies synthetic static/skinned QuadV5, common
+PPT-on skinned QuadHeatV5, the PPT-on skinned QuadHeatDetailV5 material-block
+high-water and tied-largest active-binding contract, both independently
+rendered QuadGlassV5 Main passes, cold/hot PPT-off static QuadHeatV5, non-bindless
 DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter DecalCounterV5, and
 two-texture DecalGlowV5/DecalGlowCylindricV5 draws through a provisional
 Trinity-shaped batch dispatcher without loading SOF, a Trinity graph,
@@ -61,6 +61,11 @@ production defaults, or an EVE asset. The dispatcher imports no runtime
 package and is not yet a public renderer-composition contract. HeatDetail is
 covered for contract breadth rather than shader frequency; its three synthetic
 cases isolate detail and heat changes while preserving coverage and MRT1.
+The representative skinned Heat gate covers a shader correlated to 313 ship
+areas across 205 hulls in EVE build 3444265. Its synthetic cold/hot cases
+require a spatially varied red response, invariant coverage/MRT1, byte-exact
+DX11/DX12 `rgba8unorm` readbacks after target quantization, and zero WGSL
+warnings.
 
 ## Documentation
 

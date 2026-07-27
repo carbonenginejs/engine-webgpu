@@ -22,13 +22,16 @@ export const QUADV5_SKINNED_PPT_SELECTION = Object.freeze({
   BLEND_MODE: "BLEND_MODE_OVERLAY"
 });
 
-export const QUADV5_SKINNED_HEAT_DETAIL_PPT_SELECTION = Object.freeze({
+export const QUADV5_SKINNED_HEAT_PPT_SELECTION = Object.freeze({
   BINDLESS_RENDERING: "BINDLESS_RENDERING_DISABLED",
   SPACE_OBJECT_CLIPPING: "SOC_DISABLED",
   SPACE_OBJECT_PPT_ENABLED: "SOPPT_ENABLED",
   SPACE_OBJECT_TRANSPARENCY: "SOT_OPAQUE",
   V5_DEBUG: "OFF"
 });
+
+export const QUADV5_SKINNED_HEAT_DETAIL_PPT_SELECTION =
+  QUADV5_SKINNED_HEAT_PPT_SELECTION;
 
 const SELECTION_PROVENANCE = Object.freeze({
   BINDLESS_RENDERING: Object.freeze({ optionIndex: 0, defaultOption: 0, defaultValue: "BINDLESS_RENDERING_DISABLED" }),
@@ -74,9 +77,19 @@ const HEAT_DETAIL_RESOURCE_NAMES = Object.freeze([
   "Detail2Map"
 ]);
 
+const HEAT_RESOURCE_NAMES = Object.freeze([
+  ...RESOURCE_NAMES,
+  "HeatGlowNoiseMap"
+]);
+
 const HEAT_DETAIL_RESOURCE_REGISTERS = Object.freeze({
   dx11: Object.freeze([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 ]),
   dx12: Object.freeze([ 0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13, 14, 15 ])
+});
+
+const HEAT_RESOURCE_REGISTERS = Object.freeze({
+  dx11: Object.freeze([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 ]),
+  dx12: Object.freeze([ 0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13 ])
 });
 
 const HEAT_DETAIL_VERTEX_INPUTS = Object.freeze([
@@ -220,17 +233,17 @@ function interfaceInput(entry)
   };
 }
 
-function assertVertexInputs(analysis, skinned, heatDetail)
+function assertVertexInputs(analysis, skinned, strictHeat)
 {
   const stage = analysis.stages?.find((entry) =>
     entry?.techniqueName === "Main" && entry.passIndex === 0 && entry.stageName === "vertex");
   if (!stage) fail("analysis has no Main.pass0.vertex stage");
-  if (heatDetail)
+  if (strictHeat)
   {
     const inputs = (stage.pipelineInputs || []).map(interfaceInput);
     if (JSON.stringify(inputs) !== JSON.stringify(HEAT_DETAIL_VERTEX_INPUTS))
     {
-      fail("Main.pass0.vertex has an unexpected heat-detail used-mask interface");
+      fail("Main.pass0.vertex has an unexpected skinned-heat used-mask interface");
     }
     return;
   }
@@ -266,7 +279,7 @@ function assertHeatDetailWgslStruct(wgsl, name)
   }
 }
 
-function assertShaderModules(pipeline, skinned, heatDetail)
+function assertShaderModules(pipeline, skinned, strictHeat)
 {
   if (!Array.isArray(pipeline.shaderModules) || pipeline.shaderModules.length !== 2)
   {
@@ -298,7 +311,7 @@ function assertShaderModules(pipeline, skinned, heatDetail)
     {
       fail("pixel WGSL must expose both QuadV5 render targets");
     }
-    if (heatDetail)
+    if (strictHeat)
     {
       for (const name of stageName === "vertex"
         ? [ "VertexInput", "VertexOutput" ]
@@ -310,7 +323,7 @@ function assertShaderModules(pipeline, skinned, heatDetail)
   }
 }
 
-function assertHeatDetailMainInventory(record)
+function assertHeatMainInventory(record)
 {
   const stages = record.analysis?.stages?.filter((entry) => entry?.techniqueName === "Main");
   const expectedStages = [
@@ -319,7 +332,7 @@ function assertHeatDetailMainInventory(record)
   ];
   if (!Array.isArray(stages) || stages.length !== expectedStages.length)
   {
-    fail("analysis must expose exactly the heat-detail Main.pass0 stage pair");
+    fail("analysis must expose exactly the skinned-heat Main.pass0 stage pair");
   }
   for (let index = 0; index < expectedStages.length; index += 1)
   {
@@ -328,33 +341,34 @@ function assertHeatDetailMainInventory(record)
     if (stage?.key !== expected.key || stage.passIndex !== expected.passIndex
       || stage.stageName !== expected.stageName || stage.stageType !== expected.stageType)
     {
-      fail("analysis has an unexpected heat-detail Main stage inventory");
+      fail("analysis has an unexpected skinned-heat Main stage inventory");
     }
   }
   const passes = record.analysis?.passes?.filter((entry) => entry?.techniqueName === "Main");
   if (!Array.isArray(passes) || passes.length !== 1 || passes[0].passIndex !== 0
     || passes[0].renderStates !== 1 || JSON.stringify(passes[0].states) !== "[]")
   {
-    fail("analysis must expose the exact heat-detail Main.pass0 render state");
+    fail("analysis must expose the exact skinned-heat Main.pass0 render state");
   }
   if (record.pipeline?.renderStates !== 1 || JSON.stringify(record.pipeline.states) !== "[]")
   {
-    fail("pipeline must expose the exact heat-detail Main.pass0 render state");
+    fail("pipeline must expose the exact skinned-heat Main.pass0 render state");
   }
   const pixel = stages[1];
   const pixelInputs = (pixel.pipelineInputs || []).map(interfaceInput);
   if (JSON.stringify(pixelInputs) !== JSON.stringify(HEAT_DETAIL_PIXEL_INPUTS))
   {
-    fail("Main.pass0.pixel has an unexpected heat-detail used-mask interface");
+    fail("Main.pass0.pixel has an unexpected skinned-heat used-mask interface");
   }
 }
 
-function requiredUniforms(skinned, heatDetail)
+function requiredUniforms(skinned, heat, heatDetail)
 {
   return BASE_UNIFORMS.map((entry) => Object.freeze({
     ...entry,
     scopeIdentity: `${entry.identity}@${entry.visibility}`,
     ...(heatDetail && entry.identity === "uniform-buffer:0:0" ? { minBindingSize: 640 } : {}),
+    ...(heat && entry.identity === "uniform-buffer:0:0" ? { minBindingSize: 464 } : {}),
     ...(skinned && entry.identity === "uniform-buffer:0:3" ? { minBindingSize: 432 } : {})
   }));
 }
@@ -370,11 +384,16 @@ function expectedBoneBinding()
   });
 }
 
-function expectedResourceBindings(backend, skinned, heatDetail)
+function expectedResourceBindings(backend, skinned, heat, heatDetail)
 {
-  const registers = (heatDetail ? HEAT_DETAIL_RESOURCE_REGISTERS : RESOURCE_REGISTERS)[backend];
+  const registerTable = heatDetail
+    ? HEAT_DETAIL_RESOURCE_REGISTERS
+    : (heat ? HEAT_RESOURCE_REGISTERS : RESOURCE_REGISTERS);
+  const registers = registerTable[backend];
   if (!registers) fail(`unsupported package backend ${String(backend)}`);
-  const names = heatDetail ? HEAT_DETAIL_RESOURCE_NAMES : RESOURCE_NAMES;
+  const names = heatDetail
+    ? HEAT_DETAIL_RESOURCE_NAMES
+    : (heat ? HEAT_RESOURCE_NAMES : RESOURCE_NAMES);
   return names.map((name, index) => Object.freeze({
     name,
     identity: `sampled-resource:0:${registers[index]}`,
@@ -390,14 +409,14 @@ function expectedResourceBindings(backend, skinned, heatDetail)
   }));
 }
 
-function expectedSamplerBindings(skinned, heatDetail)
+function expectedSamplerBindings(skinned, heat, heatDetail)
 {
   return SAMPLER_NAMES.map((name, registerIndex) => Object.freeze({
     name,
     identity: `sampler:0:${registerIndex}`,
     scopeIdentity: `sampler:0:${registerIndex}@fragment`,
     registerIndex,
-    binding: (heatDetail ? 20 : (skinned ? 17 : 16)) + registerIndex
+    binding: (heatDetail ? 20 : (heat ? 18 : (skinned ? 17 : 16))) + registerIndex
   }));
 }
 
@@ -435,30 +454,60 @@ const HEAT_DETAIL_MATERIAL_CONSTANTS = Object.freeze([
   [ "DetailSelector", 624 ]
 ]);
 
-function assertHeatDetailMaterial(record)
+const HEAT_MATERIAL_CONSTANTS = Object.freeze(
+  HEAT_DETAIL_MATERIAL_CONSTANTS.slice(0, 24)
+);
+
+function assertHeatMaterial(record, heatDetail)
 {
+  const vertex = record.analysis.stages.find((entry) =>
+    entry?.techniqueName === "Main"
+      && entry.passIndex === 0
+      && entry.stageName === "vertex");
   const pixel = record.analysis.stages.find((entry) =>
     entry?.techniqueName === "Main"
       && entry.passIndex === 0
       && entry.stageName === "pixel");
-  const material = pixel?.bindings?.filter((entry) =>
-    entry?.kind === "constantBuffer"
-      && entry.registerSpace === 0
-      && entry.registerIndex === 0);
+  const vertexBuffers = vertex?.bindings?.filter((entry) => entry?.kind === "constantBuffer");
+  const pixelBuffers = pixel?.bindings?.filter((entry) => entry?.kind === "constantBuffer");
+  if (JSON.stringify(vertexBuffers?.map((entry) => entry.registerIndex)) !== "[1,3]"
+    || JSON.stringify(pixelBuffers?.map((entry) => entry.registerIndex)) !== "[0,2,4]")
+  {
+    fail("Main.pass0 must expose the exact skinned-heat constant-buffer inventory");
+  }
+  for (const entry of [ ...vertexBuffers, ...pixelBuffers ])
+  {
+    const local = entry.registerIndex === 0;
+    if (entry.registerType !== 0 || entry.registerSpace !== 0
+      || entry.generatedSymbol !== `cb${entry.registerIndex}`
+      || entry.registerCount !== 1 || entry.arrayCount !== 1 || entry.dynamic !== true
+      || entry.metadataName !== (local ? "$LocalConstants" : null)
+      || entry.carbon?.hasLocalConstants !== local
+      || (!local && (entry.carbon.constantValueSize !== 0
+        || JSON.stringify(entry.carbon.constants) !== "[]")))
+    {
+      fail(`Main.pass0 cb${entry.registerIndex} has unexpected skinned-heat metadata`);
+    }
+  }
+  const material = pixelBuffers.filter((entry) => entry.registerIndex === 0);
+  const size = heatDetail ? 640 : 464;
+  const expectedConstants = heatDetail
+    ? HEAT_DETAIL_MATERIAL_CONSTANTS
+    : HEAT_MATERIAL_CONSTANTS;
   if (!Array.isArray(material) || material.length !== 1
     || material[0].carbon?.hasLocalConstants !== true
-    || material[0].carbon?.constantValueSize !== 640)
+    || material[0].carbon?.constantValueSize !== size)
   {
-    fail("pixel cb0 must expose the exact 640-byte heat-detail material layout");
+    fail(`pixel cb0 must expose the exact ${size}-byte skinned-heat material layout`);
   }
   const constants = material[0].carbon.constants;
-  if (!Array.isArray(constants) || constants.length !== HEAT_DETAIL_MATERIAL_CONSTANTS.length)
+  if (!Array.isArray(constants) || constants.length !== expectedConstants.length)
   {
-    fail("pixel cb0 has an unexpected heat-detail constant count");
+    fail("pixel cb0 has an unexpected skinned-heat constant count");
   }
-  for (let index = 0; index < HEAT_DETAIL_MATERIAL_CONSTANTS.length; index += 1)
+  for (let index = 0; index < expectedConstants.length; index += 1)
   {
-    const [ name, offset ] = HEAT_DETAIL_MATERIAL_CONSTANTS[index];
+    const [ name, offset ] = expectedConstants[index];
     const constant = constants[index];
     if (constant?.name !== name || constant.offset !== offset || constant.size !== 16
       || constant.dimension !== 4 || constant.type !== 0 || constant.elements !== 0)
@@ -477,7 +526,7 @@ function hasExactSamplerState(state, isDynamic)
     && state.isDynamic === isDynamic;
 }
 
-function assertAnalysisResources(record, resources, samplers, skinned, heatDetail)
+function assertAnalysisResources(record, resources, samplers, skinned, strictHeat)
 {
   const pixel = record.analysis?.stages?.filter((entry) =>
     entry?.techniqueName === "Main" && entry.passIndex === 0 && entry.stageName === "pixel");
@@ -499,7 +548,7 @@ function assertAnalysisResources(record, resources, samplers, skinned, heatDetai
   {
     fail("vertex t0 BoneTransforms reflection does not match the QuadV5 variant");
   }
-  if (heatDetail)
+  if (strictHeat)
   {
     const vertexResources = vertexBindings.filter((entry) => entry?.kind === "resource");
     const bone = boneBindings[0];
@@ -507,14 +556,14 @@ function assertAnalysisResources(record, resources, samplers, skinned, heatDetai
       || bone.carbon?.type !== 7 || bone.carbon?.arrayElements !== 1
       || bone.carbon?.isSRGB !== false || bone.carbon?.isAutoregister !== false)
     {
-      fail("vertex t0 BoneTransforms has unexpected heat-detail Carbon metadata");
+      fail("vertex t0 BoneTransforms has unexpected skinned-heat Carbon metadata");
     }
   }
   const bindings = Array.isArray(pixel[0].bindings) ? pixel[0].bindings : [];
-  if (heatDetail
+  if (strictHeat
     && bindings.filter((entry) => entry?.kind === "resource").length !== resources.length)
   {
-    fail("pixel resources must match the exact heat-detail inventory");
+    fail("pixel resources must match the exact skinned-heat inventory");
   }
   for (const expected of resources)
   {
@@ -524,7 +573,7 @@ function assertAnalysisResources(record, resources, samplers, skinned, heatDetai
     {
       fail(`${expected.identity} must reflect ${expected.name}`);
     }
-    if (heatDetail)
+    if (strictHeat)
     {
       const reflected = matches[0];
       if (reflected.registerType !== expected.registerType
@@ -533,15 +582,15 @@ function assertAnalysisResources(record, resources, samplers, skinned, heatDetai
         || reflected.carbon?.isSRGB !== expected.isSRGB
         || reflected.carbon?.isAutoregister !== expected.isAutoregister)
       {
-        fail(`${expected.identity} has unexpected heat-detail Carbon metadata`);
+        fail(`${expected.identity} has unexpected skinned-heat Carbon metadata`);
       }
     }
   }
   const reflectedSamplers = bindings.filter((entry) => entry?.kind === "sampler");
   const expectedSamplerCount = record.backend === "dx12" ? samplers.length - 1 : samplers.length;
-  if (heatDetail && reflectedSamplers.length !== expectedSamplerCount)
+  if (strictHeat && reflectedSamplers.length !== expectedSamplerCount)
   {
-    fail("pixel samplers must match the exact heat-detail inventory");
+    fail("pixel samplers must match the exact skinned-heat inventory");
   }
   for (const expected of samplers)
   {
@@ -558,7 +607,7 @@ function assertAnalysisResources(record, resources, samplers, skinned, heatDetai
     {
       fail(`${expected.identity} has unexpected sampler reflection`);
     }
-    if (expected.registerIndex === 0 || heatDetail)
+    if (expected.registerIndex === 0 || strictHeat)
     {
       const state = matches[0].carbon?.sampler;
       const isDynamic = expected.registerIndex !== 0;
@@ -602,12 +651,14 @@ function assertBindings(record)
     fail("Main.pass0 requires exactly canonical bind group 0");
   }
   const skinned = record.variant === "skinned";
+  const heat = record.variant === "skinnedHeat";
   const heatDetail = record.variant === "skinnedHeatDetail";
-  const usesSkinning = skinned || heatDetail;
-  const uniforms = requiredUniforms(usesSkinning, heatDetail);
+  const strictHeat = heat || heatDetail;
+  const usesSkinning = skinned || strictHeat;
+  const uniforms = requiredUniforms(usesSkinning, heat, heatDetail);
   const bone = usesSkinning ? expectedBoneBinding() : null;
-  const resources = expectedResourceBindings(record.backend, usesSkinning, heatDetail);
-  const samplers = expectedSamplerBindings(usesSkinning, heatDetail);
+  const resources = expectedResourceBindings(record.backend, usesSkinning, heat, heatDetail);
+  const samplers = expectedSamplerBindings(usesSkinning, heat, heatDetail);
   const expectedCount = uniforms.length + (bone ? 1 : 0) + resources.length + samplers.length;
   const bindings = pipeline.bindGroups[0].bindings;
   if (!Array.isArray(bindings) || bindings.length !== expectedCount)
@@ -646,7 +697,11 @@ function assertBindings(record)
     assertBindingSlot(binding, expected, "texture", "fragment");
     if (binding.layout.texture.sampleType !== "float"
       || binding.layout.texture.viewDimension !== expected.viewDimension
-      || binding.layout.texture.multisampled !== false)
+      || binding.layout.texture.multisampled !== false
+      || binding.layout.type !== `texture_${expected.viewDimension}<f32>`
+      || binding.textureKind !== expected.viewDimension
+      || binding.arrayElements !== 1
+      || binding.isSRGB !== expected.isSRGB)
     {
       fail(`${expected.identity} has an unexpected texture layout`);
     }
@@ -660,8 +715,8 @@ function assertBindings(record)
       fail(`${expected.identity} has an unexpected sampler layout`);
     }
   }
-  assertAnalysisResources(record, resources, samplers, usesSkinning, heatDetail);
-  if (heatDetail) assertHeatDetailMaterial(record);
+  assertAnalysisResources(record, resources, samplers, usesSkinning, strictHeat);
+  if (strictHeat) assertHeatMaterial(record, heatDetail);
 }
 
 /**
@@ -676,15 +731,20 @@ export function validateQuadV5PackageRecord(record)
   if (!record || typeof record !== "object") fail("package record is required");
   if (record.backend !== "dx11" && record.backend !== "dx12") fail("package backend must be dx11 or dx12");
   const variant = record.variant ?? "static";
-  if (variant !== "static" && variant !== "skinned" && variant !== "skinnedHeatDetail")
+  if (variant !== "static" && variant !== "skinned"
+    && variant !== "skinnedHeat" && variant !== "skinnedHeatDetail")
   {
-    fail("package variant must be static, skinned, or skinnedHeatDetail");
+    fail("package variant must be static, skinned, skinnedHeat, or skinnedHeatDetail");
   }
   const skinned = variant !== "static";
+  const heat = variant === "skinnedHeat";
   const heatDetail = variant === "skinnedHeatDetail";
-  const expectedSelection = heatDetail
-    ? QUADV5_SKINNED_HEAT_DETAIL_PPT_SELECTION
-    : (skinned ? QUADV5_SKINNED_PPT_SELECTION : QUADV5_PPT_SELECTION);
+  const strictHeat = heat || heatDetail;
+  const expectedSelection = heat
+    ? QUADV5_SKINNED_HEAT_PPT_SELECTION
+    : (heatDetail
+      ? QUADV5_SKINNED_HEAT_DETAIL_PPT_SELECTION
+      : (skinned ? QUADV5_SKINNED_PPT_SELECTION : QUADV5_PPT_SELECTION));
   const analysisSource = normalizedPath(record.analysis?.source);
   const metadataSource = normalizedPath(record.metadata?.sourcePath);
   const backendMarker = `/effect.${record.backend}/`;
@@ -694,9 +754,14 @@ export function validateQuadV5PackageRecord(record)
   }
   const expectedStem = heatDetail
     ? "unpackedskinned_quadheatdetailv5"
-    : (skinned ? "unpackedskinned_quadv5" : "unpacked_quadv5");
-  if (!analysisSource.endsWith(`/managed/space/spaceobject/v5/quad/${expectedStem}.sm_hi`)
-    && !analysisSource.endsWith(`/managed/space/spaceobject/v5/quad/${expectedStem}.sm_lo`))
+    : (heat
+      ? "unpackedskinned_quadheatv5"
+      : (skinned ? "unpackedskinned_quadv5" : "unpacked_quadv5"));
+  const highQualitySuffix = `/managed/space/spaceobject/v5/quad/${expectedStem}.sm_hi`;
+  const lowQualitySuffix = `/managed/space/spaceobject/v5/quad/${expectedStem}.sm_lo`;
+  if (strictHeat
+    ? !analysisSource.endsWith(highQualitySuffix)
+    : (!analysisSource.endsWith(highQualitySuffix) && !analysisSource.endsWith(lowQualitySuffix)))
   {
     fail(`package source must be the ${expectedStem} ship shader`);
   }
@@ -716,8 +781,8 @@ export function validateQuadV5PackageRecord(record)
     || selection.requestedStageNames[1] !== "pixel"
     || !Array.isArray(selection.selectedStageKeys)
     || selection.selectedStageKeys.length !== 2
-    || !selection.selectedStageKeys.includes("Main.pass0.vertex")
-    || !selection.selectedStageKeys.includes("Main.pass0.pixel"))
+    || selection.selectedStageKeys[0] !== "Main.pass0.vertex"
+    || selection.selectedStageKeys[1] !== "Main.pass0.pixel")
   {
     fail("package selection must be the complete Main.pass0 vertex/pixel pair");
   }
@@ -725,9 +790,9 @@ export function validateQuadV5PackageRecord(record)
   {
     fail("pipeline must be Main.pass0");
   }
-  if (heatDetail) assertHeatDetailMainInventory(record);
-  assertVertexInputs(record.analysis, skinned, heatDetail);
-  assertShaderModules(record.pipeline, skinned, heatDetail);
+  if (strictHeat) assertHeatMainInventory(record);
+  assertVertexInputs(record.analysis, skinned, strictHeat);
+  assertShaderModules(record.pipeline, skinned, strictHeat);
   assertBindings(record);
   return record;
 }
@@ -743,12 +808,14 @@ export function getQuadV5ResourcePlan(record)
 {
   validateQuadV5PackageRecord(record);
   const skinned = record.variant === "skinned";
+  const heat = record.variant === "skinnedHeat";
   const heatDetail = record.variant === "skinnedHeatDetail";
-  const usesSkinning = skinned || heatDetail;
+  const strictHeat = heat || heatDetail;
+  const usesSkinning = skinned || strictHeat;
   return Object.freeze({
     storage: usesSkinning ? Object.freeze([ expectedBoneBinding() ]) : Object.freeze([]),
-    textures: Object.freeze(expectedResourceBindings(record.backend, usesSkinning, heatDetail)),
-    samplers: Object.freeze(expectedSamplerBindings(usesSkinning, heatDetail))
+    textures: Object.freeze(expectedResourceBindings(record.backend, usesSkinning, heat, heatDetail)),
+    samplers: Object.freeze(expectedSamplerBindings(usesSkinning, heat, heatDetail))
   });
 }
 
@@ -977,7 +1044,7 @@ export function createQuadV5MainBindingValues(width, height)
   return Object.freeze({ material, perFrameVS, perFramePS, perObjectVS, perObjectPS });
 }
 
-function createHeatDetailMaterial(detailSelector)
+function createHeatMaterial()
 {
   return Object.freeze({
     GeneralData: [ 1, 0, 0, 0 ],
@@ -1003,7 +1070,14 @@ function createHeatDetailMaterial(detailSelector)
     Mtl2HeatGlowData: [ 1, 0.005, 8, 0.0005 ],
     Mtl3HeatGlowData: [ 1, 0.025, 4, 0.002 ],
     Mtl4HeatGlowData: [ 1, 0.025, 4, 0.002 ],
-    GeneralHeatGlowColor: [ 0.85, 0, 0, 1 ],
+    GeneralHeatGlowColor: [ 0.85, 0, 0, 1 ]
+  });
+}
+
+function createHeatDetailMaterial(detailSelector)
+{
+  return Object.freeze({
+    ...createHeatMaterial(),
     Detail1Data: [ 1, 1, 0.5, 0.2 ],
     Detail2Data: [ 1, 1, 0.5, 0.2 ],
     SecondaryDetail2Data: [ 1, 1, 0.5, 0.2 ],
@@ -1011,6 +1085,17 @@ function createHeatDetailMaterial(detailSelector)
     DetailAlbedoColor: [ 0.32, 0.18, 0.08, 1 ],
     DetailFresnelColor: [ 0.24, 0.2, 0.16, 1 ],
     DetailSelector: detailSelector
+  });
+}
+
+function createHeatBindingCase(base, heat)
+{
+  const shipData = Object.freeze([ heat, 1, 0, 0 ]);
+  return Object.freeze({
+    ...base,
+    material: createHeatMaterial(),
+    perObjectVS: Object.freeze({ ...base.perObjectVS, shipData }),
+    perObjectPS: Object.freeze({ ...base.perObjectPS, shipData })
   });
 }
 
@@ -1023,6 +1108,26 @@ function createHeatDetailBindingCase(base, heat, detailSelector)
     perObjectVS: Object.freeze({ ...base.perObjectVS, shipData }),
     perObjectPS: Object.freeze({ ...base.perObjectPS, shipData })
   });
+}
+
+/**
+ * Create the ordered cold/hot cases used to isolate authored heat behavior in
+ * the common PPT-on skinned QuadHeatV5 shader.
+ *
+ * @param {number} width Render-target width.
+ * @param {number} height Render-target height.
+ * @returns {{caseNames: readonly string[], bindingValuesByCase: Readonly<Record<string, object>>}}
+ * Frozen case names and exact reflected binding values keyed by case name.
+ */
+export function createQuadV5HeatBindingCases(width, height)
+{
+  const base = createQuadV5MainBindingValues(width, height);
+  const caseNames = Object.freeze([ "cold", "hot" ]);
+  const bindingValuesByCase = Object.freeze({
+    cold: createHeatBindingCase(base, 0),
+    hot: createHeatBindingCase(base, 1)
+  });
+  return Object.freeze({ caseNames, bindingValuesByCase });
 }
 
 /**
@@ -1062,8 +1167,11 @@ function rgbaTexture(name, format, pixel)
   return Object.freeze({ name, dimension: "2d", width, height, format, bytesPerRow, data });
 }
 
-function fixtureTextures(heatDetail)
+function fixtureTextures(variant)
 {
+  const heat = variant === "skinnedHeat";
+  const heatDetail = variant === "skinnedHeatDetail";
+  const strictHeat = heat || heatDetail;
   return Object.freeze([
     Object.freeze({
       name: "EveSpaceSceneEnvMap",
@@ -1123,13 +1231,15 @@ function fixtureTextures(heatDetail)
       const value = y % 2 === 0 ? 0 : 255;
       return [ value, value, value, 255 ];
     }),
-    ...(heatDetail ? [
+    ...(strictHeat ? [
       rgbaTexture("HeatGlowNoiseMap", "rgba8unorm", (x, y) => [
         24 + ((x * 37 + y * 19) % 208),
         24 + ((x * 11 + y * 43) % 208),
         0,
         255
-      ]),
+      ])
+    ] : []),
+    ...(heatDetail ? [
       rgbaTexture("Detail1Map", "rgba8unorm", (x, y) => [
         36 + x * 25,
         224 - y * 21,
@@ -1154,7 +1264,7 @@ function fixtureTextures(heatDetail)
  *
  * @param {number} width Render-target width.
  * @param {number} height Render-target height.
- * @param {"static"|"skinned"|"skinnedHeatDetail"} [variant="static"] Fixture variant.
+ * @param {"static"|"skinned"|"skinnedHeat"|"skinnedHeatDetail"} [variant="static"] Fixture variant.
  * @returns {object} Typed-array fixture values.
  */
 export function createQuadV5FixtureValues(width, height, variant = "static")
@@ -1163,10 +1273,13 @@ export function createQuadV5FixtureValues(width, height, variant = "static")
   {
     throw new TypeError("QuadV5 fixture dimensions must be positive integers");
   }
+  const heat = variant === "skinnedHeat";
   const heatDetail = variant === "skinnedHeatDetail";
-  if (variant !== "static" && variant !== "skinned" && !heatDetail)
+  if (variant !== "static" && variant !== "skinned" && !heat && !heatDetail)
   {
-    throw new TypeError("QuadV5 fixture variant must be static, skinned, or skinnedHeatDetail");
+    throw new TypeError(
+      "QuadV5 fixture variant must be static, skinned, skinnedHeat, or skinnedHeatDetail"
+    );
   }
   const points = [
     [ 0, 0, 0.12 ],
@@ -1211,7 +1324,7 @@ export function createQuadV5FixtureValues(width, height, variant = "static")
     vertices,
     boneIndices,
     indices,
-    textures: fixtureTextures(heatDetail),
+    textures: fixtureTextures(variant),
     samplerNames: SAMPLER_NAMES
   });
 }

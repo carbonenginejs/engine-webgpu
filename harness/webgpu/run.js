@@ -62,6 +62,7 @@ import {
     QUADV5_SKINNED_VERTEX_BUFFER_LAYOUT,
     QUADV5_VERTEX_BUFFER_LAYOUT,
     createQuadV5FixtureValues,
+    createQuadV5HeatBindingCases,
     createQuadV5HeatDetailBindingCases,
     createQuadV5MainBindingValues,
     getQuadV5ResourcePlan,
@@ -658,7 +659,9 @@ async function CreateQuadV5GpuResources(webgpu, records)
 {
     const variant = records[0]?.variant ?? "static";
     const values = createQuadV5FixtureValues(WIDTH, HEIGHT, variant);
-    const skinned = variant === "skinned" || variant === "skinnedHeatDetail";
+    const skinned = variant === "skinned"
+        || variant === "skinnedHeat"
+        || variant === "skinnedHeatDetail";
     const geometrySource = Object.freeze({
         kind: "synthetic-quadv5",
         variant: skinned ? "skinned" : "static"
@@ -686,7 +689,7 @@ async function CreateQuadV5GpuResources(webgpu, records)
             addressModeU: "repeat",
             addressModeV: "repeat",
             addressModeW: "clamp-to-edge",
-            maxAnisotropy: name === "Sampler0" ? 16 : 1
+            maxAnisotropy: 16
         }
     ]));
     const device = webgpu.GetDevice();
@@ -795,11 +798,13 @@ async function CreateQuadV5GpuResources(webgpu, records)
             }
             resourcesByBackend.set(record.backend, resources);
         }
-        const heatDetailCases = variant === "skinnedHeatDetail"
-            ? createQuadV5HeatDetailBindingCases(WIDTH, HEIGHT)
-            : null;
-        const caseNames = heatDetailCases?.caseNames ?? Object.freeze([ "base" ]);
-        const bindingValuesByCase = heatDetailCases?.bindingValuesByCase
+        const heatCases = variant === "skinnedHeat"
+            ? createQuadV5HeatBindingCases(WIDTH, HEIGHT)
+            : (variant === "skinnedHeatDetail"
+                ? createQuadV5HeatDetailBindingCases(WIDTH, HEIGHT)
+                : null);
+        const caseNames = heatCases?.caseNames ?? Object.freeze([ "base" ]);
+        const bindingValuesByCase = heatCases?.bindingValuesByCase
             ?? Object.freeze({
                 base: createQuadV5MainBindingValues(WIDTH, HEIGHT)
             });
@@ -1838,7 +1843,9 @@ function PixelNeighborhoodHasDraw(bytes, x, y, clear, radius)
 
 function AssertQuadV5Silhouette(bytes, targetIndex, label, variant)
 {
-    const skinned = variant === "skinned" || variant === "skinnedHeatDetail";
+    const skinned = variant === "skinned"
+        || variant === "skinnedHeat"
+        || variant === "skinnedHeatDetail";
     const clear = QUADV5_CLEAR_TARGETS[targetIndex];
     for (const [ x, y ] of [ [ 0, 0 ], [ WIDTH - 1, 0 ], [ 0, HEIGHT - 1 ], [ WIDTH - 1, HEIGHT - 1 ] ])
     {
@@ -2051,7 +2058,7 @@ function MeasureQuadV5HeatControl(cold, hot, motion, label)
     };
 }
 
-function AssertQuadV5HeatDetailControls(instances)
+function AssertQuadV5HeatControls(instances, coldCase, hotCase, shaderName)
 {
     const byKey = new Map(instances.map((instance) => [
         `${instance.record.backend}:${instance.renderCase}`,
@@ -2060,19 +2067,41 @@ function AssertQuadV5HeatDetailControls(instances)
     let dx11Oracle = null;
     for (const backend of [ "dx11", "dx12" ])
     {
+        const cold = byKey.get(`${backend}:${coldCase}`);
+        const hot = byKey.get(`${backend}:${hotCase}`);
+        Assert(cold && hot, `${shaderName} ${backend} heat cases are incomplete`);
+        AssertExactTargetMatch(
+            cold.snapshots[1],
+            hot.snapshots[1],
+            `${backend} ${shaderName} heat-invariant MRT1`
+        );
+        const heatOracle = MeasureQuadV5HeatControl(
+            cold.snapshots[0],
+            hot.snapshots[0],
+            cold.snapshots[1],
+            `${shaderName} ${backend} heat control`
+        );
+        if (backend === "dx11") dx11Oracle = heatOracle;
+    }
+    return dx11Oracle;
+}
+
+function AssertQuadV5HeatDetailControls(instances)
+{
+    const byKey = new Map(instances.map((instance) => [
+        `${instance.record.backend}:${instance.renderCase}`,
+        instance
+    ]));
+    let dx11DetailOracle = null;
+    for (const backend of [ "dx11", "dx12" ])
+    {
         const surface = byKey.get(`${backend}:surface`);
         const detail = byKey.get(`${backend}:detail`);
-        const hotDetail = byKey.get(`${backend}:hotDetail`);
-        Assert(surface && detail && hotDetail, `QuadHeatDetailV5 ${backend} cases are incomplete`);
+        Assert(surface && detail, `QuadHeatDetailV5 ${backend} detail cases are incomplete`);
         AssertExactTargetMatch(
             surface.snapshots[1],
             detail.snapshots[1],
             `${backend} QuadHeatDetailV5 detail-invariant MRT1`
-        );
-        AssertExactTargetMatch(
-            detail.snapshots[1],
-            hotDetail.snapshots[1],
-            `${backend} QuadHeatDetailV5 heat-invariant MRT1`
         );
         const detailOracle = MeasureQuadV5ColorControl(
             surface.snapshots[0],
@@ -2080,18 +2109,17 @@ function AssertQuadV5HeatDetailControls(instances)
             surface.snapshots[1],
             `QuadHeatDetailV5 ${backend} detail control`
         );
-        const heatOracle = MeasureQuadV5HeatControl(
-            detail.snapshots[0],
-            hotDetail.snapshots[0],
-            detail.snapshots[1],
-            `QuadHeatDetailV5 ${backend} heat control`
-        );
-        if (backend === "dx11")
-        {
-            dx11Oracle = { detail: detailOracle, heat: heatOracle };
-        }
+        if (backend === "dx11") dx11DetailOracle = detailOracle;
     }
-    return dx11Oracle;
+    return {
+        detail: dx11DetailOracle,
+        heat: AssertQuadV5HeatControls(
+            instances,
+            "detail",
+            "hotDetail",
+            "QuadHeatDetailV5"
+        )
+    };
 }
 
 function QuadGlassV5PixelIsActive(bytes, x, y)
@@ -3202,10 +3230,15 @@ async function RunQuadV5Comparison(webgpu)
             }
         }
         const variant = records[0].variant ?? "static";
+        const heatOracle = variant === "skinnedHeat"
+            ? AssertQuadV5HeatControls(instances, "cold", "hot", "QuadHeatV5")
+            : null;
         const heatDetailOracle = variant === "skinnedHeatDetail"
             ? AssertQuadV5HeatDetailControls(instances)
             : null;
-        const baselineCase = variant === "skinnedHeatDetail" ? "hotDetail" : "base";
+        const baselineCase = variant === "skinnedHeatDetail"
+            ? "hotDetail"
+            : (variant === "skinnedHeat" ? "hot" : "base");
         const baseline = instances.find((instance) =>
             instance.record.backend === "dx11"
                 && instance.renderCase === baselineCase);
@@ -3219,6 +3252,7 @@ async function RunQuadV5Comparison(webgpu)
             targetCount: QUADV5_CLEAR_TARGETS.length,
             renderCaseCount: fixture.caseNames.length,
             drawKind: records[0].variant === "skinned"
+                || records[0].variant === "skinnedHeat"
                 || records[0].variant === "skinnedHeatDetail"
                 ? "indexed skinned synthetic silhouette"
                 : "indexed synthetic silhouette",
@@ -3228,6 +3262,7 @@ async function RunQuadV5Comparison(webgpu)
             topLeftClearPixels: baseline.snapshots
                 .map((bytes) => Array.from(bytes.slice(0, 4))),
             statistics: baseline.statistics,
+            heatOracle,
             heatDetailOracle,
             targetWidth: WIDTH,
             targetHeight: HEIGHT,
