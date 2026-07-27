@@ -100,6 +100,17 @@ import {
     validateQuadHeatV5PackagePair
 } from "/quadHeatV5Fixture.js";
 import {
+    QUAD_OIL_V5_CLEAR_TARGETS,
+    QUAD_OIL_V5_RESOURCE_VARIANTS,
+    QUAD_OIL_V5_SKINNED_VERTEX_BUFFER_LAYOUT,
+    QUAD_OIL_V5_TARGET_HEIGHT,
+    QUAD_OIL_V5_TARGET_WIDTH,
+    QUAD_OIL_V5_VERTEX_BUFFER_LAYOUT,
+    createQuadOilV5FixtureValues,
+    getQuadOilV5ResourcePlan,
+    validateQuadOilV5PackagePair
+} from "/quadOilV5Fixture.js";
+import {
     QUAD_SAILS_V5_CASES,
     QUAD_SAILS_V5_CLEAR_TARGETS,
     QUAD_SAILS_V5_TARGET_HEIGHT,
@@ -1046,6 +1057,212 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
             destroy()
             {
                 boneBuffer?.destroy();
+                cubeTexture.destroy();
+                bundle.Destroy();
+            }
+        };
+    }
+    catch (error)
+    {
+        boneBuffer?.destroy();
+        cubeTexture?.destroy();
+        bundle.Destroy();
+        throw error;
+    }
+}
+
+async function CreateQuadOilV5GpuResources(webgpu, records)
+{
+    Assert(
+        QUAD_OIL_V5_TARGET_WIDTH === WIDTH
+            && QUAD_OIL_V5_TARGET_HEIGHT === HEIGHT,
+        "QuadOilV5 and harness target dimensions must match"
+    );
+    const values = createQuadOilV5FixtureValues(WIDTH, HEIGHT);
+    const resourceVariantNames = Object.freeze(
+        Object.keys(values.textureResourceVariants)
+    );
+    Assert(
+        JSON.stringify(resourceVariantNames)
+            === JSON.stringify(QUAD_OIL_V5_RESOURCE_VARIANTS),
+        "QuadOilV5 resource variants must be oilOff then oilChromatic"
+    );
+    Assert(
+        values.textures.length === 11 && values.samplers.length === 2,
+        "QuadOilV5 fixture requires nine shared textures, two lookup controls, " +
+            "and two samplers"
+    );
+    const geometrySource = Object.freeze({
+        kind: "synthetic-quadoilv5",
+        variant: "skinned"
+    });
+    const texturePayloads = Object.fromEntries(values.textures
+        .filter((entry) => entry.dimension === "2d")
+        .map((entry) => [
+            entry.name,
+            {
+                label: `QuadOilV5 ${entry.name}`,
+                width: entry.width,
+                height: entry.height,
+                format: entry.format,
+                bytesPerRow: entry.bytesPerRow,
+                data: entry.data
+            }
+        ]));
+    const samplerPayloads = Object.fromEntries(values.samplers.map(({ name, ...descriptor }) => [
+        name,
+        {
+            label: `QuadOilV5 ${name}`,
+            ...descriptor
+        }
+    ]));
+    const bundle = await PublishPreparedResourceBundle(webgpu, {
+        label: "QuadOilV5 resources",
+        geometries: {
+            main: {
+                label: "QuadOilV5 skinned silhouette geometry",
+                vertexBuffers: [
+                    {
+                        slot: 0,
+                        data: values.vertices,
+                        layout: QUAD_OIL_V5_VERTEX_BUFFER_LAYOUT
+                    },
+                    {
+                        slot: 1,
+                        data: values.boneIndices,
+                        layout: QUAD_OIL_V5_SKINNED_VERTEX_BUFFER_LAYOUT
+                    }
+                ],
+                indexBuffer: {
+                    data: values.indices,
+                    format: "uint16"
+                }
+            }
+        },
+        textures: texturePayloads,
+        samplers: samplerPayloads
+    }, "quadoilv5-resources");
+    const device = webgpu.GetDevice();
+    const cubeDefinition = values.textures.find((entry) => entry.dimension === "cube");
+    let cubeTexture = null;
+    let boneBuffer = null;
+    try
+    {
+        Assert(cubeDefinition, "QuadOilV5 fixture requires an environment cube");
+        cubeTexture = device.createTexture({
+            label: "QuadOilV5 EveSpaceSceneEnvMap",
+            size: {
+                width: cubeDefinition.width,
+                height: cubeDefinition.height,
+                depthOrArrayLayers: cubeDefinition.depthOrArrayLayers
+            },
+            mipLevelCount: 1,
+            sampleCount: 1,
+            dimension: "2d",
+            format: cubeDefinition.format,
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+        });
+        const cubeLayerSize =
+            cubeDefinition.width * cubeDefinition.height * BYTES_PER_PIXEL;
+        for (let layer = 0; layer < cubeDefinition.depthOrArrayLayers; layer += 1)
+        {
+            device.queue.writeTexture(
+                { texture: cubeTexture, origin: { x: 0, y: 0, z: layer } },
+                cubeDefinition.data.slice(
+                    layer * cubeLayerSize,
+                    (layer + 1) * cubeLayerSize
+                ),
+                {
+                    offset: 0,
+                    bytesPerRow: cubeDefinition.width * BYTES_PER_PIXEL,
+                    rowsPerImage: cubeDefinition.height
+                },
+                {
+                    width: cubeDefinition.width,
+                    height: cubeDefinition.height,
+                    depthOrArrayLayers: 1
+                }
+            );
+        }
+        const cubeView = cubeTexture.createView({
+            label: "QuadOilV5 EveSpaceSceneEnvMap cube view",
+            dimension: "cube"
+        });
+        const boneTransform = new Float32Array([
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0.8660253882408142, 0, -0.5, 0.125,
+            0, 1, 0, 0,
+            0.5, 0, 0.8660253882408142, 0
+        ]);
+        boneBuffer = device.createBuffer({
+            label: "QuadOilV5 indexed non-identity BoneTransforms",
+            size: boneTransform.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+        });
+        device.queue.writeBuffer(boneBuffer, 0, boneTransform);
+
+        const resourcesByBackend = new Map();
+        for (const record of records)
+        {
+            const plan = getQuadOilV5ResourcePlan(record);
+            Assert(
+                plan.textures.length === 10 && plan.samplers.length === 2,
+                `QuadOilV5 ${record.backend} resource plan must contain ` +
+                    "ten textures and two samplers"
+            );
+            const variants = new Map();
+            for (const resourceVariant of resourceVariantNames)
+            {
+                const overrides = values.textureResourceVariants[resourceVariant];
+                Assert(
+                    Object.keys(overrides).length === 1
+                        && typeof overrides.OilFilmLookupMap === "string",
+                    `QuadOilV5 ${resourceVariant} must override only OilFilmLookupMap`
+                );
+                const resources = new Map();
+                resources.set(plan.bone.scopeIdentity, {
+                    buffer: boneBuffer,
+                    offset: 0,
+                    size: boneBuffer.size
+                });
+                for (const texture of plan.textures)
+                {
+                    const resourceName = overrides[texture.name] ?? texture.name;
+                    const resource = texture.viewDimension === "cube"
+                        ? (resourceName === cubeDefinition.name ? cubeView : null)
+                        : bundle.textures[resourceName];
+                    Assert(
+                        resource,
+                        `QuadOilV5 ${resourceVariant} fixture is missing ` +
+                            `texture ${resourceName}`
+                    );
+                    resources.set(texture.scopeIdentity, resource);
+                }
+                for (const sampler of plan.samplers)
+                {
+                    const resource = bundle.samplers[sampler.name];
+                    Assert(
+                        resource,
+                        `QuadOilV5 fixture is missing sampler ${sampler.name}`
+                    );
+                    resources.set(sampler.scopeIdentity, resource);
+                }
+                variants.set(resourceVariant, resources);
+            }
+            resourcesByBackend.set(record.backend, variants);
+        }
+        return {
+            bindingValues: values.bindingValues,
+            resourcesByBackend,
+            resourceVariantNames,
+            geometry: bundle.geometries.main,
+            geometrySource,
+            bundle,
+            destroy()
+            {
+                boneBuffer.destroy();
                 cubeTexture.destroy();
                 bundle.Destroy();
             }
@@ -2022,6 +2239,122 @@ function CreateQuadDetailV5TrinityDispatcher(webgpu, fixture)
     });
 }
 
+function CreateQuadOilV5TrinityBatchMap(record, fixture, resourceVariant)
+{
+    const batch = Object.freeze({
+        material: record,
+        shader: record.pipeline,
+        resourceVariant,
+        geometrySource: Object.freeze({
+            geometry: fixture.geometrySource,
+            meshIndex: 0,
+            areaIndex: 0,
+            count: 1,
+            reversed: false
+        }),
+        objectData: fixture.bindingValues,
+        topology: 4,
+        indexCountPerInstance: 0,
+        instanceCount: 0,
+        startIndexLocation: 0,
+        baseVertexLocation: 0,
+        startInstanceLocation: 0,
+        renderingMode: 0,
+        pickingData: 0,
+        groupCount: 1
+    });
+    const batches = Object.freeze([ batch ]);
+    const gdprBatches = Object.freeze([]);
+    const accumulator = Object.freeze({
+        GetGdprBatches: () => gdprBatches,
+        GetBatches: () => batches,
+        GetBatchCount: () => batches.length,
+        IsChainedByEffect: () => true
+    });
+    const batchTypes = Object.freeze([ TRINITY_BATCH_TYPE_OPAQUE ]);
+    return Object.freeze({
+        GetBatchTypes: () => batchTypes,
+        GetAccumulator: (value) =>
+            value === TRINITY_BATCH_TYPE_OPAQUE ? accumulator : null,
+        GetBatchCount: () => accumulator.GetBatchCount()
+    });
+}
+
+function CreateQuadOilV5TrinityDispatcher(webgpu, fixture)
+{
+    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+        ResolveMaterial(record, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE,
+                "QuadOilV5 material resolved outside the opaque batch type"
+            );
+            return {
+                pipeline: record.pipeline,
+                prepareOptions: { warningsAsErrors: true },
+                recipe: {
+                    label: `QuadOilV5 ${record.label} Main.pass0`,
+                    vertex: { buffers: fixture.geometry.vertexBufferLayouts },
+                    fragment: {
+                        targets: [ { format: "rgba8unorm" }, { format: "rgba8unorm" } ]
+                    },
+                    primitive: { cullMode: "none" }
+                }
+            };
+        },
+        ResolveGeometry(source, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && source?.geometry === fixture.geometrySource
+                    && source.meshIndex === 0
+                    && source.areaIndex === 0
+                    && source.count === 1
+                    && source.reversed === false,
+                "QuadOilV5 batch references an unknown geometry source"
+            );
+            return {
+                geometry: fixture.geometry,
+                indexed: true,
+                draw: {
+                    indexCount: fixture.geometry.indexCount,
+                    instanceCount: 1,
+                    firstIndex: 0,
+                    baseVertex: 0,
+                    firstInstance: 0
+                }
+            };
+        },
+        ResolveBindings(batch, _livePipeline, context)
+        {
+            const record = batch.material;
+            const variants = fixture.resourcesByBackend.get(record.backend);
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && fixture.resourceVariantNames.includes(batch.resourceVariant)
+                    && batch.objectData === fixture.bindingValues
+                    && variants?.has(batch.resourceVariant),
+                `QuadOilV5 ${record.label} batch references unknown fixture data`
+            );
+            return {
+                uniformData: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    new Map(Object.entries(buildEveSpaceObjectMainUniformData(
+                        record,
+                        batch.objectData
+                    ))),
+                    `QuadOilV5 ${record.label} ${batch.resourceVariant} uniform data`
+                ),
+                resources: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    variants.get(batch.resourceVariant),
+                    `QuadOilV5 ${record.label} ${batch.resourceVariant} resources`
+                )
+            };
+        }
+    });
+}
+
 function CreateQuadSailsV5TrinityBatchMap(record, fixture, renderCase)
 {
     const objectData = fixture.bindingValuesByCase[renderCase];
@@ -2906,6 +3239,123 @@ function AssertQuadDetailV5Controls(instances)
                 detail2: detail2Oracle,
                 detailDeltaMapsDistinct: true
             };
+        }
+    }
+    return dx11Oracle;
+}
+
+function AssertQuadOilV5Pass(instance)
+{
+    const statistics = instance.snapshots.map((bytes, targetIndex) =>
+        AssertQuadV5Silhouette(
+            bytes,
+            targetIndex,
+            `${instance.record.label} ${instance.resourceVariant} MRT${targetIndex}`,
+            "skinned"
+        ));
+    Assert(
+        statistics[0].coverage === statistics[1].coverage,
+        `${instance.record.label} ${instance.resourceVariant} MRT coverage does not match`
+    );
+    AssertQuadV5MrtCoverage(
+        instance.snapshots[0],
+        instance.snapshots[1],
+        `${instance.record.label} ${instance.resourceVariant}`
+    );
+    const [ color, motion ] = instance.snapshots;
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            if (!QuadV5PixelIsActive(motion, x, y)) continue;
+            const offset = PixelOffset(x, y);
+            Assert(
+                color[offset + 3] === 255,
+                `QuadOilV5 ${instance.record.label} ${instance.resourceVariant} ` +
+                    `MRT0 alpha drifted at (${x}, ${y})`
+            );
+            Assert(
+                motion[offset] === 0
+                    && motion[offset + 1] === 0
+                    && motion[offset + 2] === 0
+                    && motion[offset + 3] === 255,
+                `QuadOilV5 ${instance.record.label} ${instance.resourceVariant} ` +
+                    `MRT1 drifted at (${x}, ${y})`
+            );
+        }
+    }
+    return statistics;
+}
+
+function AssertQuadOilV5Controls(instances)
+{
+    const byKey = new Map(instances.map((instance) => [
+        `${instance.record.backend}:${instance.resourceVariant}`,
+        instance
+    ]));
+    let dx11Oracle = null;
+    let dx11Signature = null;
+    for (const backend of [ "dx11", "dx12" ])
+    {
+        const oilOff = byKey.get(`${backend}:oilOff`);
+        const oilChromatic = byKey.get(`${backend}:oilChromatic`);
+        Assert(
+            oilOff && oilChromatic,
+            `QuadOilV5 ${backend} OilFilm cases are incomplete`
+        );
+        AssertExactTargetMatch(
+            oilOff.snapshots[1],
+            oilChromatic.snapshots[1],
+            `${backend} QuadOilV5 OilFilm-invariant MRT1`
+        );
+        const measured = MeasureQuadV5ColorControl(
+            oilOff.snapshots[0],
+            oilChromatic.snapshots[0],
+            oilOff.snapshots[1],
+            `QuadOilV5 ${backend} OilFilm control`
+        );
+        const changedChannels = new Set();
+        for (let y = 0; y < HEIGHT; y += 1)
+        {
+            for (let x = 0; x < WIDTH; x += 1)
+            {
+                if (!QuadV5PixelIsActive(oilOff.snapshots[1], x, y)) continue;
+                const offset = PixelOffset(x, y);
+                for (let channel = 0; channel < 3; channel += 1)
+                {
+                    if (oilOff.snapshots[0][offset + channel]
+                        !== oilChromatic.snapshots[0][offset + channel])
+                    {
+                        changedChannels.add(channel);
+                    }
+                }
+            }
+        }
+        Assert(
+            changedChannels.size >= 2,
+            `QuadOilV5 ${backend} OilFilm control changed only ` +
+                `${changedChannels.size} RGB channels`
+        );
+        const signature = QuadDetailV5DeltaSignature(
+            oilOff.snapshots[0],
+            oilChromatic.snapshots[0],
+            oilOff.snapshots[1]
+        );
+        Assert(signature, `QuadOilV5 ${backend} OilFilm delta signature is empty`);
+        if (backend === "dx11")
+        {
+            dx11Signature = signature;
+            dx11Oracle = {
+                ...measured,
+                changedChannels: changedChannels.size
+            };
+        }
+        else
+        {
+            Assert(
+                signature === dx11Signature,
+                "QuadOilV5 DX11/DX12 OilFilm delta signatures differ"
+            );
         }
     }
     return dx11Oracle;
@@ -4335,6 +4785,228 @@ async function RunQuadDetailV5Comparison(webgpu)
     }
 }
 
+async function RunQuadOilV5Comparison(webgpu)
+{
+    if (!CONFIG.drawQuadOilV5) return null;
+    const response = await fetch("/draw-quadoilv5.json");
+    Assert(
+        response.ok,
+        `Failed to load QuadOilV5 package records: HTTP ${response.status}`
+    );
+    const records = await response.json();
+    Assert(
+        Array.isArray(records) && records.length === 2,
+        "QuadOilV5 comparison requires two package records"
+    );
+    validateQuadOilV5PackagePair(records);
+    Assert(
+        QUAD_OIL_V5_TARGET_WIDTH === WIDTH
+            && QUAD_OIL_V5_TARGET_HEIGHT === HEIGHT,
+        "QuadOilV5 and harness target dimensions must match"
+    );
+    Assert(
+        JSON.stringify(QUAD_OIL_V5_CLEAR_TARGETS)
+            === JSON.stringify(QUADV5_CLEAR_TARGETS),
+        "QuadOilV5 must retain the shared QuadV5 clear targets"
+    );
+    Assert(
+        JSON.stringify(QUAD_OIL_V5_RESOURCE_VARIANTS)
+            === JSON.stringify([ "oilOff", "oilChromatic" ]),
+        "QuadOilV5 resource variants must be oilOff then oilChromatic"
+    );
+
+    const device = webgpu.GetDevice();
+    const fixture = await CreateQuadOilV5GpuResources(webgpu, records);
+    let dispatcher = null;
+    let passEncoder = null;
+    const instances = [];
+    let warningCount = 0;
+    try
+    {
+        dispatcher = CreateQuadOilV5TrinityDispatcher(webgpu, fixture);
+        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+        for (const record of records)
+        {
+            for (const resourceVariant of fixture.resourceVariantNames)
+            {
+                let preparedBatchMap = null;
+                const targets = [];
+                const readbacks = [];
+                try
+                {
+                    preparedBatchMap = await dispatcher.PrepareBatchMap(
+                        CreateQuadOilV5TrinityBatchMap(
+                            record,
+                            fixture,
+                            resourceVariant
+                        )
+                    );
+                    warningCount += preparedBatchMap.entries.reduce(
+                        (mapTotal, entry) => mapTotal + entry.accumulator.batches.reduce(
+                            (batchTotal, batch) => batchTotal
+                                + batch.prepared.diagnostics
+                                    .filter((item) => item.type === "warning").length,
+                            0
+                        ),
+                        0
+                    );
+                    for (let targetIndex = 0;
+                        targetIndex < QUAD_OIL_V5_CLEAR_TARGETS.length;
+                        targetIndex += 1)
+                    {
+                        targets.push(device.createTexture({
+                            label:
+                                `QuadOilV5 ${record.label} ${resourceVariant} ` +
+                                `MRT${targetIndex}`,
+                            size: {
+                                width: WIDTH,
+                                height: HEIGHT,
+                                depthOrArrayLayers: 1
+                            },
+                            format: "rgba8unorm",
+                            usage:
+                                GPUTextureUsage.RENDER_ATTACHMENT
+                                | GPUTextureUsage.COPY_SRC
+                        }));
+                        readbacks.push(device.createBuffer({
+                            label:
+                                `QuadOilV5 ${record.label} ${resourceVariant} ` +
+                                `MRT${targetIndex} readback`,
+                            size: BYTES_PER_ROW * HEIGHT,
+                            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+                        }));
+                    }
+                    instances.push({
+                        record,
+                        resourceVariant,
+                        preparedBatchMap,
+                        targets,
+                        readbacks,
+                        snapshots: []
+                    });
+                }
+                catch (error)
+                {
+                    if (preparedBatchMap)
+                    {
+                        dispatcher.DestroyBatchMap(preparedBatchMap);
+                    }
+                    readbacks.forEach((buffer) => buffer.destroy());
+                    targets.forEach((texture) => texture.destroy());
+                    throw error;
+                }
+            }
+        }
+
+        const encoder = device.createCommandEncoder({
+            label: "QuadOilV5 DX11/DX12 comparison encoder"
+        });
+        for (const instance of instances)
+        {
+            passEncoder.Encode(encoder, [ {
+                descriptor: {
+                    label:
+                        `QuadOilV5 ${instance.record.label} Main.pass0 ` +
+                        `${instance.resourceVariant}`,
+                    colorAttachments: instance.targets.map((texture, targetIndex) => ({
+                        view: texture.createView(),
+                        clearValue: {
+                            r: QUAD_OIL_V5_CLEAR_TARGETS[targetIndex][0] / 255,
+                            g: QUAD_OIL_V5_CLEAR_TARGETS[targetIndex][1] / 255,
+                            b: QUAD_OIL_V5_CLEAR_TARGETS[targetIndex][2] / 255,
+                            a: QUAD_OIL_V5_CLEAR_TARGETS[targetIndex][3] / 255
+                        },
+                        loadOp: "clear",
+                        storeOp: "store"
+                    }))
+                },
+                selections: [ {
+                    preparedBatchMap: instance.preparedBatchMap,
+                    batchType: TRINITY_BATCH_TYPE_OPAQUE
+                } ]
+            } ]);
+            instance.targets.forEach((texture, targetIndex) =>
+            {
+                encoder.copyTextureToBuffer(
+                    { texture },
+                    {
+                        buffer: instance.readbacks[targetIndex],
+                        bytesPerRow: BYTES_PER_ROW,
+                        rowsPerImage: HEIGHT
+                    },
+                    { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 }
+                );
+            });
+        }
+        webgpu.Submit([ encoder.finish() ]);
+        await device.queue.onSubmittedWorkDone();
+        await Promise.all(instances.flatMap((instance) => instance.readbacks.map(
+            (buffer) => buffer.mapAsync(GPUMapMode.READ)
+        )));
+
+        for (const instance of instances)
+        {
+            instance.snapshots = instance.readbacks.map((buffer) =>
+                new Uint8Array(buffer.getMappedRange()).slice());
+            instance.statistics = AssertQuadOilV5Pass(instance);
+        }
+        for (const resourceVariant of fixture.resourceVariantNames)
+        {
+            const paired = records.map((record) => instances.find((instance) =>
+                instance.record.backend === record.backend
+                    && instance.resourceVariant === resourceVariant));
+            Assert(
+                paired.every(Boolean),
+                `QuadOilV5 ${resourceVariant} DX11/DX12 pair is incomplete`
+            );
+            for (let targetIndex = 0;
+                targetIndex < QUAD_OIL_V5_CLEAR_TARGETS.length;
+                targetIndex += 1)
+            {
+                AssertExactTargetMatch(
+                    paired[0].snapshots[targetIndex],
+                    paired[1].snapshots[targetIndex],
+                    `DX11/DX12 QuadOilV5 ${resourceVariant} MRT${targetIndex}`
+                );
+            }
+        }
+        const oilFilmOracle = AssertQuadOilV5Controls(instances);
+        const baseline = instances.find((instance) =>
+            instance.record.backend === "dx11"
+                && instance.resourceVariant === "oilChromatic");
+        Assert(baseline, "QuadOilV5 chromatic DX11 baseline is missing");
+        return {
+            bodyIndex: 0,
+            variant: "skinned",
+            labels: records.map((record) => `${record.backend}:${record.label}`),
+            loadPath: records[0].loadPath,
+            pixelCount: WIDTH * HEIGHT,
+            targetCount: QUAD_OIL_V5_CLEAR_TARGETS.length,
+            renderCaseCount: fixture.resourceVariantNames.length,
+            drawKind: "indexed skinned synthetic silhouette",
+            indexCount: fixture.geometry.indexCount,
+            warningCount,
+            clearTargets: QUAD_OIL_V5_CLEAR_TARGETS,
+            statistics: baseline.statistics,
+            oilFilmOracle
+        };
+    }
+    finally
+    {
+        for (const instance of instances)
+        {
+            dispatcher?.DestroyBatchMap(instance.preparedBatchMap);
+            for (const buffer of instance.readbacks)
+            {
+                if (buffer.mapState === "mapped") buffer.unmap();
+                buffer.destroy();
+            }
+            instance.targets.forEach((texture) => texture.destroy());
+        }
+        fixture.destroy();
+    }
+}
+
 async function RunQuadSailsV5Comparison(webgpu)
 {
     if (!CONFIG.drawQuadSailsV5) return null;
@@ -5387,6 +6059,7 @@ async function RunHarness()
     let quadGlassV5Comparison = null;
     let quadHeatV5Comparison = null;
     let quadDetailV5Comparison = null;
+    let quadOilV5Comparison = null;
     let quadSailsV5Comparison = null;
     let decalV5Comparison = null;
     let decalCylindricV5Comparison = null;
@@ -5408,6 +6081,7 @@ async function RunHarness()
         quadGlassV5Comparison = await RunQuadGlassV5Comparison(webgpu);
         quadHeatV5Comparison = await RunQuadHeatV5Comparison(webgpu);
         quadDetailV5Comparison = await RunQuadDetailV5Comparison(webgpu);
+        quadOilV5Comparison = await RunQuadOilV5Comparison(webgpu);
         quadSailsV5Comparison = await RunQuadSailsV5Comparison(webgpu);
         const decalComparison = await RunDecalV5Comparison(webgpu);
         if (decalComparison?.variant === "cylindric")
@@ -5506,6 +6180,7 @@ async function RunHarness()
             quadGlassV5Comparison,
             quadHeatV5Comparison,
             quadDetailV5Comparison,
+            quadOilV5Comparison,
             quadSailsV5Comparison,
             decalV5Comparison,
             decalCylindricV5Comparison,

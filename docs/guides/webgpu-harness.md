@@ -50,8 +50,8 @@ geometry policy.
 
 The static/skinned QuadV5, PPT-on skinned QuadHeatV5, static and PPT-on
 skinned two-pass QuadGlassV5, PPT-off static and PPT-on skinned QuadSailsV5,
-PPT-on static and skinned QuadDetailV5, and cold/hot PPT-off static QuadHeatV5 modes
-additionally route each draw through the internal
+PPT-on static and skinned QuadDetailV5, PPT-off skinned QuadOilV5, and
+cold/hot PPT-off static QuadHeatV5 modes additionally route each draw through the internal
 `CjsWebGPUTrinityBatchDispatcher`. The fixtures
 construct the duck-typed fields of a transient `Tr2RenderBatch` inside a
 finalized ordinary-batch accumulator and a one-type batch-map shape. The
@@ -194,6 +194,12 @@ active binding contract covered here. This is a contract-breadth and material-
 block high-water gate, not evidence that HeatDetail is a common-frequency
 shader. PPT-on is the representative/default focus for this slice; a PPT-off
 draw would not substitute for this coverage.
+
+These counts describe the exact current, pre-transform CEWGPU packages. This
+HeatDetail body exposes `Detail1Map` and `Detail2Map` but no `Detail3Map`, so
+the separately agreed full Detail1/2/3-to-array transform cannot be assumed to
+apply. The gate does not yet qualify compiler-emitted texture-array recipes,
+array payload composition, or engine-side array realization.
 
 The hull-derived glass gate requires packages explicitly selecting the whole
 default `unpacked_quadglassv5` `Main` technique, not only `Main.pass0`:
@@ -355,6 +361,64 @@ DX11- and DX12-derived packages for every case after `rgba8unorm` target
 quantization, with zero WGSL warnings. Neither gate makes a depth-attachment,
 depth-write, or depth-ordering claim.
 
+The 14-texture and 22/23-binding totals are measurements of the current
+pre-transform packages, where `Detail1Map`, `Detail2Map`, and `Detail3Map`
+remain three separate `texture_2d` bindings. The agreed 3-to-1 detail-array
+design would reduce the physical sampled-texture count to 12, but
+`format-webgpu` does not yet emit that resource-transform recipe and
+`engine-webgpu` does not yet realize it. These gates therefore qualify the
+separate-texture contract only.
+
+The live-ship QuadOilV5 slice uses the exact PPT-off
+`unpackedskinned_quadoilv5` `Main.pass0` pair:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-skinned-quadoilv5 .\artifacts\skinned-quadoilv5-ppt-off-dx11.cewgpu .\artifacts\skinned-quadoilv5-ppt-off-dx12.cewgpu
+```
+
+The build-3444265 SOF audit finds 30 opaque QuadOil areas across 25 hull
+records. Restricting the evidence to live ship geometry leaves seven areas
+across seven hulls: six skinned Sleeper hulls and one static hull. The six
+skinned records each emit one opaque `area_hull` using
+`skinned_quad/quadoilv5.fx`, `SOT_OPAQUE`, `SOPPT_DISABLED`, and
+`GeneralData=[1,0,0,0]`; none lists an applicable pattern. The command itself
+does not load those graphs.
+
+Each supplied package must resolve high-quality body `0` with the complete
+five-axis contract: non-bindless, clipping disabled, PPT disabled, opaque,
+and debug off. Only the non-bindless and PPT selections were explicit in the
+audited package build; the other three retain their compiled defaults. The
+canonical group contains 18 bindings: five uniform buffers, the vertex-stage
+read-only `BoneTransforms` buffer, ten fragment textures, and two fragment
+samplers. The active textures are the environment cube, SSAO, scene shadow,
+NormalMap, GlowMap, `OilFilmLookupMap`, AlbedoMap, RoughnessMap, MaterialMap,
+and PaintMaskMap. DX12 remaps Albedo/Roughness/Material/PaintMask to
+`t7/t8/t10/t11`, so resources are resolved by their independently reflected,
+stage-scoped identities rather than DX11 register order. Ten fragment textures
+remain below the per-stage 16-sampled-texture limit; the two samplers are a
+separate limit category.
+
+The synthetic fixture supplies a two-entry bone table whose second entry is
+non-identity and uses harness-authored material, frame, object, geometry, and
+texture values. It renders two otherwise-identical cases that replace only
+the sRGB `OilFilmLookupMap`: one constant black and one constant chromatic.
+Both are one-mip controls, deliberately making the shader's explicit-LOD
+sample clamp to the same known level rather than claiming production mip
+behavior. The shared synthetic sun direction aligns the oil reflection term
+with the transformed surface so the lookup remains observable across the
+silhouette; it is not an inferred production light or default.
+
+A passing run requires the indexed non-identity transform bounds, unchanged
+coverage and MRT0 alpha, invariant `[0,0,0,255]` MRT1 bytes, and a spatially
+varied MRT0 response. The measured gate changes all 635 covered pixels across
+all three RGB channels with 18 distinct quantized deltas. Both cases and both
+MRTs then match byte-for-byte between the DX11- and DX12-derived packages
+after `rgba8unorm` target quantization with zero WGSL warnings. This proves
+the bounded compiled shader/resource path, not a production ship render. It
+loads no SOF, EVE mesh or texture, authoritative defaults, runtime-core,
+runtime-resource, runtime-trinity, or Trinity graph, and it attaches no depth
+target.
+
 The older PPT-off static heat gate requires explicitly selected high-quality
 `unpacked_quadheatv5` `Main.pass0` packages:
 
@@ -419,7 +483,7 @@ pictured separately because it has already been required to match. This is a
 diagnostic view of readback bytes, not another GPU render or a production scene
 capture. The capture flag applies only to the unified QuadV5 commands above;
 the separate Glass, Heat, Sails, Detail, and decal-family commands do not
-currently expose capture output.
+currently expose capture output; neither does the QuadOil command.
 
 The launcher rejects identical or misordered inputs and any package that is not
 body index `4` with the complete expected selection set, including
@@ -429,6 +493,7 @@ QuadHeatDetailV5 each carry their exact five-axis effect contract.
 Static QuadSailsV5 carries its exact five-axis contract; skinned QuadSailsV5
 carries its exact four-axis contract. Static QuadDetailV5 carries its exact
 seven-axis contract; skinned QuadDetailV5 carries its exact six-axis contract.
+Skinned QuadOilV5 carries its exact five-axis PPT-off contract.
 The launcher
 reads each file directly, decodes it with `CjsFormatWebgpu`, and constructs
 `CjsWebGPUPackage`. No runtime library, resource manager, or Trinity contract
@@ -507,6 +572,17 @@ non-identity transform must move the observed silhouette. Both variants reuse
 four controlled cases that independently expose pattern projection, Detail1,
 and Detail2 influence. They require stable coverage/MRT1 and byte-exact paired
 DX11/DX12 readbacks for both MRTs, but neither attaches or qualifies depth.
+
+Skinned QuadOilV5 uses the same two vertex streams and non-identity
+`BoneTransforms` table with an 18-binding body-0 contract: five uniform
+buffers, one bone buffer, ten sampled textures, and two filtering samplers.
+The black/chromatic lookup cases share the same binding-values object and
+every realized resource except `OilFilmLookupMap`. The gate requires all 635
+covered MRT0 pixels to respond across at least two RGB channels; the current
+measured result changes all three channels with 18 distinct deltas. MRT1 and
+coverage remain invariant, and both cases require byte-exact paired backend
+readbacks. The one-mip lookup payloads intentionally exercise clamped
+explicit-LOD sampling rather than production mip selection.
 
 The QuadGlassV5 gates reuse the bounded semantic space-object buffer packer
 and common 64-byte vertex stream. The static gate exercises its exact
@@ -745,9 +821,9 @@ dispatch and does not widen the render-only public `CjsWebGPUDevice` API.
 Unlike the ship-family draw flags, preparation requires no geometry or live
 resource fixtures.
 
-The QuadV5, QuadGlassV5, QuadHeatV5, QuadSailsV5, and decal-family commands
-are direct format/engine integration gates. They do not load `runtime-core`,
-`runtime-resource`, or `runtime-trinity`.
+The QuadV5, QuadGlassV5, QuadHeatV5, QuadSailsV5, QuadDetailV5, QuadOilV5,
+and decal-family commands are direct format/engine integration gates. They do
+not load `runtime-core`, `runtime-resource`, or `runtime-trinity`.
 
 To exercise the real package boundary, pass a CEWGPU package containing the
 generated `Main.pass0.vertex` and `Main.pass0.pixel` shaders plus its canonical

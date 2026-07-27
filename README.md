@@ -55,9 +55,9 @@ PPT-on skinned QuadHeatV5, the PPT-on skinned QuadHeatDetailV5 material-block
 high-water and tied-largest active-binding contract, both independently
 rendered static and common PPT-on skinned QuadGlassV5 Main passes, cold/hot
 PPT-off static QuadHeatV5, independently rendered PPT-off static and PPT-on
-skinned QuadSailsV5, PPT-on static and skinned QuadDetailV5, non-bindless
-DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter DecalCounterV5, and
-two-texture DecalGlowV5/DecalGlowCylindricV5 draws through a provisional
+skinned QuadSailsV5, PPT-on static and skinned QuadDetailV5, PPT-off skinned
+QuadOilV5, non-bindless DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter
+DecalCounterV5, and two-texture DecalGlowV5/DecalGlowCylindricV5 draws through a provisional
 Trinity-shaped batch dispatcher without loading SOF, a Trinity graph,
 production defaults, or an EVE asset. The dispatcher imports no runtime
 package and is not yet a public renderer-composition contract. HeatDetail is
@@ -89,11 +89,25 @@ logical path. The static gate targets the former with a 22-binding body-4 pair;
 the separate skinned gate targets the latter with 23 bindings and observed
 indexed non-identity skinning. Both reuse four synthetic cases that isolate
 pattern projection, Detail1, and Detail2 with paired MRT parity and zero WGSL
-warnings. A real pattern application on ACA1 proves the skinned PPT-on logical
+warnings. Those totals measure the current pre-transform packages, where the
+three Detail maps remain separate; the agreed 3-to-1 array transform and its
+engine realization are not yet qualified here. A real pattern application on
+ACA1 proves the skinned PPT-on logical
 path, but most audited skinned records do not list a pattern, and SOF does not
 identify packed versus unpacked containers or body indices. Neither command
 loads SOF, an EVE asset, production defaults, runtime-trinity, or a Trinity
 graph, and neither attaches or qualifies depth.
+The build-3444265 QuadOilV5 audit finds 30 opaque areas across 25 hull records.
+Restricting that evidence to live ship geometry leaves seven areas across
+seven hulls: six skinned Sleeper hulls and one static hull. The skinned gate
+selects their PPT-off body-0 profile with 18 bindings: five uniform buffers,
+one vertex bone buffer, ten fragment textures, and two fragment samplers.
+Its two synthetic draws differ only in a black versus chromatic
+`OilFilmLookupMap`. All 635 covered pixels change across all three RGB
+channels with 18 distinct quantized deltas, while MRT1 remains invariant and
+both MRTs match byte-for-byte between DX11 and DX12 with zero WGSL warnings.
+The command loads no SOF, production ship resource, runtime package, or
+Trinity graph, and does not attach or qualify depth.
 
 ## Documentation
 

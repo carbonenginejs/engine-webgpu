@@ -111,9 +111,9 @@ common PPT-on skinned QuadHeatV5, PPT-on skinned QuadHeatDetailV5 material-block
 high-water gate, independently gated static and common PPT-on skinned
 QuadGlassV5 Main passes, cold/hot PPT-off
 static QuadHeatV5, independently gated PPT-off static and PPT-on skinned
-QuadSailsV5, PPT-on static and skinned QuadDetailV5, non-bindless
-DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter DecalCounterV5,
-DecalGlowV5, and DecalGlowCylindricV5 browser gates use its one-type batch-map
+QuadSailsV5, PPT-on static and skinned QuadDetailV5, PPT-off skinned
+QuadOilV5, non-bindless DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter
+DecalCounterV5, DecalGlowV5, and DecalGlowCylindricV5 browser gates use its one-type batch-map
 path, with the glass fixture keeping complementary pass selection explicit,
 the heat fixtures keeping their caller-owned raster recipes and semantic cases
 explicit, and the decal fixtures proving that numeric batch type `1` stays
@@ -161,7 +161,10 @@ adds indexed non-identity `BoneTransforms`, and carries 23 bindings. Both
 gates reuse four synthetic cases that isolate pattern projection, Detail1, and
 Detail2 while exercising five uniform buffers, fourteen textures, and three
 samplers; the skinned total includes its bone buffer. Texture and sampler limit
-categories remain distinct.
+categories remain distinct. These totals describe the current pre-transform
+CEWGPU packages: the agreed Detail1/2/3-to-array resource transform is not yet
+emitted by `format-webgpu` or realized by this package, and would reduce the
+QuadDetail physical sampled-texture count from fourteen to twelve.
 
 The real `aca1_t1:amarrbase:amarr` base DNA emits two opaque skinned
 QuadDetail effects with PPT disabled and black pattern masks. Adding
@@ -173,6 +176,22 @@ paths but not packed versus unpacked containers, body indices, or complete
 package axes. Both gates remain library-free conformance probes: they load
 neither the audited SOF DNA nor EVE geometry/textures/defaults, import neither
 runtime-trinity nor a Trinity graph, and make no depth-policy claim.
+
+The build-3444265 QuadOilV5 audit finds 30 opaque areas across 25 hull
+records. Applying the live ship-geometry filter leaves seven areas across
+seven hulls: six skinned Sleeper hulls and one static hull. All six skinned
+graphs emit `skinned_quad/quadoilv5.fx` with `SOT_OPAQUE`,
+`SOPPT_DISABLED`, and only `GeneralData=[1,0,0,0]` as an authored constant.
+The separate browser gate freezes the exact body-0
+`unpackedskinned_quadoilv5` Main contract: five uniform buffers, vertex
+`BoneTransforms`, ten fragment textures, and two samplers for 18 canonical
+bindings. Two otherwise-identical synthetic draws replace only the sRGB
+`OilFilmLookupMap`; all 635 covered pixels change across three RGB channels,
+MRT1 remains invariant, and both MRTs match byte-for-byte between the
+DX11/DX12-derived packages with zero WGSL warnings. The fixture uses explicit
+harness-authored values and does not load the cited SOF, ship mesh, production
+textures/defaults, runtime-trinity, or a Trinity graph. It makes no
+depth-policy claim.
 
 The internal `CjsWebGPUTrinityStepRecorder` proves the synchronous
 `Tr2RenderContext.SetStepExecutor(...)` seam separately. It delegates the
