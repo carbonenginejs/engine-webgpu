@@ -76,6 +76,17 @@ import {
     getQuadGlassV5ResourcePlan,
     validateQuadGlassV5PackagePair
 } from "/quadGlassV5Fixture.js";
+import {
+    QUAD_HEAT_V5_CASES,
+    QUAD_HEAT_V5_CLEAR_TARGETS,
+    QUAD_HEAT_V5_TARGET_HEIGHT,
+    QUAD_HEAT_V5_TARGET_WIDTH,
+    QUAD_HEAT_V5_VERTEX_BUFFER_LAYOUT,
+    createQuadHeatV5FixtureValues,
+    getQuadHeatV5PrimitiveRecipe,
+    getQuadHeatV5ResourcePlan,
+    validateQuadHeatV5PackagePair
+} from "/quadHeatV5Fixture.js";
 import { CjsWebGPUDevice } from "/CjsWebGPUDevice.js";
 import { buildEveSpaceObjectMainUniformData } from "/spaceObjectMainBindings.js";
 import { CjsWebGPUTrinityBatchDispatcher } from "/trinityBatchDispatcher.js";
@@ -1010,6 +1021,138 @@ async function CreateQuadGlassV5GpuResources(webgpu, records)
     }
 }
 
+async function CreateQuadHeatV5GpuResources(webgpu, records)
+{
+    Assert(
+        QUAD_HEAT_V5_TARGET_WIDTH === WIDTH
+            && QUAD_HEAT_V5_TARGET_HEIGHT === HEIGHT,
+        "QuadHeatV5 and harness target dimensions must match"
+    );
+    const values = createQuadHeatV5FixtureValues(WIDTH, HEIGHT);
+    const geometrySource = Object.freeze({ kind: "synthetic-quadheatv5" });
+    const texturePayloads = Object.fromEntries(values.textures
+        .filter((entry) => entry.dimension === "2d")
+        .map((entry) => [
+            entry.name,
+            {
+                label: `QuadHeatV5 ${entry.name}`,
+                width: entry.width,
+                height: entry.height,
+                format: entry.format,
+                bytesPerRow: entry.bytesPerRow,
+                data: entry.data
+            }
+        ]));
+    const samplerPayloads = Object.fromEntries(values.samplers.map(({ name, ...descriptor }) => [
+        name,
+        {
+            label: `QuadHeatV5 ${name}`,
+            ...descriptor
+        }
+    ]));
+    const bundle = await PublishPreparedResourceBundle(webgpu, {
+        label: "QuadHeatV5 resources",
+        geometries: {
+            main: {
+                label: "QuadHeatV5 synthetic ship silhouette geometry",
+                vertexBuffers: [ {
+                    slot: 0,
+                    data: values.vertices,
+                    layout: QUAD_HEAT_V5_VERTEX_BUFFER_LAYOUT
+                } ],
+                indexBuffer: {
+                    data: values.indices,
+                    format: "uint16"
+                }
+            }
+        },
+        textures: texturePayloads,
+        samplers: samplerPayloads
+    }, "quadheatv5-resources");
+    const device = webgpu.GetDevice();
+    const cubeDefinition = values.textures.find((entry) => entry.dimension === "cube");
+    let cubeTexture = null;
+    try
+    {
+        Assert(cubeDefinition, "QuadHeatV5 fixture is missing its environment cube");
+        cubeTexture = device.createTexture({
+            label: `QuadHeatV5 ${cubeDefinition.name}`,
+            size: {
+                width: cubeDefinition.width,
+                height: cubeDefinition.height,
+                depthOrArrayLayers: cubeDefinition.depthOrArrayLayers
+            },
+            mipLevelCount: 1,
+            sampleCount: 1,
+            dimension: "2d",
+            format: cubeDefinition.format,
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+        });
+        const faceSize = cubeDefinition.width * cubeDefinition.height * 4;
+        for (let face = 0; face < cubeDefinition.depthOrArrayLayers; face += 1)
+        {
+            device.queue.writeTexture(
+                { texture: cubeTexture, origin: { x: 0, y: 0, z: face } },
+                cubeDefinition.data.slice(face * faceSize, (face + 1) * faceSize),
+                {
+                    offset: 0,
+                    bytesPerRow: cubeDefinition.width * 4,
+                    rowsPerImage: cubeDefinition.height
+                },
+                {
+                    width: cubeDefinition.width,
+                    height: cubeDefinition.height,
+                    depthOrArrayLayers: 1
+                }
+            );
+        }
+        const cubeView = cubeTexture.createView({
+            label: `QuadHeatV5 ${cubeDefinition.name} cube view`,
+            dimension: "cube"
+        });
+        const resourcesByBackend = new Map();
+        for (const record of records)
+        {
+            const plan = getQuadHeatV5ResourcePlan(record);
+            const resources = new Map();
+            for (const texture of plan.textures)
+            {
+                const resource = texture.viewDimension === "cube"
+                    ? (texture.name === cubeDefinition.name ? cubeView : null)
+                    : bundle.textures[texture.name];
+                Assert(resource, `QuadHeatV5 fixture is missing texture ${texture.name}`);
+                resources.set(texture.scopeIdentity, resource);
+            }
+            for (const sampler of plan.samplers)
+            {
+                const resource = bundle.samplers[sampler.name];
+                Assert(resource, `QuadHeatV5 fixture is missing sampler ${sampler.name}`);
+                resources.set(sampler.scopeIdentity, resource);
+            }
+            resourcesByBackend.set(record.backend, resources);
+        }
+        return {
+            bindingValuesByCase: values.bindingValuesByCase,
+            caseNames: values.caseNames,
+            resourcesByBackend,
+            geometry: bundle.geometries.main,
+            geometrySource,
+            bundle,
+            destroy()
+            {
+                cubeTexture.destroy();
+                bundle.Destroy();
+            }
+        };
+    }
+    catch (error)
+    {
+        cubeTexture?.destroy();
+        bundle.Destroy();
+        throw error;
+    }
+}
+
 async function CreateDecalV5GpuResources(webgpu, records, profile)
 {
     Assert(
@@ -1406,6 +1549,121 @@ function CreateQuadGlassV5TrinityDispatcher(webgpu, fixture)
                         .get(record.backend)
                         .get(batch.resourceVariant),
                     `QuadGlassV5 ${record.label} ${batch.resourceVariant} resources`
+                )
+            };
+        }
+    });
+}
+
+function CreateQuadHeatV5TrinityBatchMap(record, fixture, heatCase)
+{
+    const objectData = fixture.bindingValuesByCase[heatCase];
+    const batch = Object.freeze({
+        material: record,
+        shader: record.pipeline,
+        heatCase,
+        geometrySource: Object.freeze({
+            geometry: fixture.geometrySource,
+            meshIndex: 0,
+            areaIndex: 0,
+            count: 1,
+            reversed: false
+        }),
+        objectData,
+        topology: 4,
+        indexCountPerInstance: 0,
+        instanceCount: 0,
+        startIndexLocation: 0,
+        baseVertexLocation: 0,
+        startInstanceLocation: 0,
+        renderingMode: 0,
+        pickingData: 0,
+        groupCount: 1
+    });
+    const batches = Object.freeze([ batch ]);
+    const gdprBatches = Object.freeze([]);
+    const accumulator = Object.freeze({
+        GetGdprBatches: () => gdprBatches,
+        GetBatches: () => batches,
+        GetBatchCount: () => batches.length,
+        IsChainedByEffect: () => true
+    });
+    const batchTypes = Object.freeze([ TRINITY_BATCH_TYPE_OPAQUE ]);
+    return Object.freeze({
+        GetBatchTypes: () => batchTypes,
+        GetAccumulator: (value) =>
+            value === TRINITY_BATCH_TYPE_OPAQUE ? accumulator : null,
+        GetBatchCount: () => accumulator.GetBatchCount()
+    });
+}
+
+function CreateQuadHeatV5TrinityDispatcher(webgpu, fixture)
+{
+    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+        ResolveMaterial(record, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE,
+                "QuadHeatV5 material resolved outside the opaque batch type"
+            );
+            return {
+                pipeline: record.pipeline,
+                prepareOptions: { warningsAsErrors: true },
+                recipe: {
+                    label: `QuadHeatV5 ${record.label} Main.pass0`,
+                    vertex: { buffers: fixture.geometry.vertexBufferLayouts },
+                    fragment: {
+                        targets: [ { format: "rgba8unorm" }, { format: "rgba8unorm" } ]
+                    },
+                    primitive: getQuadHeatV5PrimitiveRecipe()
+                }
+            };
+        },
+        ResolveGeometry(source, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && source?.geometry === fixture.geometrySource
+                    && source.meshIndex === 0
+                    && source.areaIndex === 0
+                    && source.count === 1
+                    && source.reversed === false,
+                "QuadHeatV5 batch references an unknown geometry source"
+            );
+            return {
+                geometry: fixture.geometry,
+                indexed: true,
+                draw: {
+                    indexCount: fixture.geometry.indexCount,
+                    instanceCount: 1,
+                    firstIndex: 0,
+                    baseVertex: 0,
+                    firstInstance: 0
+                }
+            };
+        },
+        ResolveBindings(batch, _livePipeline, context)
+        {
+            const record = batch.material;
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && fixture.caseNames.includes(batch.heatCase)
+                    && batch.objectData === fixture.bindingValuesByCase[batch.heatCase],
+                `QuadHeatV5 ${record.label} batch references unknown fixture data`
+            );
+            return {
+                uniformData: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    new Map(Object.entries(buildEveSpaceObjectMainUniformData(
+                        record,
+                        batch.objectData
+                    ))),
+                    `QuadHeatV5 ${record.label} ${batch.heatCase} uniform data`
+                ),
+                resources: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    fixture.resourcesByBackend.get(record.backend),
+                    `QuadHeatV5 ${record.label} resources`
                 )
             };
         }
@@ -1822,6 +2080,134 @@ function AssertQuadGlassV5Controls(instances)
             byKey.get("dx11:1:base").statistics.side
         ]
     };
+}
+
+function QuadHeatV5PixelIsActive(bytes, x, y)
+{
+    return !PixelEquals(bytes, x, y, QUAD_HEAT_V5_CLEAR_TARGETS[1]);
+}
+
+function AssertQuadHeatV5Pass(instance)
+{
+    const [ color, motion ] = instance.snapshots;
+    const label = `QuadHeatV5 ${instance.record.label} ${instance.heatCase}`;
+    const colorStatistics = AssertQuadV5Silhouette(color, 0, `${label} MRT0`, "static");
+    const motionStatistics = AssertQuadV5Silhouette(motion, 1, `${label} MRT1`, "static");
+    Assert(
+        colorStatistics.coverage === motionStatistics.coverage,
+        `${label} MRT coverage counts differ`
+    );
+    let coveredPixels = 0;
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            const active = QuadHeatV5PixelIsActive(motion, x, y);
+            Assert(
+                active === !PixelEquals(color, x, y, QUAD_HEAT_V5_CLEAR_TARGETS[0]),
+                `${label} MRT coverage differs at (${x}, ${y})`
+            );
+            if (!active) continue;
+            coveredPixels += 1;
+            const offset = PixelOffset(x, y);
+            Assert(
+                color[offset + 3] === 255,
+                `${label} MRT0 alpha drifted at (${x}, ${y})`
+            );
+            Assert(
+                motion[offset] === 0 && motion[offset + 1] === 0
+                    && motion[offset + 2] === 0 && motion[offset + 3] === 255,
+                `${label} MRT1 drifted at (${x}, ${y})`
+            );
+        }
+    }
+    Assert(
+        coveredPixels === colorStatistics.coverage,
+        `${label} active-pixel count does not reconcile`
+    );
+    return { coveredPixels, color: colorStatistics, motion: motionStatistics };
+}
+
+function AssertQuadHeatV5Controls(instances)
+{
+    const byKey = new Map(instances.map((instance) => [
+        `${instance.record.backend}:${instance.heatCase}`,
+        instance
+    ]));
+    let dx11Oracle = null;
+    for (const backend of [ "dx11", "dx12" ])
+    {
+        const cold = byKey.get(`${backend}:cold`);
+        const hot = byKey.get(`${backend}:hot`);
+        Assert(cold && hot, `QuadHeatV5 ${backend} thermal cases are incomplete`);
+        AssertExactTargetMatch(
+            cold.snapshots[1],
+            hot.snapshots[1],
+            `${backend} QuadHeatV5 heat-invariant MRT1`
+        );
+        let coveredPixels = 0;
+        let changedPixels = 0;
+        let totalRedDelta = 0;
+        let maximumRedDelta = 0;
+        const distinctRedDeltas = new Set();
+        for (let y = 0; y < HEIGHT; y += 1)
+        {
+            for (let x = 0; x < WIDTH; x += 1)
+            {
+                const active = QuadHeatV5PixelIsActive(cold.snapshots[1], x, y);
+                Assert(
+                    active === QuadHeatV5PixelIsActive(hot.snapshots[1], x, y),
+                    `QuadHeatV5 ${backend} heat changed coverage at (${x}, ${y})`
+                );
+                if (!active) continue;
+                coveredPixels += 1;
+                const offset = PixelOffset(x, y);
+                Assert(
+                    cold.snapshots[0][offset + 1] === hot.snapshots[0][offset + 1]
+                        && cold.snapshots[0][offset + 2] === hot.snapshots[0][offset + 2]
+                        && cold.snapshots[0][offset + 3] === 255
+                        && hot.snapshots[0][offset + 3] === 255,
+                    `QuadHeatV5 ${backend} heat changed non-red output at (${x}, ${y})`
+                );
+                const redDelta =
+                    hot.snapshots[0][offset] - cold.snapshots[0][offset];
+                Assert(
+                    redDelta >= 0,
+                    `QuadHeatV5 ${backend} hot red fell below cold at (${x}, ${y})`
+                );
+                if (redDelta > 0)
+                {
+                    changedPixels += 1;
+                    totalRedDelta += redDelta;
+                    maximumRedDelta = Math.max(maximumRedDelta, redDelta);
+                    distinctRedDeltas.add(redDelta);
+                }
+            }
+        }
+        Assert(
+            coveredPixels === cold.statistics.coveredPixels
+                && coveredPixels === hot.statistics.coveredPixels,
+            `QuadHeatV5 ${backend} thermal coverage does not reconcile`
+        );
+        Assert(
+            changedPixels >= Math.ceil(coveredPixels * 0.1),
+            `QuadHeatV5 ${backend} heat changed only ${changedPixels}/${coveredPixels} pixels`
+        );
+        Assert(
+            distinctRedDeltas.size >= 3 && maximumRedDelta >= 8,
+            `QuadHeatV5 ${backend} heat lacks a texture-shaped red response`
+        );
+        const oracle = {
+            coveredPixels,
+            changedPixels,
+            changedRatio: changedPixels / coveredPixels,
+            averageChangedRedDelta: totalRedDelta / changedPixels,
+            maximumRedDelta,
+            distinctRedDeltas: distinctRedDeltas.size
+        };
+        if (backend === "dx11") dx11Oracle = oracle;
+    }
+    return dx11Oracle;
 }
 
 function AssertExactTargetMatch(left, right, label)
@@ -2855,6 +3241,211 @@ async function RunQuadGlassV5Comparison(webgpu)
     }
 }
 
+async function RunQuadHeatV5Comparison(webgpu)
+{
+    if (!CONFIG.drawQuadHeatV5) return null;
+    const response = await fetch("/draw-quadheatv5.json");
+    Assert(
+        response.ok,
+        `Failed to load QuadHeatV5 package records: HTTP ${response.status}`
+    );
+    const records = await response.json();
+    Assert(
+        Array.isArray(records) && records.length === 2,
+        "QuadHeatV5 comparison requires two package records"
+    );
+    validateQuadHeatV5PackagePair(records);
+
+    const device = webgpu.GetDevice();
+    const fixture = await CreateQuadHeatV5GpuResources(webgpu, records);
+    let dispatcher = null;
+    let passEncoder = null;
+    const instances = [];
+    let warningCount = 0;
+    try
+    {
+        dispatcher = CreateQuadHeatV5TrinityDispatcher(webgpu, fixture);
+        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+        Assert(
+            JSON.stringify(fixture.caseNames) === JSON.stringify(QUAD_HEAT_V5_CASES),
+            "QuadHeatV5 thermal cases must be cold then hot"
+        );
+        for (const record of records)
+        {
+            for (const heatCase of fixture.caseNames)
+            {
+                let preparedBatchMap = null;
+                const targets = [];
+                const readbacks = [];
+                try
+                {
+                    preparedBatchMap = await dispatcher.PrepareBatchMap(
+                        CreateQuadHeatV5TrinityBatchMap(record, fixture, heatCase)
+                    );
+                    warningCount += preparedBatchMap.entries.reduce(
+                        (mapTotal, entry) => mapTotal + entry.accumulator.batches.reduce(
+                            (batchTotal, batch) => batchTotal
+                                + batch.prepared.diagnostics
+                                    .filter((item) => item.type === "warning").length,
+                            0
+                        ),
+                        0
+                    );
+                    for (let targetIndex = 0;
+                        targetIndex < QUAD_HEAT_V5_CLEAR_TARGETS.length;
+                        targetIndex += 1)
+                    {
+                        targets.push(device.createTexture({
+                            label:
+                                `QuadHeatV5 ${record.label} ${heatCase} MRT${targetIndex}`,
+                            size: {
+                                width: WIDTH,
+                                height: HEIGHT,
+                                depthOrArrayLayers: 1
+                            },
+                            format: "rgba8unorm",
+                            usage:
+                                GPUTextureUsage.RENDER_ATTACHMENT
+                                | GPUTextureUsage.COPY_SRC
+                        }));
+                        readbacks.push(device.createBuffer({
+                            label:
+                                `QuadHeatV5 ${record.label} ${heatCase} ` +
+                                `MRT${targetIndex} readback`,
+                            size: BYTES_PER_ROW * HEIGHT,
+                            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+                        }));
+                    }
+                    instances.push({
+                        record,
+                        heatCase,
+                        preparedBatchMap,
+                        targets,
+                        readbacks,
+                        snapshots: [],
+                        statistics: null
+                    });
+                }
+                catch (error)
+                {
+                    if (preparedBatchMap)
+                    {
+                        dispatcher.DestroyBatchMap(preparedBatchMap);
+                    }
+                    readbacks.forEach((buffer) => buffer.destroy());
+                    targets.forEach((texture) => texture.destroy());
+                    throw error;
+                }
+            }
+        }
+
+        const encoder = device.createCommandEncoder({
+            label: "QuadHeatV5 cold/hot DX11/DX12 comparison encoder"
+        });
+        for (const instance of instances)
+        {
+            passEncoder.Encode(encoder, [ {
+                descriptor: {
+                    label:
+                        `QuadHeatV5 ${instance.record.label} Main.pass0 ` +
+                        `${instance.heatCase}`,
+                    colorAttachments: instance.targets.map((texture, targetIndex) => ({
+                        view: texture.createView(),
+                        clearValue: {
+                            r: QUAD_HEAT_V5_CLEAR_TARGETS[targetIndex][0] / 255,
+                            g: QUAD_HEAT_V5_CLEAR_TARGETS[targetIndex][1] / 255,
+                            b: QUAD_HEAT_V5_CLEAR_TARGETS[targetIndex][2] / 255,
+                            a: QUAD_HEAT_V5_CLEAR_TARGETS[targetIndex][3] / 255
+                        },
+                        loadOp: "clear",
+                        storeOp: "store"
+                    }))
+                },
+                selections: [ {
+                    preparedBatchMap: instance.preparedBatchMap,
+                    batchType: TRINITY_BATCH_TYPE_OPAQUE
+                } ]
+            } ]);
+            instance.targets.forEach((texture, targetIndex) =>
+            {
+                encoder.copyTextureToBuffer(
+                    { texture },
+                    {
+                        buffer: instance.readbacks[targetIndex],
+                        bytesPerRow: BYTES_PER_ROW,
+                        rowsPerImage: HEIGHT
+                    },
+                    { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 }
+                );
+            });
+        }
+        webgpu.Submit([ encoder.finish() ]);
+        await device.queue.onSubmittedWorkDone();
+        await Promise.all(instances.flatMap((instance) => instance.readbacks.map(
+            (buffer) => buffer.mapAsync(GPUMapMode.READ)
+        )));
+
+        for (const instance of instances)
+        {
+            instance.snapshots = instance.readbacks.map((buffer) =>
+                new Uint8Array(buffer.getMappedRange()).slice());
+            instance.statistics = AssertQuadHeatV5Pass(instance);
+        }
+        for (const heatCase of fixture.caseNames)
+        {
+            const paired = records.map((record) => instances.find((instance) =>
+                instance.record.backend === record.backend
+                    && instance.heatCase === heatCase));
+            Assert(
+                paired.every(Boolean),
+                `QuadHeatV5 ${heatCase} DX11/DX12 pair is incomplete`
+            );
+            for (let targetIndex = 0;
+                targetIndex < QUAD_HEAT_V5_CLEAR_TARGETS.length;
+                targetIndex += 1)
+            {
+                AssertExactTargetMatch(
+                    paired[0].snapshots[targetIndex],
+                    paired[1].snapshots[targetIndex],
+                    `DX11/DX12 QuadHeatV5 ${heatCase} MRT${targetIndex}`
+                );
+            }
+        }
+        const heatOracle = AssertQuadHeatV5Controls(instances);
+        const baseline = instances.find((instance) =>
+            instance.record.backend === "dx11" && instance.heatCase === "cold");
+        Assert(baseline, "QuadHeatV5 cold DX11 baseline is missing");
+        return {
+            bodyIndex: 0,
+            labels: records.map((record) => `${record.backend}:${record.label}`),
+            loadPath: records[0].loadPath,
+            pixelCount: WIDTH * HEIGHT,
+            targetCount: QUAD_HEAT_V5_CLEAR_TARGETS.length,
+            renderCaseCount: fixture.caseNames.length,
+            drawKind: "indexed synthetic ship silhouette",
+            indexCount: fixture.geometry.indexCount,
+            warningCount,
+            clearTargets: QUAD_HEAT_V5_CLEAR_TARGETS,
+            statistics: baseline.statistics,
+            heatOracle
+        };
+    }
+    finally
+    {
+        for (const instance of instances)
+        {
+            dispatcher?.DestroyBatchMap(instance.preparedBatchMap);
+            for (const buffer of instance.readbacks)
+            {
+                if (buffer.mapState === "mapped") buffer.unmap();
+                buffer.destroy();
+            }
+            instance.targets.forEach((texture) => texture.destroy());
+        }
+        fixture.destroy();
+    }
+}
+
 async function RunDecalV5Comparison(webgpu)
 {
     const variant = CONFIG.drawDecalHoleV5
@@ -3206,6 +3797,7 @@ async function RunHarness()
     let phaseZeroDraw = null;
     let quadV5Comparison = null;
     let quadGlassV5Comparison = null;
+    let quadHeatV5Comparison = null;
     let decalV5Comparison = null;
     let decalCylindricV5Comparison = null;
     let decalHoleV5Comparison = null;
@@ -3224,6 +3816,7 @@ async function RunHarness()
         phaseZeroDraw = generatedDraw ? null : await CreatePhaseZeroDraw(webgpu);
         quadV5Comparison = await RunQuadV5Comparison(webgpu);
         quadGlassV5Comparison = await RunQuadGlassV5Comparison(webgpu);
+        quadHeatV5Comparison = await RunQuadHeatV5Comparison(webgpu);
         const decalComparison = await RunDecalV5Comparison(webgpu);
         if (decalComparison?.variant === "cylindric")
         {
@@ -3319,6 +3912,7 @@ async function RunHarness()
                 : null,
             quadV5Comparison,
             quadGlassV5Comparison,
+            quadHeatV5Comparison,
             decalV5Comparison,
             decalCylindricV5Comparison,
             decalHoleV5Comparison,

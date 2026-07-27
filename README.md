@@ -51,7 +51,8 @@ transposes logical matrices once into Carbon cbuffer register-row order while
 copying already GPU-form custom-mask slots unchanged.
 
 The standalone harness qualifies synthetic static/skinned QuadV5, both
-independently rendered QuadGlassV5 Main passes, non-bindless
+independently rendered QuadGlassV5 Main passes, cold/hot QuadHeatV5,
+non-bindless
 DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter DecalCounterV5, and
 two-texture DecalGlowV5/DecalGlowCylindricV5 draws through a provisional
 Trinity-shaped batch dispatcher without loading SOF, a Trinity graph,

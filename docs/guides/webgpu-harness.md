@@ -48,8 +48,9 @@ Fixture creation and pixel expectations remain harness responsibilities, so
 the reusable engine class does not acquire resource paths or infer format/
 geometry policy.
 
-The static/skinned QuadV5 and two-pass QuadGlassV5 modes additionally route
-each draw through the internal `CjsWebGPUTrinityBatchDispatcher`. The fixtures
+The static/skinned QuadV5, two-pass QuadGlassV5, and cold/hot QuadHeatV5 modes
+additionally route each draw through the internal
+`CjsWebGPUTrinityBatchDispatcher`. The fixtures
 construct the duck-typed fields of a transient `Tr2RenderBatch` inside a
 finalized ordinary-batch accumulator and a one-type batch-map shape. The
 caller selects the opaque batch type's render pass; injected hooks resolve its
@@ -171,6 +172,20 @@ winding synthetic probes must render on disjoint sides, so disabling culling
 or silently running only one pass cannot pass.
 Each pass/case is rendered independently into separate attachments. The gate
 does not yet prove pass 0 then pass 1 ordering or same-target composition.
+
+The hull-derived heat gate requires explicitly selected high-quality
+`unpacked_quadheatv5` `Main.pass0` packages:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-quadheatv5 .\artifacts\quadheatv5-main-dx11.cewgpu .\artifacts\quadheatv5-main-dx12.cewgpu
+```
+
+This is a synthetic conformance gate for the shader family identified on the
+audited `gb2_t1:gallentebase:gallente` `area_booster`; the command does not
+load SOF, GB2 geometry, or production textures. It requires body `0`, the six
+default non-bindless/PPT-disabled/opaque selections, and the complete static
+Main pass. Packed, skinned, detail, Depth, Picking, and shadow variants remain
+separate work.
 
 The first decal-family gate uses the explicitly selected non-bindless
 `unpacked_decalv5` Main pass:
@@ -301,6 +316,29 @@ derived DX11 and DX12 packages for every pass and mask case with zero WGSL
 warnings. This verifies selected shader execution and paired backend parity;
 it does not qualify Depth/Picking techniques, skinned glass, production
 textures, authoritative per-object values, or renderer pass scheduling.
+
+The QuadHeatV5 gate reuses the bounded semantic space-object serializer,
+64-byte unpacked static vertex layout, and synthetic ship silhouette. Its
+exact group-zero contract contains five uniform buffers, the environment
+cube, neutral white `SSAOMap` and shadow inputs, NormalMap, GlowMap,
+AlbedoMap, RoughnessMap, MaterialMap, PaintMaskMap, HeatGlowNoiseMap, and one
+filtering sampler. The fixture implements no ambient-occlusion behavior.
+DX11 and DX12 assign four material surface textures plus `HeatGlowNoiseMap` to
+different D3D registers; the gate maps them by independently reflected Carbon
+names.
+
+Both backends render cold `shipData.x=0` and hot `shipData.x=1` cases with a
+synthetic nonzero red heat color, because the audited GB2 SOF value is black
+and would make the thermal term unobservable. The four material heat curves
+retain the production-shaped GB2 values, and the patterned GlowMap plus noise
+input produces a spatially varied response. Every covered pixel must retain
+opaque alpha and exact `[0,0,0,255]` motion bytes. Hot output may change only
+red, may never reduce it, must brighten at least ten percent of the silhouette
+with multiple distinct byte deltas, and both MRTs must match byte-for-byte
+between DX11 and DX12 for each case with zero WGSL warnings. These values are
+conformance controls, not production defaults. The first slice does not
+separately isolate subtle noise-distortion strength, depth behavior, actual
+ship mesh packing, renderer scheduling, or authoritative heat state.
 
 The DecalV5 command independently requires canonical DX11/DX12
 `unpacked_decalv5` provenance, body index `0`, all three default selections,
@@ -490,9 +528,9 @@ dispatch and does not widen the render-only public `CjsWebGPUDevice` API.
 Unlike the ship-family draw flags, preparation requires no geometry or live
 resource fixtures.
 
-The QuadV5, QuadGlassV5, and decal-family commands are direct format/engine
-integration gates. They do not load `runtime-core`, `runtime-resource`, or
-`runtime-trinity`.
+The QuadV5, QuadGlassV5, QuadHeatV5, and decal-family commands are direct
+format/engine integration gates. They do not load `runtime-core`,
+`runtime-resource`, or `runtime-trinity`.
 
 To exercise the real package boundary, pass a CEWGPU package containing the
 generated `Main.pass0.vertex` and `Main.pass0.pixel` shaders plus its canonical

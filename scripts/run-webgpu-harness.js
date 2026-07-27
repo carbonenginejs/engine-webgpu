@@ -9,6 +9,7 @@ import { validateDecalGlowV5PackagePair } from "../harness/webgpu/decalGlowV5Fix
 import { validateDecalHoleV5PackagePair } from "../harness/webgpu/decalHoleV5Fixture.js";
 import { validateDecalV5PackagePair } from "../harness/webgpu/decalV5Fixture.js";
 import { validateQuadGlassV5PackagePair } from "../harness/webgpu/quadGlassV5Fixture.js";
+import { validateQuadHeatV5PackagePair } from "../harness/webgpu/quadHeatV5Fixture.js";
 import { validateQuadV5PackagePair } from "../harness/webgpu/quadV5Fixture.js";
 
 import { chromium } from "playwright";
@@ -40,6 +41,7 @@ const DRAW_CEWGPU_PATH = DRAW_CEWGPU_INDEX >= 0 ? resolve(process.argv[DRAW_CEWG
 const DRAW_QUADV5_INDEX = process.argv.indexOf("--draw-quadv5");
 const DRAW_SKINNED_QUADV5_INDEX = process.argv.indexOf("--draw-skinned-quadv5");
 const DRAW_QUADGLASSV5_INDEX = process.argv.indexOf("--draw-quadglassv5");
+const DRAW_QUADHEATV5_INDEX = process.argv.indexOf("--draw-quadheatv5");
 const DRAW_DECALV5_INDEX = process.argv.indexOf("--draw-decalv5");
 const DRAW_DECALCYLINDRICV5_INDEX = process.argv.indexOf("--draw-decalcylindricv5");
 const DRAW_DECALHOLEV5_INDEX = process.argv.indexOf("--draw-decalholev5");
@@ -83,6 +85,26 @@ const DRAW_QUADGLASSV5_PATHS = DRAW_QUADGLASSV5_INDEX >= 0
     ? [
         resolve(process.argv[DRAW_QUADGLASSV5_INDEX + 1]),
         resolve(process.argv[DRAW_QUADGLASSV5_INDEX + 2])
+    ]
+    : null;
+if (DRAW_QUADHEATV5_INDEX >= 0
+  && (!process.argv[DRAW_QUADHEATV5_INDEX + 1] || !process.argv[DRAW_QUADHEATV5_INDEX + 2]
+    || process.argv[DRAW_QUADHEATV5_INDEX + 1].startsWith("--")
+    || process.argv[DRAW_QUADHEATV5_INDEX + 2].startsWith("--")))
+{
+    throw new Error(
+        "--draw-quadheatv5 requires DX11-derived and DX12-derived CEWGPU file paths"
+    );
+}
+if (DRAW_QUADHEATV5_INDEX >= 0
+  && (ACTIVE_QUADV5_INDEX >= 0 || DRAW_QUADGLASSV5_INDEX >= 0))
+{
+    throw new Error("--draw-quadheatv5 cannot be combined with another QuadV5 draw flag");
+}
+const DRAW_QUADHEATV5_PATHS = DRAW_QUADHEATV5_INDEX >= 0
+    ? [
+        resolve(process.argv[DRAW_QUADHEATV5_INDEX + 1]),
+        resolve(process.argv[DRAW_QUADHEATV5_INDEX + 2])
     ]
     : null;
 if ([
@@ -134,6 +156,10 @@ if (ACTIVE_DECALV5_INDEX >= 0 && DRAW_QUADGLASSV5_INDEX >= 0)
 {
     throw new Error(`${DECALV5_FLAG} cannot be combined with --draw-quadglassv5`);
 }
+if (ACTIVE_DECALV5_INDEX >= 0 && DRAW_QUADHEATV5_INDEX >= 0)
+{
+    throw new Error(`${DECALV5_FLAG} cannot be combined with --draw-quadheatv5`);
+}
 if (ACTIVE_DECALV5_INDEX >= 0
   && (!process.argv[ACTIVE_DECALV5_INDEX + 1] || !process.argv[ACTIVE_DECALV5_INDEX + 2]
     || process.argv[ACTIVE_DECALV5_INDEX + 1].startsWith("--")
@@ -157,7 +183,8 @@ if (CAPTURE_QUADV5_INDEX >= 0 && ACTIVE_QUADV5_INDEX < 0)
 const CAPTURE_QUADV5_PATH = CAPTURE_QUADV5_INDEX >= 0
     ? resolve(process.argv[CAPTURE_QUADV5_INDEX + 1])
     : null;
-if ((ACTIVE_QUADV5_INDEX >= 0 || DRAW_QUADGLASSV5_INDEX >= 0 || ACTIVE_DECALV5_INDEX >= 0)
+if ((ACTIVE_QUADV5_INDEX >= 0 || DRAW_QUADGLASSV5_INDEX >= 0
+  || DRAW_QUADHEATV5_INDEX >= 0 || ACTIVE_DECALV5_INDEX >= 0)
   && (DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0))
 {
     throw new Error("a ship-family draw flag cannot be combined with another draw input");
@@ -170,6 +197,7 @@ if (PREPARE_CEWGPU_INDEX >= 0 && !process.argv[PREPARE_CEWGPU_INDEX + 1])
 if (PREPARE_CEWGPU_INDEX >= 0
   && (DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0
     || ACTIVE_QUADV5_INDEX >= 0 || DRAW_QUADGLASSV5_INDEX >= 0
+    || DRAW_QUADHEATV5_INDEX >= 0
     || ACTIVE_DECALV5_INDEX >= 0))
 {
     throw new Error("--prepare-cewgpu cannot be combined with a draw input");
@@ -183,6 +211,7 @@ if (PREPARE_MATRIX_INDEX >= 0 && !process.argv[PREPARE_MATRIX_INDEX + 1])
 if (PREPARE_MATRIX_INDEX >= 0
   && (PREPARE_CEWGPU_INDEX >= 0 || DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0
     || ACTIVE_QUADV5_INDEX >= 0 || DRAW_QUADGLASSV5_INDEX >= 0
+    || DRAW_QUADHEATV5_INDEX >= 0
     || ACTIVE_DECALV5_INDEX >= 0))
 {
     throw new Error("--prepare-matrix cannot be combined with another package or draw input");
@@ -329,6 +358,60 @@ async function ReadQuadGlassV5Packages(paths)
     return records;
 }
 
+async function ReadQuadHeatV5Packages(paths)
+{
+    const comparablePath = (value) => process.platform === "win32"
+        ? value.toLowerCase()
+        : value;
+    if (comparablePath(paths[0]) === comparablePath(paths[1]))
+    {
+        throw new Error(
+            "--draw-quadheatv5 requires distinct DX11 and DX12 package files"
+        );
+    }
+    const [
+        { CjsFormatWebgpu },
+        { CjsWebGPUPackage }
+    ] = await Promise.all([
+        import("@carbonenginejs/format-webgpu"),
+        import("../src/index.js")
+    ]);
+    const requests = [ "dx11", "dx12" ].map((backend, index) => ({
+        backend,
+        filePath: paths[index],
+        resourcePath: `res:/webgpu-harness/quadheatv5/${backend}.cewgpu`
+    }));
+    const records = [];
+    for (const request of requests)
+    {
+        const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
+            read: CjsFormatWebgpu.read,
+            readOptions: { source: request.filePath }
+        });
+        if (!(pkg instanceof CjsWebGPUPackage))
+        {
+            throw new Error(`${request.filePath} did not prepare as CjsWebGPUPackage`);
+        }
+        const pipeline = pkg.GetPipeline("Main", 0);
+        if (!pipeline || !pipeline.HasCompleteWgsl())
+        {
+            throw new Error(`${request.filePath} has no complete Main.pass0 pipeline`);
+        }
+        records.push({
+            backend: request.backend,
+            label: basename(request.filePath),
+            filePath: request.filePath,
+            resourcePath: request.resourcePath,
+            loadPath: "readFile -> CjsFormatWebgpu -> CjsWebGPUPackage",
+            analysis: pkg.analysis,
+            metadata: pkg.metadata,
+            pipeline: pipeline.ToJSON()
+        });
+    }
+    validateQuadHeatV5PackagePair(records);
+    return records;
+}
+
 async function ReadDecalV5Packages(paths, variant)
 {
     const comparablePath = (value) => process.platform === "win32" ? value.toLowerCase() : value;
@@ -406,6 +489,9 @@ const QUADV5_DRAW = DRAW_QUADV5_PATHS
 const QUADGLASSV5_DRAW = DRAW_QUADGLASSV5_PATHS
     ? await ReadQuadGlassV5Packages(DRAW_QUADGLASSV5_PATHS)
     : null;
+const QUADHEATV5_DRAW = DRAW_QUADHEATV5_PATHS
+    ? await ReadQuadHeatV5Packages(DRAW_QUADHEATV5_PATHS)
+    : null;
 const DECALV5_DRAW = DRAW_DECALV5_PATHS
     ? await ReadDecalV5Packages(DRAW_DECALV5_PATHS, DECALV5_VARIANT)
     : null;
@@ -427,6 +513,7 @@ const ASSETS = new Map([
     [ "/decalHoleV5Fixture.js", { path: new URL("../harness/webgpu/decalHoleV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/decalV5Fixture.js", { path: new URL("../harness/webgpu/decalV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadGlassV5Fixture.js", { path: new URL("../harness/webgpu/quadGlassV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/quadHeatV5Fixture.js", { path: new URL("../harness/webgpu/quadHeatV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadV5Fixture.js", { path: new URL("../harness/webgpu/quadV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/freeze.js", { path: new URL("../src/core/freeze.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/config.json", {
@@ -437,6 +524,7 @@ const ASSETS = new Map([
             drawCewgpu: !!PACKAGE_DRAW,
             drawQuadV5: !!QUADV5_DRAW,
             drawQuadGlassV5: !!QUADGLASSV5_DRAW,
+            drawQuadHeatV5: !!QUADHEATV5_DRAW,
             drawDecalV5: !!DECALV5_DRAW && DECALV5_VARIANT === "standard",
             drawDecalCylindricV5: !!DECALV5_DRAW && DECALV5_VARIANT === "cylindric",
             drawDecalHoleV5: !!DECALV5_DRAW && DECALV5_VARIANT === "hole",
@@ -452,6 +540,8 @@ const ASSETS = new Map([
             quadV5Labels: DRAW_QUADV5_PATHS?.map((path) => basename(path)) || [],
             quadGlassV5Labels:
                 DRAW_QUADGLASSV5_PATHS?.map((path) => basename(path)) || [],
+            quadHeatV5Labels:
+                DRAW_QUADHEATV5_PATHS?.map((path) => basename(path)) || [],
             decalV5Labels: DRAW_DECALV5_PATHS?.map((path) => basename(path)) || [],
             preparePackageLabel: PREPARE_CEWGPU_PATH ? basename(PREPARE_CEWGPU_PATH) : null,
             prepareMatrixLabel: PREPARE_MATRIX_PATH ? basename(PREPARE_MATRIX_PATH) : null,
@@ -502,6 +592,13 @@ if (QUADGLASSV5_DRAW)
 {
     ASSETS.set("/draw-quadglassv5.json", {
         body: JSON.stringify(QUADGLASSV5_DRAW),
+        type: "application/json; charset=utf-8"
+    });
+}
+if (QUADHEATV5_DRAW)
+{
+    ASSETS.set("/draw-quadheatv5.json", {
+        body: JSON.stringify(QUADHEATV5_DRAW),
         type: "application/json; charset=utf-8"
     });
 }
@@ -745,6 +842,19 @@ async function Main()
                 `alpha ${glass.paintMaskOracle.opaqueAlpha}->` +
                 `${glass.paintMaskOracle.transparentAlpha}; pass sides ` +
                 `${glass.paintMaskOracle.passSides.join("/")}).`
+            );
+        }
+        if (result.quadHeatV5Comparison)
+        {
+            const heat = result.quadHeatV5Comparison;
+            console.log(
+                `Rendered non-bindless PPT-off QuadHeatV5 body ${heat.bodyIndex} ` +
+                `from ${heat.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `${heat.pixelCount} pixels matched exactly across ${heat.renderCaseCount} ` +
+                `thermal cases, both MRTs, and both backends with 0 WGSL warnings ` +
+                `(${heat.heatOracle.changedPixels}/${heat.heatOracle.coveredPixels} ` +
+                `covered pixels gained red heat with ` +
+                `${heat.heatOracle.distinctRedDeltas} distinct byte deltas).`
             );
         }
         if (result.decalV5Comparison)

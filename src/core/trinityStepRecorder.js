@@ -205,6 +205,7 @@ export class CjsWebGPUTrinityStepRecorder
     this.#segmentCursor = 0;
   }
 
+  /** Binds this recorder to one intent-producing render context. */
   #BindContext(context)
   {
     if (!context || typeof context.TakeIntents !== "function")
@@ -218,6 +219,7 @@ export class CjsWebGPUTrinityStepRecorder
     this.#context = context;
   }
 
+  /** Returns the active entry after validating balanced step lifecycle calls. */
   #RequireTop(step, job, context)
   {
     this.#BindContext(context);
@@ -229,6 +231,7 @@ export class CjsWebGPUTrinityStepRecorder
     return entry;
   }
 
+  /** Snapshots the context's pending intents into one immutable segment. */
   #Drain()
   {
     const intents = this.#context.TakeIntents();

@@ -102,6 +102,8 @@ Internal conformance adapter from duck-typed Trinity batch maps to WebGPU draws.
 
 - Export: Not exported
 - Source: `src/core/trinityBatchDispatcher.js`
+- Visibility: Internal
+- Kind: CarbonEngineJS
 
 <!-- class:CjsWebGPUTrinityStepRecorder -->
 ## `CjsWebGPUTrinityStepRecorder`
