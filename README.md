@@ -63,6 +63,13 @@ production defaults, or an EVE asset. The dispatcher imports no runtime
 package and is not yet a public renderer-composition contract. HeatDetail is
 covered for contract breadth rather than shader frequency; its three synthetic
 cases isolate detail and heat changes while preserving coverage and MRT1.
+The Heat, HeatDetail, Glass, Sails, Detail, and Oil packages named `.sm_hi`
+below are Carbon's medium quality tier. High quality is `.sm_depth`; the
+PPT-on high QuadDetail and QuadHeatDetail packages currently expose 17
+fragment textures. They exceed this harness adapter's 16-texture limit until
+the documented detail-array transforms are emitted and realized. A device
+explicitly requested with a supported higher limit may accept the
+untransformed layout.
 The representative skinned Heat gate covers a shader correlated to 313 ship
 areas across 205 hulls in EVE build 3444265. Its synthetic cold/hot cases
 require a spatially varied red response, invariant coverage/MRT1, byte-exact
@@ -90,9 +97,12 @@ the separate skinned gate targets the latter with 23 bindings and observed
 indexed non-identity skinning. Both reuse four synthetic cases that isolate
 pattern projection, Detail1, and Detail2 with paired MRT parity and zero WGSL
 warnings. Those totals measure the current pre-transform packages, where the
-three Detail maps remain separate; the agreed 3-to-1 array transform and its
-engine realization are not yet qualified here. A real pattern application on
-ACA1 proves the skinned PPT-on logical
+three Detail maps remain separate. They are medium `.sm_hi` packages; the
+corresponding high `.sm_depth` body has 17 fragment textures and would fall to
+15 after the agreed 3-to-1 array transform when the compiler proves the exact
+shared-sampler/sample pattern and the engine proves compatible layer payloads.
+That transform and its engine realization are not yet qualified here. A real
+pattern application on ACA1 proves the skinned PPT-on logical
 path, but most audited skinned records do not list a pattern, and SOF does not
 identify packed versus unpacked containers or body indices. Neither command
 loads SOF, an EVE asset, production defaults, runtime-trinity, or a Trinity
@@ -100,8 +110,9 @@ graph, and neither attaches or qualifies depth.
 The build-3444265 QuadOilV5 audit finds 30 opaque areas across 25 hull records.
 Restricting that evidence to live ship geometry leaves seven areas across
 seven hulls: six skinned Sleeper hulls and one static hull. The skinned gate
-selects their PPT-off body-0 profile with 18 bindings: five uniform buffers,
-one vertex bone buffer, ten fragment textures, and two fragment samplers.
+selects their medium `.sm_hi`, PPT-off body-0 profile with 18 bindings: five
+uniform buffers, one vertex bone buffer, ten fragment textures, and two
+fragment samplers.
 Its two synthetic draws differ only in a black versus chromatic
 `OilFilmLookupMap`. All 635 covered pixels change across all three RGB
 channels with 18 distinct quantized deltas, while MRT1 remains invariant and
