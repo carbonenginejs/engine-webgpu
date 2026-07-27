@@ -111,7 +111,7 @@ common PPT-on skinned QuadHeatV5, PPT-on skinned QuadHeatDetailV5 material-block
 high-water gate, independently gated static and common PPT-on skinned
 QuadGlassV5 Main passes, cold/hot PPT-off
 static QuadHeatV5, independently gated PPT-off static and PPT-on skinned
-QuadSailsV5, non-bindless
+QuadSailsV5, PPT-on static QuadDetailV5, non-bindless
 DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter DecalCounterV5,
 DecalGlowV5, and DecalGlowCylindricV5 browser gates use its one-type batch-map
 path, with the glass fixture keeping complementary pass selection explicit,
@@ -150,6 +150,19 @@ logical family, not specifically to the PPT-on body, and the recipe remains
 provisional until the WebGL/WebGPU renderer rules are designed. These gates
 do not load SOF, runtime-trinity, a Trinity graph, production textures, or
 authoritative per-object defaults.
+
+The build-3444265 QuadDetailV5 audit finds 587 opaque areas across 257 hulls.
+Runtime generation separates 473 areas across 189 hulls onto the static
+`quad/quaddetailv5.fx` path and 114 across 68 hulls onto
+`skinned_quad/quaddetailv5.fx`; no audited hull mixes the two paths. The first
+browser gate follows the dominant static path and selects the exact PPT-on
+body-4, seven-axis contract. Its four synthetic cases isolate pattern
+projection, Detail1, and Detail2 while exercising five uniform buffers,
+fourteen textures, and three samplers. The 22-binding total keeps texture and
+sampler limit categories distinct. This is still a library-free conformance
+probe: it loads neither the audited SOF DNA nor EVE geometry/textures/defaults,
+imports neither runtime-trinity nor a Trinity graph, and makes no depth-policy
+claim. The skinned logical path is separate follow-up work.
 
 The internal `CjsWebGPUTrinityStepRecorder` proves the synchronous
 `Tr2RenderContext.SetStepExecutor(...)` seam separately. It delegates the

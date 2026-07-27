@@ -69,6 +69,15 @@ import {
     validateQuadV5PackagePair
 } from "/quadV5Fixture.js";
 import {
+    QUAD_DETAIL_V5_TARGET_HEIGHT,
+    QUAD_DETAIL_V5_TARGET_WIDTH,
+    QUAD_DETAIL_V5_VERTEX_BUFFER_LAYOUT,
+    createQuadDetailV5BindingCases,
+    createQuadDetailV5FixtureValues,
+    getQuadDetailV5ResourcePlan,
+    validateQuadDetailV5PackagePair
+} from "/quadDetailV5Fixture.js";
+import {
     QUAD_GLASS_V5_CLEAR_TARGETS,
     QUAD_GLASS_V5_TARGET_HEIGHT,
     QUAD_GLASS_V5_TARGET_WIDTH,
@@ -840,6 +849,161 @@ async function CreateQuadV5GpuResources(webgpu, records)
     catch (error)
     {
         boneBuffer?.destroy();
+        cubeTexture?.destroy();
+        bundle.Destroy();
+        throw error;
+    }
+}
+
+async function CreateQuadDetailV5GpuResources(webgpu, records)
+{
+    Assert(
+        QUAD_DETAIL_V5_TARGET_WIDTH === WIDTH
+            && QUAD_DETAIL_V5_TARGET_HEIGHT === HEIGHT,
+        "QuadDetailV5 and harness target dimensions must match"
+    );
+    const values = createQuadDetailV5FixtureValues(WIDTH, HEIGHT);
+    const cases = createQuadDetailV5BindingCases(WIDTH, HEIGHT);
+    Assert(
+        values.textures.length === 14 && values.samplers.length === 3,
+        "QuadDetailV5 fixture requires exactly 14 textures and three samplers"
+    );
+    const geometrySource = Object.freeze({
+        kind: "synthetic-quaddetailv5",
+        variant: "static"
+    });
+    const texturePayloads = Object.fromEntries(values.textures
+        .filter((entry) => entry.dimension === "2d")
+        .map((entry) => [
+            entry.name,
+            {
+                label: `QuadDetailV5 ${entry.name}`,
+                width: entry.width,
+                height: entry.height,
+                format: entry.format,
+                bytesPerRow: entry.bytesPerRow,
+                data: entry.data
+            }
+        ]));
+    const samplerPayloads = Object.fromEntries(values.samplers.map(({ name, ...descriptor }) => [
+        name,
+        {
+            label: `QuadDetailV5 ${name}`,
+            ...descriptor
+        }
+    ]));
+    const bundle = await PublishPreparedResourceBundle(webgpu, {
+        label: "QuadDetailV5 resources",
+        geometries: {
+            main: {
+                label: "QuadDetailV5 static silhouette geometry",
+                vertexBuffers: [ {
+                    slot: 0,
+                    data: values.vertices,
+                    layout: QUAD_DETAIL_V5_VERTEX_BUFFER_LAYOUT
+                } ],
+                indexBuffer: {
+                    data: values.indices,
+                    format: "uint16"
+                }
+            }
+        },
+        textures: texturePayloads,
+        samplers: samplerPayloads
+    }, "quaddetailv5-resources");
+    const device = webgpu.GetDevice();
+    const cubeDefinition = values.textures.find((entry) => entry.dimension === "cube");
+    let cubeTexture = null;
+    try
+    {
+        Assert(cubeDefinition, "QuadDetailV5 fixture requires an environment cube");
+        cubeTexture = device.createTexture({
+            label: "QuadDetailV5 EveSpaceSceneEnvMap",
+            size: {
+                width: cubeDefinition.width,
+                height: cubeDefinition.height,
+                depthOrArrayLayers: cubeDefinition.depthOrArrayLayers
+            },
+            mipLevelCount: 1,
+            sampleCount: 1,
+            dimension: "2d",
+            format: cubeDefinition.format,
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+        });
+        const cubeLayerSize =
+            cubeDefinition.width * cubeDefinition.height * BYTES_PER_PIXEL;
+        for (let layer = 0; layer < cubeDefinition.depthOrArrayLayers; layer += 1)
+        {
+            device.queue.writeTexture(
+                { texture: cubeTexture, origin: { x: 0, y: 0, z: layer } },
+                cubeDefinition.data.slice(
+                    layer * cubeLayerSize,
+                    (layer + 1) * cubeLayerSize
+                ),
+                {
+                    offset: 0,
+                    bytesPerRow: cubeDefinition.width * BYTES_PER_PIXEL,
+                    rowsPerImage: cubeDefinition.height
+                },
+                {
+                    width: cubeDefinition.width,
+                    height: cubeDefinition.height,
+                    depthOrArrayLayers: 1
+                }
+            );
+        }
+        const cubeView = cubeTexture.createView({
+            label: "QuadDetailV5 EveSpaceSceneEnvMap cube view",
+            dimension: "cube"
+        });
+        const resourcesByBackend = new Map();
+        for (const record of records)
+        {
+            const plan = getQuadDetailV5ResourcePlan(record);
+            Assert(
+                plan.textures.length === 14 && plan.samplers.length === 3,
+                `QuadDetailV5 ${record.backend} resource plan must contain ` +
+                    "14 textures and three samplers"
+            );
+            const resources = new Map();
+            for (const texture of plan.textures)
+            {
+                const resource = texture.name === cubeDefinition.name
+                    ? cubeView
+                    : bundle.textures[texture.name];
+                Assert(
+                    resource,
+                    `QuadDetailV5 fixture is missing texture ${texture.name}`
+                );
+                resources.set(texture.scopeIdentity, resource);
+            }
+            for (const sampler of plan.samplers)
+            {
+                const resource = bundle.samplers[sampler.name];
+                Assert(
+                    resource,
+                    `QuadDetailV5 fixture is missing sampler ${sampler.name}`
+                );
+                resources.set(sampler.scopeIdentity, resource);
+            }
+            resourcesByBackend.set(record.backend, resources);
+        }
+        return {
+            caseNames: cases.caseNames,
+            bindingValuesByCase: cases.bindingValuesByCase,
+            resourcesByBackend,
+            geometry: bundle.geometries.main,
+            geometrySource,
+            bundle,
+            destroy()
+            {
+                cubeTexture.destroy();
+                bundle.Destroy();
+            }
+        };
+    }
+    catch (error)
+    {
         cubeTexture?.destroy();
         bundle.Destroy();
         throw error;
@@ -1693,6 +1857,121 @@ function CreateQuadV5TrinityDispatcher(webgpu, fixture)
     });
 }
 
+function CreateQuadDetailV5TrinityBatchMap(record, fixture, renderCase)
+{
+    const objectData = fixture.bindingValuesByCase[renderCase];
+    const batch = Object.freeze({
+        material: record,
+        shader: record.pipeline,
+        renderCase,
+        geometrySource: Object.freeze({
+            geometry: fixture.geometrySource,
+            meshIndex: 0,
+            areaIndex: 0,
+            count: 1,
+            reversed: false
+        }),
+        objectData,
+        topology: 4,
+        indexCountPerInstance: 0,
+        instanceCount: 0,
+        startIndexLocation: 0,
+        baseVertexLocation: 0,
+        startInstanceLocation: 0,
+        renderingMode: 0,
+        pickingData: 0,
+        groupCount: 1
+    });
+    const batches = Object.freeze([ batch ]);
+    const gdprBatches = Object.freeze([]);
+    const accumulator = Object.freeze({
+        GetGdprBatches: () => gdprBatches,
+        GetBatches: () => batches,
+        GetBatchCount: () => batches.length,
+        IsChainedByEffect: () => true
+    });
+    const batchTypes = Object.freeze([ TRINITY_BATCH_TYPE_OPAQUE ]);
+    return Object.freeze({
+        GetBatchTypes: () => batchTypes,
+        GetAccumulator: (value) =>
+            value === TRINITY_BATCH_TYPE_OPAQUE ? accumulator : null,
+        GetBatchCount: () => accumulator.GetBatchCount()
+    });
+}
+
+function CreateQuadDetailV5TrinityDispatcher(webgpu, fixture)
+{
+    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+        ResolveMaterial(record, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE,
+                "QuadDetailV5 material resolved outside the opaque batch type"
+            );
+            return {
+                pipeline: record.pipeline,
+                prepareOptions: { warningsAsErrors: true },
+                recipe: {
+                    label: `QuadDetailV5 ${record.label} Main.pass0`,
+                    vertex: { buffers: fixture.geometry.vertexBufferLayouts },
+                    fragment: {
+                        targets: [ { format: "rgba8unorm" }, { format: "rgba8unorm" } ]
+                    },
+                    primitive: { cullMode: "none" }
+                }
+            };
+        },
+        ResolveGeometry(source, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && source?.geometry === fixture.geometrySource
+                    && source.meshIndex === 0
+                    && source.areaIndex === 0
+                    && source.count === 1
+                    && source.reversed === false,
+                "QuadDetailV5 batch references an unknown geometry source"
+            );
+            return {
+                geometry: fixture.geometry,
+                indexed: true,
+                draw: {
+                    indexCount: fixture.geometry.indexCount,
+                    instanceCount: 1,
+                    firstIndex: 0,
+                    baseVertex: 0,
+                    firstInstance: 0
+                }
+            };
+        },
+        ResolveBindings(batch, _livePipeline, context)
+        {
+            const record = batch.material;
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && fixture.caseNames.includes(batch.renderCase)
+                    && batch.objectData === fixture.bindingValuesByCase[batch.renderCase],
+                `QuadDetailV5 ${record.label} batch references unknown fixture data`
+            );
+            return {
+                uniformData: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    new Map(Object.entries(buildEveSpaceObjectMainUniformData(
+                        record,
+                        batch.objectData
+                    ))),
+                    `QuadDetailV5 ${record.label} ${batch.renderCase} uniform data`
+                ),
+                resources: ScopeFixtureBindingValues(
+                    record.pipeline,
+                    fixture.resourcesByBackend.get(record.backend),
+                    `QuadDetailV5 ${record.label} resources`
+                )
+            };
+        }
+    });
+}
+
 function CreateQuadSailsV5TrinityBatchMap(record, fixture, renderCase)
 {
     const objectData = fixture.bindingValuesByCase[renderCase];
@@ -2487,6 +2766,99 @@ function AssertQuadV5HeatDetailControls(instances)
             "QuadHeatDetailV5"
         )
     };
+}
+
+function QuadDetailV5DeltaSignature(control, active, motion)
+{
+    const deltas = [];
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            if (!QuadV5PixelIsActive(motion, x, y)) continue;
+            const offset = PixelOffset(x, y);
+            const delta = [
+                active[offset] - control[offset],
+                active[offset + 1] - control[offset + 1],
+                active[offset + 2] - control[offset + 2]
+            ];
+            if (delta.some((value) => value !== 0))
+            {
+                deltas.push(`${x},${y}:${delta.join(",")}`);
+            }
+        }
+    }
+    return deltas.join("|");
+}
+
+function AssertQuadDetailV5Controls(instances)
+{
+    const byKey = new Map(instances.map((instance) => [
+        `${instance.record.backend}:${instance.renderCase}`,
+        instance
+    ]));
+    let dx11Oracle = null;
+    for (const backend of [ "dx11", "dx12" ])
+    {
+        const pptNeutral = byKey.get(`${backend}:pptNeutral`);
+        const surface = byKey.get(`${backend}:surface`);
+        const detail1 = byKey.get(`${backend}:detail1`);
+        const detail2 = byKey.get(`${backend}:detail2`);
+        Assert(
+            pptNeutral && surface && detail1 && detail2,
+            `QuadDetailV5 ${backend} controlled cases are incomplete`
+        );
+        for (const controlled of [ surface, detail1, detail2 ])
+        {
+            AssertExactTargetMatch(
+                pptNeutral.snapshots[1],
+                controlled.snapshots[1],
+                `${backend} QuadDetailV5 ${controlled.renderCase}-invariant MRT1`
+            );
+        }
+        const ppt = MeasureQuadV5ColorControl(
+            pptNeutral.snapshots[0],
+            surface.snapshots[0],
+            pptNeutral.snapshots[1],
+            `QuadDetailV5 ${backend} PPT material control`
+        );
+        const detail1Oracle = MeasureQuadV5ColorControl(
+            surface.snapshots[0],
+            detail1.snapshots[0],
+            surface.snapshots[1],
+            `QuadDetailV5 ${backend} Detail1 control`
+        );
+        const detail2Oracle = MeasureQuadV5ColorControl(
+            surface.snapshots[0],
+            detail2.snapshots[0],
+            surface.snapshots[1],
+            `QuadDetailV5 ${backend} Detail2 control`
+        );
+        const detail1Signature = QuadDetailV5DeltaSignature(
+            surface.snapshots[0],
+            detail1.snapshots[0],
+            surface.snapshots[1]
+        );
+        const detail2Signature = QuadDetailV5DeltaSignature(
+            surface.snapshots[0],
+            detail2.snapshots[0],
+            surface.snapshots[1]
+        );
+        Assert(
+            detail1Signature !== detail2Signature,
+            `QuadDetailV5 ${backend} Detail1 and Detail2 delta maps are identical`
+        );
+        if (backend === "dx11")
+        {
+            dx11Oracle = {
+                ppt,
+                detail1: detail1Oracle,
+                detail2: detail2Oracle,
+                detailDeltaMapsDistinct: true
+            };
+        }
+    }
+    return dx11Oracle;
 }
 
 function QuadGlassV5PixelIsActive(bytes, x, y)
@@ -3687,6 +4059,230 @@ async function RunQuadV5Comparison(webgpu)
     }
 }
 
+async function RunQuadDetailV5Comparison(webgpu)
+{
+    if (!CONFIG.drawQuadDetailV5) return null;
+    const response = await fetch("/draw-quaddetailv5.json");
+    Assert(
+        response.ok,
+        `Failed to load QuadDetailV5 package records: HTTP ${response.status}`
+    );
+    const records = await response.json();
+    Assert(
+        Array.isArray(records) && records.length === 2,
+        "QuadDetailV5 comparison requires two package records"
+    );
+    validateQuadDetailV5PackagePair(records);
+    Assert(
+        QUAD_DETAIL_V5_TARGET_WIDTH === WIDTH
+            && QUAD_DETAIL_V5_TARGET_HEIGHT === HEIGHT,
+        "QuadDetailV5 and harness target dimensions must match"
+    );
+
+    const device = webgpu.GetDevice();
+    const fixture = await CreateQuadDetailV5GpuResources(webgpu, records);
+    let dispatcher = null;
+    let passEncoder = null;
+    const instances = [];
+    let warningCount = 0;
+    try
+    {
+        Assert(
+            JSON.stringify(fixture.caseNames)
+                === JSON.stringify([ "pptNeutral", "surface", "detail1", "detail2" ]),
+            "QuadDetailV5 cases must isolate PPT, Detail1, and Detail2 in order"
+        );
+        dispatcher = CreateQuadDetailV5TrinityDispatcher(webgpu, fixture);
+        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+        for (const record of records)
+        {
+            for (const renderCase of fixture.caseNames)
+            {
+                let preparedBatchMap = null;
+                const targets = [];
+                const readbacks = [];
+                try
+                {
+                    preparedBatchMap = await dispatcher.PrepareBatchMap(
+                        CreateQuadDetailV5TrinityBatchMap(record, fixture, renderCase)
+                    );
+                    warningCount += preparedBatchMap.entries.reduce(
+                        (mapTotal, entry) => mapTotal + entry.accumulator.batches.reduce(
+                            (batchTotal, batch) => batchTotal
+                                + batch.prepared.diagnostics
+                                    .filter((item) => item.type === "warning").length,
+                            0
+                        ),
+                        0
+                    );
+                    for (let targetIndex = 0;
+                        targetIndex < QUADV5_CLEAR_TARGETS.length;
+                        targetIndex += 1)
+                    {
+                        targets.push(device.createTexture({
+                            label:
+                                `QuadDetailV5 ${record.label} ${renderCase} ` +
+                                `MRT${targetIndex}`,
+                            size: { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 },
+                            format: "rgba8unorm",
+                            usage:
+                                GPUTextureUsage.RENDER_ATTACHMENT
+                                | GPUTextureUsage.COPY_SRC
+                        }));
+                        readbacks.push(device.createBuffer({
+                            label:
+                                `QuadDetailV5 ${record.label} ${renderCase} ` +
+                                `MRT${targetIndex} readback`,
+                            size: BYTES_PER_ROW * HEIGHT,
+                            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+                        }));
+                    }
+                    instances.push({
+                        record,
+                        renderCase,
+                        preparedBatchMap,
+                        targets,
+                        readbacks,
+                        snapshots: []
+                    });
+                }
+                catch (error)
+                {
+                    if (preparedBatchMap)
+                    {
+                        dispatcher.DestroyBatchMap(preparedBatchMap);
+                    }
+                    readbacks.forEach((buffer) => buffer.destroy());
+                    targets.forEach((texture) => texture.destroy());
+                    throw error;
+                }
+            }
+        }
+
+        const encoder = device.createCommandEncoder({
+            label: "QuadDetailV5 DX11/DX12 comparison encoder"
+        });
+        for (const instance of instances)
+        {
+            passEncoder.Encode(encoder, [ {
+                descriptor: {
+                    label:
+                        `QuadDetailV5 ${instance.record.label} Main.pass0 ` +
+                        `${instance.renderCase}`,
+                    colorAttachments: instance.targets.map((texture, targetIndex) => ({
+                        view: texture.createView(),
+                        clearValue: {
+                            r: QUADV5_CLEAR_TARGETS[targetIndex][0] / 255,
+                            g: QUADV5_CLEAR_TARGETS[targetIndex][1] / 255,
+                            b: QUADV5_CLEAR_TARGETS[targetIndex][2] / 255,
+                            a: QUADV5_CLEAR_TARGETS[targetIndex][3] / 255
+                        },
+                        loadOp: "clear",
+                        storeOp: "store"
+                    }))
+                },
+                selections: [ {
+                    preparedBatchMap: instance.preparedBatchMap,
+                    batchType: TRINITY_BATCH_TYPE_OPAQUE
+                } ]
+            } ]);
+            instance.targets.forEach((texture, targetIndex) =>
+            {
+                encoder.copyTextureToBuffer(
+                    { texture },
+                    {
+                        buffer: instance.readbacks[targetIndex],
+                        bytesPerRow: BYTES_PER_ROW,
+                        rowsPerImage: HEIGHT
+                    },
+                    { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 }
+                );
+            });
+        }
+        webgpu.Submit([ encoder.finish() ]);
+        await device.queue.onSubmittedWorkDone();
+        await Promise.all(instances.flatMap((instance) => instance.readbacks.map(
+            (buffer) => buffer.mapAsync(GPUMapMode.READ)
+        )));
+
+        for (const instance of instances)
+        {
+            instance.snapshots = instance.readbacks.map((buffer) =>
+                new Uint8Array(buffer.getMappedRange()).slice());
+            instance.statistics = instance.snapshots.map((bytes, targetIndex) =>
+                AssertQuadV5Silhouette(
+                    bytes,
+                    targetIndex,
+                    `${instance.record.label} ${instance.renderCase} MRT${targetIndex}`,
+                    "static"
+                ));
+            Assert(
+                instance.statistics[0].coverage === instance.statistics[1].coverage,
+                `${instance.record.label} ${instance.renderCase} MRT coverage does not match`
+            );
+            AssertQuadV5MrtCoverage(
+                instance.snapshots[0],
+                instance.snapshots[1],
+                `${instance.record.label} ${instance.renderCase}`
+            );
+        }
+        for (const renderCase of fixture.caseNames)
+        {
+            const paired = records.map((record) => instances.find((instance) =>
+                instance.record.backend === record.backend
+                    && instance.renderCase === renderCase));
+            Assert(
+                paired.every(Boolean),
+                `QuadDetailV5 ${renderCase} DX11/DX12 pair is incomplete`
+            );
+            for (let targetIndex = 0;
+                targetIndex < QUADV5_CLEAR_TARGETS.length;
+                targetIndex += 1)
+            {
+                AssertExactTargetMatch(
+                    paired[0].snapshots[targetIndex],
+                    paired[1].snapshots[targetIndex],
+                    `DX11/DX12 QuadDetailV5 ${renderCase} MRT${targetIndex}`
+                );
+            }
+        }
+        const quadDetailOracle = AssertQuadDetailV5Controls(instances);
+        const baseline = instances.find((instance) =>
+            instance.record.backend === "dx11"
+                && instance.renderCase === "surface");
+        Assert(baseline, "QuadDetailV5 surface DX11 baseline is missing");
+        return {
+            bodyIndex: 4,
+            variant: "static",
+            labels: records.map((record) => `${record.backend}:${record.label}`),
+            loadPath: records[0].loadPath,
+            pixelCount: WIDTH * HEIGHT,
+            targetCount: QUADV5_CLEAR_TARGETS.length,
+            renderCaseCount: fixture.caseNames.length,
+            drawKind: "indexed synthetic silhouette",
+            indexCount: fixture.geometry.indexCount,
+            warningCount,
+            clearTargets: QUADV5_CLEAR_TARGETS,
+            statistics: baseline.statistics,
+            quadDetailOracle
+        };
+    }
+    finally
+    {
+        for (const instance of instances)
+        {
+            dispatcher?.DestroyBatchMap(instance.preparedBatchMap);
+            for (const buffer of instance.readbacks)
+            {
+                if (buffer.mapState === "mapped") buffer.unmap();
+                buffer.destroy();
+            }
+            instance.targets.forEach((texture) => texture.destroy());
+        }
+        fixture.destroy();
+    }
+}
+
 async function RunQuadSailsV5Comparison(webgpu)
 {
     if (!CONFIG.drawQuadSailsV5) return null;
@@ -4738,6 +5334,7 @@ async function RunHarness()
     let quadV5Comparison = null;
     let quadGlassV5Comparison = null;
     let quadHeatV5Comparison = null;
+    let quadDetailV5Comparison = null;
     let quadSailsV5Comparison = null;
     let decalV5Comparison = null;
     let decalCylindricV5Comparison = null;
@@ -4758,6 +5355,7 @@ async function RunHarness()
         quadV5Comparison = await RunQuadV5Comparison(webgpu);
         quadGlassV5Comparison = await RunQuadGlassV5Comparison(webgpu);
         quadHeatV5Comparison = await RunQuadHeatV5Comparison(webgpu);
+        quadDetailV5Comparison = await RunQuadDetailV5Comparison(webgpu);
         quadSailsV5Comparison = await RunQuadSailsV5Comparison(webgpu);
         const decalComparison = await RunDecalV5Comparison(webgpu);
         if (decalComparison?.variant === "cylindric")
@@ -4855,6 +5453,7 @@ async function RunHarness()
             quadV5Comparison,
             quadGlassV5Comparison,
             quadHeatV5Comparison,
+            quadDetailV5Comparison,
             quadSailsV5Comparison,
             decalV5Comparison,
             decalCylindricV5Comparison,

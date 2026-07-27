@@ -55,7 +55,7 @@ PPT-on skinned QuadHeatV5, the PPT-on skinned QuadHeatDetailV5 material-block
 high-water and tied-largest active-binding contract, both independently
 rendered static and common PPT-on skinned QuadGlassV5 Main passes, cold/hot
 PPT-off static QuadHeatV5, independently rendered PPT-off static and PPT-on
-skinned QuadSailsV5, non-bindless
+skinned QuadSailsV5, PPT-on static QuadDetailV5, non-bindless
 DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter DecalCounterV5, and
 two-texture DecalGlowV5/DecalGlowCylindricV5 draws through a provisional
 Trinity-shaped batch dispatcher without loading SOF, a Trinity graph,
@@ -81,6 +81,14 @@ non-identity skinning. Both gates exercise the provisional caller-owned
 depth-write recipe and require byte-exact paired MRT readbacks with zero WGSL
 warnings. The skinned family count does not claim that body 4 is the
 representative SOF-authored default.
+The build-3444265 QuadDetailV5 audit covers 587 opaque areas across 257 hulls.
+The first gate selects the dominant static logical path (473 areas across 189
+hulls, 80.6% of the areas) and a PPT-on body-4 pair; the skinned path accounts
+for the remaining 114 areas across 68 hulls and is follow-up work. Four
+synthetic cases isolate pattern projection, Detail1, and Detail2 through the
+exact 22-binding contract with paired MRT parity and zero WGSL warnings. The
+SOF DNA and pattern audit informs that selection, but the command loads no
+SOF, EVE asset, production default, runtime-trinity, or Trinity graph.
 
 ## Documentation
 
