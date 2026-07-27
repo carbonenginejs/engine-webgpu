@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   QUAD_DETAIL_V5_SELECTION,
+  QUAD_DETAIL_V5_SELECTIONS,
   QUAD_DETAIL_V5_TARGET_HEIGHT,
   QUAD_DETAIL_V5_TARGET_WIDTH,
   QUAD_DETAIL_V5_VERTEX_BUFFER_LAYOUT,
@@ -74,6 +75,9 @@ const VERTEX_INPUTS = [
   [ "TEXCOORD", 1, 6, 3, 0, 2 ]
 ];
 
+const SKINNED_VERTEX_INPUTS = VERTEX_INPUTS.map((entry) =>
+  entry[2] === 1 ? [ ...entry.slice(0, 3), 1, ...entry.slice(4) ] : entry);
+
 const PIXEL_INPUTS = [
   [ "TEXCOORD", 0, 1, 3, 0, 4 ],
   [ "TEXCOORD", 1, 2, 7, 0, 3 ],
@@ -86,7 +90,7 @@ const PIXEL_INPUTS = [
   [ "TEXCOORD", 9, 9, 11, 0, 4 ]
 ];
 
-function selections()
+function selections(variant)
 {
   const provenance = {
     BINDLESS_RENDERING: [ 0, 0, "BINDLESS_RENDERING_DISABLED" ],
@@ -97,7 +101,7 @@ function selections()
     SPACE_OBJECT_INSTANCED_ATTACHMENT: [ 0, 0, "SOIA_DISABLED" ],
     BLEND_MODE: [ 0, 0, "BLEND_MODE_OVERLAY" ]
   };
-  return Object.entries(QUAD_DETAIL_V5_SELECTION).map(([ name, value ]) => ({
+  return Object.entries(QUAD_DETAIL_V5_SELECTIONS[variant]).map(([ name, value ]) => ({
     name,
     value,
     optionIndex: provenance[name][0],
@@ -180,6 +184,25 @@ function analysisResource(name, registerIndex, index)
   };
 }
 
+function analysisBone()
+{
+  return {
+    kind: "resource",
+    generatedSymbol: "t0",
+    registerSpace: 0,
+    registerIndex: 0,
+    registerType: 33,
+    metadataName: "BoneTransforms",
+    carbon: {
+      name: "BoneTransforms",
+      type: 7,
+      arrayElements: 1,
+      isSRGB: false,
+      isAutoregister: false
+    }
+  };
+}
+
 function analysisSampler(registerIndex)
 {
   return {
@@ -235,6 +258,36 @@ function uniformBinding(registerIndex, bindingIndex, visibility, size)
   );
 }
 
+function boneBinding()
+{
+  return {
+    ...binding(
+      "sampled-resource:0:0",
+      5,
+      "vertex",
+      "buffer",
+      {
+        type: "array<u32>",
+        value: {
+          type: "read-only-storage",
+          hasDynamicOffset: false,
+          minBindingSize: 48
+        }
+      }
+    ),
+    name: "BoneTransforms",
+    generatedSymbol: "t0",
+    structureStride: 48,
+    carbon: {
+      name: "BoneTransforms",
+      type: 7,
+      arrayElements: 1,
+      isSRGB: false,
+      isAutoregister: false
+    }
+  };
+}
+
 function resourceBinding(name, registerIndex, bindingIndex, index)
 {
   const viewDimension = index === 0 ? "cube" : "2d";
@@ -271,12 +324,12 @@ function samplerBinding(registerIndex, bindingIndex)
   );
 }
 
-function vertexWgsl(tag)
+function vertexWgsl(tag, skinned)
 {
   return `// ${tag}
 struct VertexInput {
   @location(0) input0: vec3<f32>,
-  @location(2) input2: vec2<f32>,
+${skinned ? "  @location(1) input1: vec4<u32>,\n" : ""}  @location(2) input2: vec2<f32>,
   @location(3) input3: vec3<f32>,
   @location(4) input4: vec3<f32>,
   @location(5) input5: vec3<f32>,
@@ -315,9 +368,15 @@ struct FragmentOutput {
 };`;
 }
 
-function packageRecord(backend)
+function packageRecord(backend, variant = "static")
 {
-  const source = `res:/graphics/effect.${backend}/managed/space/spaceobject/v5/quad/unpacked_quaddetailv5.sm_hi`;
+  const skinned = variant === "skinned";
+  const sourceStem = skinned
+    ? "unpackedskinned_quaddetailv5"
+    : "unpacked_quaddetailv5";
+  const source =
+    `res:/graphics/effect.${backend}/managed/space/spaceobject/v5/quad/` +
+      `${sourceStem}.sm_hi`;
   const registers = RESOURCE_REGISTERS[backend];
   const shaderModules = [
     {
@@ -327,7 +386,7 @@ function packageRecord(backend)
       stageName: "vertex",
       stageType: 0,
       entryPoint: "main",
-      wgsl: vertexWgsl(backend)
+      wgsl: vertexWgsl(backend, skinned)
     },
     {
       key: "Main.pass0.pixel",
@@ -343,19 +402,21 @@ function packageRecord(backend)
     uniformBinding(0, 0, "fragment", 608),
     uniformBinding(1, 1, "vertex", 512),
     uniformBinding(2, 2, "fragment", 352),
-    uniformBinding(3, 3, "vertex", 416),
+    uniformBinding(3, 3, "vertex", skinned ? 432 : 416),
     uniformBinding(4, 4, "fragment", 432),
+    ...(skinned ? [ boneBinding() ] : []),
     ...RESOURCE_NAMES.map((name, index) =>
-      resourceBinding(name, registers[index], 5 + index, index)),
-    samplerBinding(0, 19),
-    samplerBinding(1, 20),
-    samplerBinding(2, 21)
+      resourceBinding(name, registers[index], (skinned ? 6 : 5) + index, index)),
+    samplerBinding(0, skinned ? 20 : 19),
+    samplerBinding(1, skinned ? 21 : 20),
+    samplerBinding(2, skinned ? 22 : 21)
   ];
-  const selectedOptions = selections();
+  const selectedOptions = selections(variant);
   return {
     backend,
-    filePath: `C:/fixture/quaddetail-${backend}.cewgpu`,
-    resourcePath: `res:/fixture/quaddetail-${backend}.cewgpu`,
+    variant,
+    filePath: `C:/fixture/quaddetail-${variant}-${backend}.cewgpu`,
+    resourcePath: `res:/fixture/quaddetail-${variant}-${backend}.cewgpu`,
     analysis: {
       source,
       bodyIndex: 4,
@@ -370,16 +431,25 @@ function packageRecord(backend)
       ],
       stages: [
         {
+          key: "Main.pass0.vertex",
           techniqueName: "Main",
           passIndex: 0,
           stageName: "vertex",
-          pipelineInputs: VERTEX_INPUTS.map(pipelineInput),
-          bindings: [ constantBuffer(1), constantBuffer(3) ]
+          stageType: 0,
+          pipelineInputs: (skinned ? SKINNED_VERTEX_INPUTS : VERTEX_INPUTS)
+            .map(pipelineInput),
+          bindings: [
+            ...(skinned ? [ analysisBone() ] : []),
+            constantBuffer(1),
+            constantBuffer(3)
+          ]
         },
         {
+          key: "Main.pass0.pixel",
           techniqueName: "Main",
           passIndex: 0,
           stageName: "pixel",
+          stageType: 1,
           pipelineInputs: PIXEL_INPUTS.map(pipelineInput),
           bindings: [
             ...(backend === "dx11" ? [ analysisSampler(0) ] : []),
@@ -438,12 +508,82 @@ test("QuadDetailV5 exact static body4 records and resource plans validate", () =
 
   const dx11Plan = getQuadDetailV5ResourcePlan(dx11);
   const dx12Plan = getQuadDetailV5ResourcePlan(dx12);
+  assert.equal(dx11Plan.bone, null);
   assert.deepEqual(dx11Plan.textures.map((entry) => entry.name), RESOURCE_NAMES);
   assert.deepEqual(dx11Plan.textures.map((entry) => entry.registerIndex), RESOURCE_REGISTERS.dx11);
   assert.deepEqual(dx12Plan.textures.map((entry) => entry.registerIndex), RESOURCE_REGISTERS.dx12);
   assert.deepEqual(dx12Plan.samplers.map((entry) => entry.binding), [ 19, 20, 21 ]);
   assert.equal(dx12Plan.textures.length + dx12Plan.samplers.length + 5, 22);
   assert.equal(Object.isFrozen(dx12Plan), true);
+  assert.equal(QUAD_DETAIL_V5_SELECTION, QUAD_DETAIL_V5_SELECTIONS.static);
+});
+
+test("QuadDetailV5 exact skinned body4 records, bone plan, and fixture validate", () =>
+{
+  const dx11 = packageRecord("dx11", "skinned");
+  const dx12 = packageRecord("dx12", "skinned");
+  assert.equal(validateQuadDetailV5PackageRecord(dx11), dx11);
+  assert.equal(validateQuadDetailV5PackageRecord(dx12), dx12);
+  assert.equal(validateQuadDetailV5PackagePair([ dx11, dx12 ])[1], dx12);
+
+  assert.deepEqual(
+    dx11.metadata.selectedOptions.map((entry) => entry.name),
+    [
+      "BINDLESS_RENDERING",
+      "SPACE_OBJECT_CLIPPING",
+      "SPACE_OBJECT_PPT_ENABLED",
+      "SPACE_OBJECT_TRANSPARENCY",
+      "V5_DEBUG",
+      "BLEND_MODE"
+    ]
+  );
+  assert.equal(
+    dx11.metadata.selectedOptions.some((entry) =>
+      entry.name === "SPACE_OBJECT_INSTANCED_ATTACHMENT"),
+    false
+  );
+  assert.equal(
+    dx11.pipeline.bindGroups[0].bindings[3].layout.buffer.minBindingSize,
+    432
+  );
+  assert.match(
+    dx11.pipeline.shaderModules[0].wgsl,
+    /@location\(1\)\s+input1:\s*vec4<u32>/u
+  );
+
+  const dx11Plan = getQuadDetailV5ResourcePlan(dx11);
+  const dx12Plan = getQuadDetailV5ResourcePlan(dx12);
+  assert.deepEqual(dx11Plan.bone, {
+    name: "BoneTransforms",
+    identity: "sampled-resource:0:0",
+    scopeIdentity: "sampled-resource:0:0@vertex",
+    registerIndex: 0,
+    binding: 5,
+    minBindingSize: 48,
+    structureStride: 48
+  });
+  assert.deepEqual(dx11Plan.textures.map((entry) => entry.binding), [
+    6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
+  ]);
+  assert.deepEqual(dx11Plan.textures.map((entry) => entry.registerIndex),
+    RESOURCE_REGISTERS.dx11);
+  assert.deepEqual(dx12Plan.textures.map((entry) => entry.registerIndex),
+    RESOURCE_REGISTERS.dx12);
+  assert.deepEqual(dx12Plan.samplers.map((entry) => entry.binding), [ 20, 21, 22 ]);
+  assert.equal(5 + 1 + dx12Plan.textures.length + dx12Plan.samplers.length, 23);
+
+  const fixture = createQuadDetailV5FixtureValues(64, 64, "skinned");
+  assert.ok(fixture.boneIndices instanceof Uint16Array);
+  assert.equal(fixture.boneIndices.length, 13 * 4);
+  for (let index = 0; index < 13; index += 1)
+  {
+    assert.deepEqual(
+      Array.from(fixture.boneIndices.slice(index * 4, index * 4 + 4)),
+      [ 1, 0, 0, 0 ]
+    );
+  }
+  assert.deepEqual(fixture.textures.map((entry) => entry.name), RESOURCE_NAMES);
+  assert.deepEqual(fixture.caseNames, [ "pptNeutral", "surface", "detail1", "detail2" ]);
 });
 
 test("QuadDetailV5 rejects permutation, IO, sparse material, binding, and bone drift", () =>
@@ -484,10 +624,76 @@ test("QuadDetailV5 rejects permutation, IO, sparse material, binding, and bone d
   }
 });
 
+test("QuadDetailV5 skinned validator rejects profile, interface, bone, and binding drift", () =>
+{
+  const mutations = [
+    (record) => { delete record.variant; },
+    (record) => {
+      record.analysis.source = record.analysis.source.replace(
+        "unpackedskinned_quaddetailv5",
+        "unpacked_quaddetailv5"
+      );
+      record.metadata.sourcePath = record.analysis.source;
+    },
+    (record) => {
+      record.metadata.selectedOptions.push({
+        name: "SPACE_OBJECT_INSTANCED_ATTACHMENT",
+        value: "SOIA_DISABLED",
+        optionIndex: 0,
+        defaultOption: 0,
+        defaultValue: "SOIA_DISABLED",
+        source: "local"
+      });
+    },
+    (record) => { record.analysis.stages[0].pipelineInputs[1].usedMask = 0; },
+    (record) => {
+      record.pipeline.shaderModules[0].wgsl =
+        record.pipeline.shaderModules[0].wgsl.replace(
+          "  @location(1) input1: vec4<u32>,\n",
+          ""
+        );
+    },
+    (record) => {
+      record.analysis.stages.push({
+        key: "Main.pass1.pixel",
+        techniqueName: "Main",
+        passIndex: 1,
+        stageName: "pixel",
+        stageType: 1
+      });
+    },
+    (record) => {
+      record.pipeline.bindGroups[0].bindings[3].layout.buffer.minBindingSize = 416;
+    },
+    (record) => { record.analysis.stages[0].bindings.shift(); },
+    (record) => { record.analysis.stages[0].bindings[0].carbon.type = 2; },
+    (record) => { record.pipeline.bindGroups[0].bindings[5].structureStride = 64; },
+    (record) => { record.pipeline.bindGroups[0].bindings[5].carbon.type = 2; },
+    (record) => { record.pipeline.bindGroups[0].bindings[6].binding = 5; },
+    (record) => { record.pipeline.bindGroups[0].bindings[20].binding = 19; }
+  ];
+  for (const mutate of mutations)
+  {
+    const record = packageRecord("dx11", "skinned");
+    mutate(record);
+    assert.throws(
+      () => validateQuadDetailV5PackageRecord(record),
+      /QuadDetailV5 fixture/u
+    );
+  }
+});
+
 test("QuadDetailV5 rejects unordered, aliased, and identical parity inputs", () =>
 {
   const dx11 = packageRecord("dx11");
   const dx12 = packageRecord("dx12");
+  assert.throws(
+    () => validateQuadDetailV5PackagePair([
+      dx11,
+      packageRecord("dx12", "skinned")
+    ]),
+    /matching package variants/u
+  );
   assert.throws(
     () => validateQuadDetailV5PackagePair([ dx12, dx11 ]),
     /order must be DX11 then DX12/u

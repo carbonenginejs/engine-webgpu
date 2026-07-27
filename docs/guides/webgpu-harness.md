@@ -50,7 +50,7 @@ geometry policy.
 
 The static/skinned QuadV5, PPT-on skinned QuadHeatV5, static and PPT-on
 skinned two-pass QuadGlassV5, PPT-off static and PPT-on skinned QuadSailsV5,
-PPT-on static QuadDetailV5, and cold/hot PPT-off static QuadHeatV5 modes
+PPT-on static and skinned QuadDetailV5, and cold/hot PPT-off static QuadHeatV5 modes
 additionally route each draw through the internal
 `CjsWebGPUTrinityBatchDispatcher`. The fixtures
 construct the duck-typed fields of a transient `Tr2RenderBatch` inside a
@@ -300,36 +300,60 @@ The static QuadDetailV5 gate requires the exact high-quality PPT-on
 npm.cmd run test:webgpu:required -- --draw-quaddetailv5 .\artifacts\quaddetailv5-ppt-dx11.cewgpu .\artifacts\quaddetailv5-ppt-dx12.cewgpu
 ```
 
-The build-3444265 SOF audit finds 587 `quad/quaddetailv5.fx` areas across 257
-hulls, all in `opaqueAreas`. Runtime generation resolves 473 areas across 189
-hulls to the static logical path and 114 across 68 hulls to the skinned path.
-The static share is 80.6% of all audited areas, so it is the representative
-first gate; the skinned family remains separate follow-up work. SOF identifies
-that static/skinned split but does not identify packed versus unpacked compiled
-containers. The launcher therefore validates its explicitly supplied
-`unpacked_quaddetailv5` packages rather than attributing that container choice
-to the SOF frequency evidence.
+The skinned sibling requires the exact PPT-on
+`unpackedskinned_quaddetailv5` `Main.pass0` pair:
 
-Base-DNA generation leaves every audited area PPT-disabled with both pattern
-masks bound to `res:/texture/global/black.dds`. A valid real pattern example,
+```powershell
+npm.cmd run test:webgpu:required -- --draw-skinned-quaddetailv5 .\artifacts\skinned-quaddetailv5-ppt-dx11.cewgpu .\artifacts\skinned-quaddetailv5-ppt-dx12.cewgpu
+```
+
+The build-3444265 SOF audit finds 587 QuadDetailV5 areas across 257 hull
+records, all in `opaqueAreas`. Runtime generation resolves 473 areas across
+189 hull records to the static `quad/quaddetailv5.fx` logical path and 114
+across 68 hull records to the `skinned_quad/quaddetailv5.fx` path. No record
+mixes the paths.
+The static share is 80.6% of all audited areas, so it is the representative
+first gate; the separate skinned gate targets the remaining logical family.
+SOF identifies that static/skinned split but does not identify packed versus
+unpacked compiled containers. The launcher therefore validates its explicitly
+supplied `unpacked_quaddetailv5` or `unpackedskinned_quaddetailv5` packages
+rather than attributing either container choice to the SOF frequency evidence.
+
+The example MCa1 base DNA leaves its two audited static effects PPT-disabled
+with both pattern masks bound to `res:/texture/global/black.dds`. A valid real
+pattern application,
 `mca1_t1:minmatarbase:minmatar:pattern?glacialdrift_minmatar;none;none`,
 instead produces two static QuadDetail effects with `SOPPT_ENABLED`,
 `res:/texture/projection/gradient.dds`, and
 `res:/texture/projection/camo_angel.dds`. This evidence selects the PPT-on
-contract; the browser command does not load that DNA, SOF, MCa1 geometry,
-production textures, authoritative parameter defaults, runtime-trinity, or a
-Trinity graph.
+static contract.
 
-Both packages must be exact body `4` with the same seven local selection axes
-and one complete vertex/pixel `Main.pass0`. The active group has 22 canonical
+The example skinned carrier DNA `aca1_t1:amarrbase:amarr` similarly
+emits two opaque `skinned_quad/quaddetailv5.fx` effects with PPT disabled and
+black masks. Adding `pattern?glacialdrift_amarr;none;none` enables PPT on both
+and supplies the same real projection textures. The audit lists patterns for
+only 19 of the 68 skinned hull records, covering 34 of their 114 QuadDetail
+areas. Those records expose 139 valid pattern applications, but the catalog
+does not measure live use. The ACA1 example therefore proves the authored
+PPT-on path without claiming that PPT-on is the majority hull default. Neither
+browser command loads its cited DNA, SOF, MCa1/ACA1 geometry, production
+textures, authoritative parameter defaults, runtime-trinity, or a Trinity
+graph.
+
+Each static package must be exact body `4` with seven local selection axes and
+one complete vertex/pixel `Main.pass0`. Its active group has 22 canonical
 bindings: five uniform buffers, fourteen sampled textures, and three samplers.
+Each skinned package must be its exact body-4, six-axis sibling; it has no
+`SPACE_OBJECT_INSTANCED_ATTACHMENT` axis and adds an active blend-index input
+plus vertex `BoneTransforms` storage for 23 bindings.
 Textures and samplers remain separate WebGPU limit categories; this is not a
-17-texture contract. Each backend renders four synthetic cases that isolate
-PPT, Detail1, and Detail2 influence while preserving the controlled silhouette
-and MRT1. Both MRTs must match byte-for-byte between DX11- and DX12-derived
-packages for every case after `rgba8unorm` target quantization, with zero WGSL
-warnings. This gate makes no depth-attachment, depth-write, or depth-ordering
-claim.
+17-texture contract. Both variants render the same four synthetic cases that
+isolate PPT, Detail1, and Detail2 influence while preserving the controlled
+silhouette and MRT1. The skinned readback must additionally observe its
+indexed non-identity transform. Both MRTs must match byte-for-byte between
+DX11- and DX12-derived packages for every case after `rgba8unorm` target
+quantization, with zero WGSL warnings. Neither gate makes a depth-attachment,
+depth-write, or depth-ordering claim.
 
 The older PPT-off static heat gate requires explicitly selected high-quality
 `unpacked_quadheatv5` `Main.pass0` packages:
@@ -404,7 +428,8 @@ selections, ordinary skinned QuadV5 carries six, and skinned QuadHeatV5 and
 QuadHeatDetailV5 each carry their exact five-axis effect contract.
 Static QuadSailsV5 carries its exact five-axis contract; skinned QuadSailsV5
 carries its exact four-axis contract. Static QuadDetailV5 carries its exact
-seven-axis contract. The launcher
+seven-axis contract; skinned QuadDetailV5 carries its exact six-axis contract.
+The launcher
 reads each file directly, decodes it with `CjsFormatWebgpu`, and constructs
 `CjsWebGPUPackage`. No runtime library, resource manager, or Trinity contract
 participates in this gate.
@@ -475,10 +500,13 @@ equivalence. Every WGSL warning or WebGPU validation error fails the command.
 
 Static QuadDetailV5 uses the same six-attribute synthetic silhouette and five
 semantic uniform buffers with 22 bindings: fourteen sampled textures and
-three samplers complete the group. Four controlled cases independently expose
-pattern projection, Detail1, and Detail2 influence. The gate requires stable
-coverage/MRT1 and byte-exact paired DX11/DX12 readbacks for both MRTs, but
-does not attach or qualify depth.
+three samplers complete the group. Its skinned sibling adds the 8-byte
+`uint16x4` blend-index stream and vertex-stage read-only `BoneTransforms`
+buffer for 23 bindings. Every vertex selects a nonzero palette entry whose
+non-identity transform must move the observed silhouette. Both variants reuse
+four controlled cases that independently expose pattern projection, Detail1,
+and Detail2 influence. They require stable coverage/MRT1 and byte-exact paired
+DX11/DX12 readbacks for both MRTs, but neither attaches or qualifies depth.
 
 The QuadGlassV5 gates reuse the bounded semantic space-object buffer packer
 and common 64-byte vertex stream. The static gate exercises its exact

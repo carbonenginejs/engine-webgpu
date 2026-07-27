@@ -12,7 +12,7 @@ export const QUAD_DETAIL_V5_TARGET_WIDTH = QUADV5_TARGET_WIDTH;
 export const QUAD_DETAIL_V5_TARGET_HEIGHT = QUADV5_TARGET_HEIGHT;
 export const QUAD_DETAIL_V5_VERTEX_BUFFER_LAYOUT = QUADV5_VERTEX_BUFFER_LAYOUT;
 
-export const QUAD_DETAIL_V5_SELECTION = Object.freeze({
+const STATIC_SELECTION = Object.freeze({
   BINDLESS_RENDERING: "BINDLESS_RENDERING_DISABLED",
   SPACE_OBJECT_CLIPPING: "SOC_DISABLED",
   SPACE_OBJECT_PPT_ENABLED: "SOPPT_ENABLED",
@@ -21,6 +21,23 @@ export const QUAD_DETAIL_V5_SELECTION = Object.freeze({
   SPACE_OBJECT_INSTANCED_ATTACHMENT: "SOIA_DISABLED",
   BLEND_MODE: "BLEND_MODE_OVERLAY"
 });
+
+const SKINNED_SELECTION = Object.freeze({
+  BINDLESS_RENDERING: "BINDLESS_RENDERING_DISABLED",
+  SPACE_OBJECT_CLIPPING: "SOC_DISABLED",
+  SPACE_OBJECT_PPT_ENABLED: "SOPPT_ENABLED",
+  SPACE_OBJECT_TRANSPARENCY: "SOT_OPAQUE",
+  V5_DEBUG: "OFF",
+  BLEND_MODE: "BLEND_MODE_OVERLAY"
+});
+
+export const QUAD_DETAIL_V5_SELECTIONS = Object.freeze({
+  static: STATIC_SELECTION,
+  skinned: SKINNED_SELECTION
+});
+
+// Retain the original export as the exact static contract.
+export const QUAD_DETAIL_V5_SELECTION = STATIC_SELECTION;
 
 const SELECTION_PROVENANCE = Object.freeze({
   BINDLESS_RENDERING: Object.freeze({
@@ -60,7 +77,7 @@ const SELECTION_PROVENANCE = Object.freeze({
   })
 });
 
-const UNIFORMS = Object.freeze([
+const BASE_UNIFORMS = Object.freeze([
   Object.freeze({
     identity: "uniform-buffer:0:0",
     scopeIdentity: "uniform-buffer:0:0@fragment",
@@ -87,7 +104,7 @@ const UNIFORMS = Object.freeze([
     scopeIdentity: "uniform-buffer:0:3@vertex",
     binding: 3,
     visibility: "vertex",
-    minBindingSize: 416
+    minBindingSize: null
   }),
   Object.freeze({
     identity: "uniform-buffer:0:4",
@@ -97,6 +114,24 @@ const UNIFORMS = Object.freeze([
     minBindingSize: 432
   })
 ]);
+
+function uniformsFor(minBindingSize3)
+{
+  return BASE_UNIFORMS.map((entry) => Object.freeze({
+    ...entry,
+    minBindingSize: entry.binding === 3 ? minBindingSize3 : entry.minBindingSize
+  }));
+}
+
+const BONE_TRANSFORMS = Object.freeze({
+  name: "BoneTransforms",
+  identity: "sampled-resource:0:0",
+  scopeIdentity: "sampled-resource:0:0@vertex",
+  registerIndex: 0,
+  binding: 5,
+  minBindingSize: 48,
+  structureStride: 48
+});
 
 const RESOURCE_NAMES = Object.freeze([
   "EveSpaceSceneEnvMap",
@@ -137,13 +172,12 @@ const RESOURCE_SRGB = Object.freeze([
   false
 ]);
 
-const SAMPLERS = Object.freeze([
+const BASE_SAMPLERS = Object.freeze([
   Object.freeze({
     name: "Sampler0",
     identity: "sampler:0:0",
     scopeIdentity: "sampler:0:0@fragment",
     registerIndex: 0,
-    binding: 19,
     reflectedName: null,
     isDynamic: false
   }),
@@ -152,7 +186,6 @@ const SAMPLERS = Object.freeze([
     identity: "sampler:0:1",
     scopeIdentity: "sampler:0:1@fragment",
     registerIndex: 1,
-    binding: 20,
     reflectedName: "PatternMask1MapSampler",
     isDynamic: true
   }),
@@ -161,11 +194,31 @@ const SAMPLERS = Object.freeze([
     identity: "sampler:0:2",
     scopeIdentity: "sampler:0:2@fragment",
     registerIndex: 2,
-    binding: 21,
     reflectedName: "PatternMask2MapSampler",
     isDynamic: true
   })
 ]);
+
+const PROFILES = Object.freeze({
+  static: Object.freeze({
+    variant: "static",
+    sourceFile: "unpacked_quaddetailv5.sm_hi",
+    selection: STATIC_SELECTION,
+    uniforms: Object.freeze(uniformsFor(416)),
+    bone: null,
+    textureBindingBase: 5,
+    samplerBindingBase: 19
+  }),
+  skinned: Object.freeze({
+    variant: "skinned",
+    sourceFile: "unpackedskinned_quaddetailv5.sm_hi",
+    selection: SKINNED_SELECTION,
+    uniforms: Object.freeze(uniformsFor(432)),
+    bone: BONE_TRANSFORMS,
+    textureBindingBase: 6,
+    samplerBindingBase: 20
+  })
+});
 
 const MATERIAL_CONSTANTS = Object.freeze([
   Object.freeze({ name: "GeneralData", offset: 0 }),
@@ -254,6 +307,12 @@ const VERTEX_INPUTS = Object.freeze([
     dimension: 2
   })
 ]);
+
+const SKINNED_VERTEX_INPUTS = Object.freeze(VERTEX_INPUTS.map((entry) =>
+  Object.freeze({
+    ...entry,
+    usedMask: entry.registerIndex === 1 ? 1 : entry.usedMask
+  })));
 
 const PIXEL_INPUTS = Object.freeze([
   Object.freeze({
@@ -431,11 +490,32 @@ const WGSL_STRUCTS = Object.freeze({
   ])
 });
 
+const SKINNED_WGSL_STRUCTS = Object.freeze({
+  ...WGSL_STRUCTS,
+  VertexInput: Object.freeze([
+    WGSL_STRUCTS.VertexInput[0],
+    Object.freeze({
+      attribute: "location",
+      value: "1",
+      name: "input1",
+      type: "vec4<u32>"
+    }),
+    ...WGSL_STRUCTS.VertexInput.slice(1)
+  ])
+});
+
 const CASE_NAMES = Object.freeze([ "pptNeutral", "surface", "detail1", "detail2" ]);
 
 function fail(message)
 {
   throw new Error(`QuadDetailV5 fixture: ${message}`);
+}
+
+function profileForVariant(variant)
+{
+  const profile = PROFILES[variant];
+  if (!profile) fail("package variant must be static or skinned");
+  return profile;
 }
 
 function normalizedPath(value)
@@ -468,10 +548,44 @@ function mainStage(record, stageName)
   return matches[0];
 }
 
-function assertSelections(options, owner)
+function assertMainStageInventory(record)
+{
+  const stages = record.analysis?.stages?.filter((entry) =>
+    entry?.techniqueName === "Main");
+  const expected = [
+    {
+      key: "Main.pass0.vertex",
+      passIndex: 0,
+      stageName: "vertex",
+      stageType: 0
+    },
+    {
+      key: "Main.pass0.pixel",
+      passIndex: 0,
+      stageName: "pixel",
+      stageType: 1
+    }
+  ];
+  if (!Array.isArray(stages) || stages.length !== expected.length)
+  {
+    fail("analysis must expose exactly the Main.pass0 vertex/pixel stage pair");
+  }
+  for (let index = 0; index < expected.length; index += 1)
+  {
+    const stage = stages[index];
+    const entry = expected[index];
+    if (stage?.key !== entry.key || stage.passIndex !== entry.passIndex
+      || stage.stageName !== entry.stageName || stage.stageType !== entry.stageType)
+    {
+      fail("analysis has an unexpected Main stage inventory");
+    }
+  }
+}
+
+function assertSelections(options, owner, profile)
 {
   if (!Array.isArray(options)
-    || options.length !== Object.keys(QUAD_DETAIL_V5_SELECTION).length)
+    || options.length !== Object.keys(profile.selection).length)
   {
     fail(`${owner} must contain every QuadDetailV5 permutation selection`);
   }
@@ -484,7 +598,7 @@ function assertSelections(options, owner)
     }
     selected.set(entry.name, entry);
   }
-  for (const [ name, value ] of Object.entries(QUAD_DETAIL_V5_SELECTION))
+  for (const [ name, value ] of Object.entries(profile.selection))
   {
     const entry = selected.get(name);
     const provenance = SELECTION_PROVENANCE[name];
@@ -499,11 +613,12 @@ function assertSelections(options, owner)
   }
 }
 
-function assertAnalysisInterface(record)
+function assertAnalysisInterface(record, profile)
 {
   const vertex = mainStage(record, "vertex").pipelineInputs?.map(interfaceInput);
   const pixel = mainStage(record, "pixel").pipelineInputs?.map(interfaceInput);
-  if (JSON.stringify(vertex) !== JSON.stringify(VERTEX_INPUTS))
+  const expectedVertex = profile.bone ? SKINNED_VERTEX_INPUTS : VERTEX_INPUTS;
+  if (JSON.stringify(vertex) !== JSON.stringify(expectedVertex))
   {
     fail("Main.pass0.vertex has an unexpected exact input contract");
   }
@@ -533,7 +648,7 @@ function wgslStructFields(wgsl, name)
   return fields;
 }
 
-function assertShaderModules(pipeline)
+function assertShaderModules(pipeline, profile)
 {
   if (!Array.isArray(pipeline.shaderModules) || pipeline.shaderModules.length !== 2)
   {
@@ -543,6 +658,7 @@ function assertShaderModules(pipeline)
     [ "vertex", 0, [ "VertexInput", "VertexOutput" ] ],
     [ "pixel", 1, [ "FragmentInput", "FragmentOutput" ] ]
   ];
+  const expectedStructs = profile.bone ? SKINNED_WGSL_STRUCTS : WGSL_STRUCTS;
   for (const [ stageName, stageType, structNames ] of expectations)
   {
     const matches = pipeline.shaderModules.filter((entry) => entry?.stageName === stageName);
@@ -557,7 +673,7 @@ function assertShaderModules(pipeline)
     for (const structName of structNames)
     {
       if (JSON.stringify(wgslStructFields(module.wgsl, structName))
-        !== JSON.stringify(WGSL_STRUCTS[structName]))
+        !== JSON.stringify(expectedStructs[structName]))
       {
         fail(`${structName} has an unexpected interface contract`);
       }
@@ -565,7 +681,7 @@ function assertShaderModules(pipeline)
   }
 }
 
-function expectedResources(backend)
+function expectedResources(backend, profile)
 {
   const registers = RESOURCE_REGISTERS[backend];
   if (!registers) fail(`unsupported package backend ${String(backend)}`);
@@ -574,12 +690,20 @@ function expectedResources(backend)
     identity: `sampled-resource:0:${registers[index]}`,
     scopeIdentity: `sampled-resource:0:${registers[index]}@fragment`,
     registerIndex: registers[index],
-    binding: 5 + index,
+    binding: profile.textureBindingBase + index,
     viewDimension: index === 0 ? "cube" : "2d",
     registerType: index === 0 ? 41 : 36,
     carbonType: index === 0 ? 4 : 2,
     isSRGB: RESOURCE_SRGB[index],
     isAutoregister: name === "EveSpaceSceneShadowMap"
+  }));
+}
+
+function expectedSamplers(profile)
+{
+  return BASE_SAMPLERS.map((entry) => Object.freeze({
+    ...entry,
+    binding: profile.samplerBindingBase + entry.registerIndex
   }));
 }
 
@@ -653,15 +777,39 @@ function assertMaterialReflection(record)
   }
 }
 
-function assertAnalysisResources(record, resources)
+function assertAnalysisResources(record, resources, samplers, profile)
 {
   const vertexBindings = mainStage(record, "vertex").bindings || [];
   const vertexInventory = vertexBindings.map((entry) =>
     `${entry?.kind}:${entry?.registerSpace}:${entry?.registerIndex}`);
+  const expectedVertexInventory = profile.bone
+    ? [ "resource:0:0", "constantBuffer:0:1", "constantBuffer:0:3" ]
+    : [ "constantBuffer:0:1", "constantBuffer:0:3" ];
   if (JSON.stringify(vertexInventory)
-    !== JSON.stringify([ "constantBuffer:0:1", "constantBuffer:0:3" ]))
+    !== JSON.stringify(expectedVertexInventory))
   {
-    fail("vertex analysis must contain only cb1 and cb3; no bone resource is allowed");
+    fail("vertex analysis has an unexpected exact binding inventory");
+  }
+  const bone = vertexBindings.filter((entry) =>
+    entry?.kind === "resource"
+      && entry.registerSpace === 0
+      && entry.registerIndex === 0);
+  if (profile.bone)
+  {
+    const binding = bone[0];
+    if (bone.length !== 1 || binding.generatedSymbol !== "t0"
+      || binding.registerType !== 33 || binding.metadataName !== "BoneTransforms"
+      || binding.carbon?.name !== "BoneTransforms"
+      || binding.carbon?.type !== 7 || binding.carbon?.arrayElements !== 1
+      || binding.carbon?.isSRGB !== false
+      || binding.carbon?.isAutoregister !== false)
+    {
+      fail("vertex t0 BoneTransforms has unexpected Carbon metadata");
+    }
+  }
+  else if (bone.length !== 0)
+  {
+    fail("static vertex analysis must not contain BoneTransforms");
   }
 
   const pixelBindings = mainStage(record, "pixel").bindings || [];
@@ -695,12 +843,13 @@ function assertAnalysisResources(record, resources)
     }
   }
   const reflectedSamplers = pixelBindings.filter((entry) => entry?.kind === "sampler");
-  const expectedSamplers = record.backend === "dx11" ? SAMPLERS : SAMPLERS.slice(1);
-  if (reflectedSamplers.length !== expectedSamplers.length)
+  const expectedReflectedSamplers =
+    record.backend === "dx11" ? samplers : samplers.slice(1);
+  if (reflectedSamplers.length !== expectedReflectedSamplers.length)
   {
     fail(`${record.backend} analysis has an unexpected sampler count`);
   }
-  for (const expected of expectedSamplers)
+  for (const expected of expectedReflectedSamplers)
   {
     const matches = reflectedSamplers.filter((entry) =>
       entry.registerSpace === 0 && entry.registerIndex === expected.registerIndex);
@@ -713,7 +862,7 @@ function assertAnalysisResources(record, resources)
   }
 }
 
-function assertBindings(record)
+function assertBindings(record, profile)
 {
   const groups = record.pipeline?.bindGroups;
   if (!Array.isArray(groups) || groups.length !== 1 || groups[0]?.group !== 0)
@@ -721,17 +870,20 @@ function assertBindings(record)
     fail("Main.pass0 requires exactly canonical bind group 0");
   }
   const bindings = groups[0].bindings;
-  const resources = expectedResources(record.backend);
-  if (!Array.isArray(bindings) || bindings.length !== 22)
+  const resources = expectedResources(record.backend, profile);
+  const samplers = expectedSamplers(profile);
+  const expectedCount = profile.uniforms.length
+    + (profile.bone ? 1 : 0) + resources.length + samplers.length;
+  if (!Array.isArray(bindings) || bindings.length !== expectedCount)
   {
-    fail("Main.pass0 requires exactly 22 canonical bindings");
+    fail(`Main.pass0 requires exactly ${expectedCount} canonical bindings`);
   }
   const byScope = new Map(bindings.map((entry) => [ entry.scopeIdentity, entry ]));
   if (byScope.size !== bindings.length)
   {
     fail("Main.pass0 contains duplicate binding scopes");
   }
-  for (const expected of UNIFORMS)
+  for (const expected of profile.uniforms)
   {
     const binding = byScope.get(expected.scopeIdentity);
     assertBindingSlot(binding, expected, "buffer", expected.visibility);
@@ -741,6 +893,28 @@ function assertBindings(record)
     {
       fail(`${expected.identity} has an unexpected uniform-buffer layout`);
     }
+  }
+  const bone = byScope.get(BONE_TRANSFORMS.scopeIdentity);
+  if (profile.bone)
+  {
+    assertBindingSlot(bone, BONE_TRANSFORMS, "buffer", "vertex");
+    if (bone.name !== "BoneTransforms" || bone.generatedSymbol !== "t0"
+      || bone.layout.type !== "array<u32>"
+      || bone.layout.buffer.type !== "read-only-storage"
+      || bone.layout.buffer.hasDynamicOffset !== false
+      || bone.layout.buffer.minBindingSize !== BONE_TRANSFORMS.minBindingSize
+      || bone.structureStride !== BONE_TRANSFORMS.structureStride
+      || bone.carbon?.name !== "BoneTransforms"
+      || bone.carbon?.type !== 7 || bone.carbon?.arrayElements !== 1
+      || bone.carbon?.isSRGB !== false
+      || bone.carbon?.isAutoregister !== false)
+    {
+      fail("BoneTransforms has an unexpected read-only storage layout or Carbon metadata");
+    }
+  }
+  else if (bone)
+  {
+    fail("static Main.pass0 must not bind BoneTransforms");
   }
   for (const expected of resources)
   {
@@ -757,7 +931,7 @@ function assertBindings(record)
       fail(`${expected.identity} has an unexpected texture layout`);
     }
   }
-  for (const expected of SAMPLERS)
+  for (const expected of samplers)
   {
     const binding = byScope.get(expected.scopeIdentity);
     assertBindingSlot(binding, expected, "sampler", "fragment");
@@ -767,12 +941,12 @@ function assertBindings(record)
     }
   }
   assertMaterialReflection(record);
-  assertAnalysisResources(record, resources);
+  assertAnalysisResources(record, resources, samplers, profile);
 }
 
 /**
- * Fail closed unless a package record is the exact static PPT-on
- * unpacked_quaddetailv5 body 4 Main.pass0 contract.
+ * Fail closed unless a package record is one exact PPT-on body-4
+ * QuadDetailV5 profile: unpacked static or unpacked skinned.
  *
  * @param {object} record Resource provenance plus a pipeline descriptor.
  * @returns {object} The validated input record.
@@ -780,6 +954,7 @@ function assertBindings(record)
 export function validateQuadDetailV5PackageRecord(record)
 {
   if (!record || typeof record !== "object") fail("package record is required");
+  const profile = profileForVariant(record.variant);
   if (record.backend !== "dx11" && record.backend !== "dx12")
   {
     fail("package backend must be dx11 or dx12");
@@ -789,18 +964,21 @@ export function validateQuadDetailV5PackageRecord(record)
   if (!analysisSource || analysisSource !== metadataSource
     || !analysisSource.includes(`/effect.${record.backend}/`)
     || !analysisSource.endsWith(
-      "/managed/space/spaceobject/v5/quad/unpacked_quaddetailv5.sm_hi"
+      `/managed/space/spaceobject/v5/quad/${profile.sourceFile}`
     ))
   {
-    fail(`package source must be the ${record.backend} high-quality static QuadDetailV5 shader`);
+    fail(
+      `package source must be the ${record.backend} high-quality ` +
+        `${profile.variant} QuadDetailV5 shader`
+    );
   }
   if (record.analysis?.bodyIndex !== TARGET_BODY_INDEX
     || record.metadata?.bodyIndex !== TARGET_BODY_INDEX)
   {
     fail(`package must resolve body index ${TARGET_BODY_INDEX}`);
   }
-  assertSelections(record.analysis.selectedOptions, "analysis.selectedOptions");
-  assertSelections(record.metadata.selectedOptions, "metadata.selectedOptions");
+  assertSelections(record.analysis.selectedOptions, "analysis.selectedOptions", profile);
+  assertSelections(record.metadata.selectedOptions, "metadata.selectedOptions", profile);
   const selection = record.metadata.wgslSelection;
   if (selection?.mode !== "explicit"
     || selection.techniqueName !== "Main" || selection.passIndex !== 0
@@ -825,9 +1003,10 @@ export function validateQuadDetailV5PackageRecord(record)
   {
     fail("pipeline must retain the exact state-free Main.pass0 render state set");
   }
-  assertAnalysisInterface(record);
-  assertShaderModules(pipeline);
-  assertBindings(record);
+  assertMainStageInventory(record);
+  assertAnalysisInterface(record, profile);
+  assertShaderModules(pipeline, profile);
+  assertBindings(record, profile);
   return record;
 }
 
@@ -842,6 +1021,10 @@ export function validateQuadDetailV5PackagePair(records)
   if (!Array.isArray(records) || records.length !== 2)
   {
     fail("comparison requires exactly one DX11 and one DX12 package");
+  }
+  if (records[0]?.variant !== records[1]?.variant)
+  {
+    fail("comparison requires matching package variants");
   }
   records.forEach(validateQuadDetailV5PackageRecord);
   if (records[0].backend !== "dx11" || records[1].backend !== "dx12")
@@ -873,15 +1056,17 @@ export function validateQuadDetailV5PackagePair(records)
 /**
  * Return the exact backend-local sampled-resource and sampler plan.
  *
- * @param {object} record One validated static QuadDetailV5 package record.
- * @returns {{textures: object[], samplers: object[]}} Frozen resource plan.
+ * @param {object} record One validated QuadDetailV5 package record.
+ * @returns {{bone: object|null, textures: object[], samplers: object[]}} Frozen resource plan.
  */
 export function getQuadDetailV5ResourcePlan(record)
 {
   validateQuadDetailV5PackageRecord(record);
+  const profile = profileForVariant(record.variant);
   return Object.freeze({
-    textures: Object.freeze(expectedResources(record.backend)),
-    samplers: SAMPLERS
+    bone: profile.bone,
+    textures: Object.freeze(expectedResources(record.backend, profile)),
+    samplers: Object.freeze(expectedSamplers(profile))
   });
 }
 
@@ -1031,16 +1216,18 @@ function sampler(name)
 }
 
 /**
- * Create deterministic static QuadV5 geometry plus the exact active
- * QuadDetailV5 texture and sampler inventory.
+ * Create deterministic QuadV5 geometry plus the exact active QuadDetailV5
+ * texture and sampler inventory for one static or skinned profile.
  *
  * @param {number} width Render-target width.
  * @param {number} height Render-target height.
+ * @param {"static"|"skinned"} [variant="static"] Exact geometry variant.
  * @returns {object} Typed-array fixture values.
  */
-export function createQuadDetailV5FixtureValues(width, height)
+export function createQuadDetailV5FixtureValues(width, height, variant = "static")
 {
-  const surface = createQuadV5FixtureValues(width, height, "static");
+  const profile = profileForVariant(variant);
+  const surface = createQuadV5FixtureValues(width, height, profile.variant);
   const requiredSurfaceNames = new Set(RESOURCE_NAMES.slice(0, 11));
   const textures = surface.textures.filter((entry) =>
     requiredSurfaceNames.has(entry.name));
@@ -1064,9 +1251,10 @@ export function createQuadDetailV5FixtureValues(width, height)
   const cases = createQuadDetailV5BindingCases(width, height);
   return Object.freeze({
     vertices: surface.vertices,
+    ...(profile.bone ? { boneIndices: surface.boneIndices } : {}),
     indices: surface.indices,
     textures: Object.freeze([ ...textures, detail1, detail2, detail3 ]),
-    samplers: Object.freeze(SAMPLERS.map((entry) => sampler(entry.name))),
+    samplers: Object.freeze(BASE_SAMPLERS.map((entry) => sampler(entry.name))),
     caseNames: cases.caseNames,
     bindingValuesByCase: cases.bindingValuesByCase
   });

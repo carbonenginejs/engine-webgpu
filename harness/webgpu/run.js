@@ -857,12 +857,18 @@ async function CreateQuadV5GpuResources(webgpu, records)
 
 async function CreateQuadDetailV5GpuResources(webgpu, records)
 {
+    const variant = records[0]?.variant ?? "static";
+    const skinned = variant === "skinned";
+    Assert(
+        variant === "static" || skinned,
+        "QuadDetailV5 resources require an exact static or skinned variant"
+    );
     Assert(
         QUAD_DETAIL_V5_TARGET_WIDTH === WIDTH
             && QUAD_DETAIL_V5_TARGET_HEIGHT === HEIGHT,
         "QuadDetailV5 and harness target dimensions must match"
     );
-    const values = createQuadDetailV5FixtureValues(WIDTH, HEIGHT);
+    const values = createQuadDetailV5FixtureValues(WIDTH, HEIGHT, variant);
     const cases = createQuadDetailV5BindingCases(WIDTH, HEIGHT);
     Assert(
         values.textures.length === 14 && values.samplers.length === 3,
@@ -870,7 +876,7 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
     );
     const geometrySource = Object.freeze({
         kind: "synthetic-quaddetailv5",
-        variant: "static"
+        variant
     });
     const texturePayloads = Object.fromEntries(values.textures
         .filter((entry) => entry.dimension === "2d")
@@ -896,12 +902,19 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
         label: "QuadDetailV5 resources",
         geometries: {
             main: {
-                label: "QuadDetailV5 static silhouette geometry",
-                vertexBuffers: [ {
-                    slot: 0,
-                    data: values.vertices,
-                    layout: QUAD_DETAIL_V5_VERTEX_BUFFER_LAYOUT
-                } ],
+                label: `QuadDetailV5 ${variant} silhouette geometry`,
+                vertexBuffers: [
+                    {
+                        slot: 0,
+                        data: values.vertices,
+                        layout: QUAD_DETAIL_V5_VERTEX_BUFFER_LAYOUT
+                    },
+                    ...(skinned ? [ {
+                        slot: 1,
+                        data: values.boneIndices,
+                        layout: QUADV5_SKINNED_VERTEX_BUFFER_LAYOUT
+                    } ] : [])
+                ],
                 indexBuffer: {
                     data: values.indices,
                     format: "uint16"
@@ -914,6 +927,7 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
     const device = webgpu.GetDevice();
     const cubeDefinition = values.textures.find((entry) => entry.dimension === "cube");
     let cubeTexture = null;
+    let boneBuffer = null;
     try
     {
         Assert(cubeDefinition, "QuadDetailV5 fixture requires an environment cube");
@@ -956,16 +970,49 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
             label: "QuadDetailV5 EveSpaceSceneEnvMap cube view",
             dimension: "cube"
         });
+        if (skinned)
+        {
+            const boneTransform = new Float32Array([
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0.8660253882408142, 0, -0.5, 0.125,
+                0, 1, 0, 0,
+                0.5, 0, 0.8660253882408142, 0
+            ]);
+            boneBuffer = device.createBuffer({
+                label: "QuadDetailV5 indexed non-identity BoneTransforms",
+                size: boneTransform.byteLength,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            });
+            device.queue.writeBuffer(boneBuffer, 0, boneTransform);
+        }
         const resourcesByBackend = new Map();
         for (const record of records)
         {
             const plan = getQuadDetailV5ResourcePlan(record);
+            Assert(
+                Boolean(plan.bone) === skinned,
+                `QuadDetailV5 ${record.backend} BoneTransforms plan must match ${variant}`
+            );
             Assert(
                 plan.textures.length === 14 && plan.samplers.length === 3,
                 `QuadDetailV5 ${record.backend} resource plan must contain ` +
                     "14 textures and three samplers"
             );
             const resources = new Map();
+            if (plan.bone)
+            {
+                Assert(
+                    boneBuffer,
+                    "QuadDetailV5 skinned resource plan requires BoneTransforms"
+                );
+                resources.set(plan.bone.scopeIdentity, {
+                    buffer: boneBuffer,
+                    offset: 0,
+                    size: boneBuffer.size
+                });
+            }
             for (const texture of plan.textures)
             {
                 const resource = texture.name === cubeDefinition.name
@@ -994,9 +1041,11 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
             resourcesByBackend,
             geometry: bundle.geometries.main,
             geometrySource,
+            variant,
             bundle,
             destroy()
             {
+                boneBuffer?.destroy();
                 cubeTexture.destroy();
                 bundle.Destroy();
             }
@@ -1004,6 +1053,7 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
     }
     catch (error)
     {
+        boneBuffer?.destroy();
         cubeTexture?.destroy();
         bundle.Destroy();
         throw error;
@@ -4214,7 +4264,7 @@ async function RunQuadDetailV5Comparison(webgpu)
                     bytes,
                     targetIndex,
                     `${instance.record.label} ${instance.renderCase} MRT${targetIndex}`,
-                    "static"
+                    fixture.variant
                 ));
             Assert(
                 instance.statistics[0].coverage === instance.statistics[1].coverage,
@@ -4253,13 +4303,15 @@ async function RunQuadDetailV5Comparison(webgpu)
         Assert(baseline, "QuadDetailV5 surface DX11 baseline is missing");
         return {
             bodyIndex: 4,
-            variant: "static",
+            variant: fixture.variant,
             labels: records.map((record) => `${record.backend}:${record.label}`),
             loadPath: records[0].loadPath,
             pixelCount: WIDTH * HEIGHT,
             targetCount: QUADV5_CLEAR_TARGETS.length,
             renderCaseCount: fixture.caseNames.length,
-            drawKind: "indexed synthetic silhouette",
+            drawKind: fixture.variant === "skinned"
+                ? "indexed skinned synthetic silhouette"
+                : "indexed synthetic silhouette",
             indexCount: fixture.geometry.indexCount,
             warningCount,
             clearTargets: QUADV5_CLEAR_TARGETS,

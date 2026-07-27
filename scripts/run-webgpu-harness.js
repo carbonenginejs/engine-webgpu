@@ -51,6 +51,8 @@ const DRAW_SKINNED_QUADGLASSV5_INDEX =
     process.argv.indexOf("--draw-skinned-quadglassv5");
 const DRAW_QUADHEATV5_INDEX = process.argv.indexOf("--draw-quadheatv5");
 const DRAW_QUADDETAILV5_INDEX = process.argv.indexOf("--draw-quaddetailv5");
+const DRAW_SKINNED_QUADDETAILV5_INDEX =
+    process.argv.indexOf("--draw-skinned-quaddetailv5");
 const DRAW_QUADSAILSV5_INDEX = process.argv.indexOf("--draw-quadsailsv5");
 const DRAW_SKINNED_QUADSAILSV5_INDEX =
     process.argv.indexOf("--draw-skinned-quadsailsv5");
@@ -186,30 +188,43 @@ const DRAW_QUADSAILSV5_PATHS = ACTIVE_QUADSAILSV5_INDEX >= 0
         resolve(process.argv[ACTIVE_QUADSAILSV5_INDEX + 2])
     ]
     : null;
-if (DRAW_QUADDETAILV5_INDEX >= 0
-  && (!process.argv[DRAW_QUADDETAILV5_INDEX + 1]
-    || !process.argv[DRAW_QUADDETAILV5_INDEX + 2]
-    || process.argv[DRAW_QUADDETAILV5_INDEX + 1].startsWith("--")
-    || process.argv[DRAW_QUADDETAILV5_INDEX + 2].startsWith("--")))
+if (DRAW_QUADDETAILV5_INDEX >= 0 && DRAW_SKINNED_QUADDETAILV5_INDEX >= 0)
+{
+    throw new Error("QuadDetailV5 draw flags are mutually exclusive");
+}
+const ACTIVE_QUADDETAILV5_INDEX = DRAW_SKINNED_QUADDETAILV5_INDEX >= 0
+    ? DRAW_SKINNED_QUADDETAILV5_INDEX
+    : DRAW_QUADDETAILV5_INDEX;
+const QUADDETAILV5_VARIANT = DRAW_SKINNED_QUADDETAILV5_INDEX >= 0
+    ? "skinned"
+    : "static";
+const QUADDETAILV5_FLAG = QUADDETAILV5_VARIANT === "skinned"
+    ? "--draw-skinned-quaddetailv5"
+    : "--draw-quaddetailv5";
+if (ACTIVE_QUADDETAILV5_INDEX >= 0
+  && (!process.argv[ACTIVE_QUADDETAILV5_INDEX + 1]
+    || !process.argv[ACTIVE_QUADDETAILV5_INDEX + 2]
+    || process.argv[ACTIVE_QUADDETAILV5_INDEX + 1].startsWith("--")
+    || process.argv[ACTIVE_QUADDETAILV5_INDEX + 2].startsWith("--")))
 {
     throw new Error(
-        "--draw-quaddetailv5 requires DX11-derived and DX12-derived CEWGPU file paths"
+        `${QUADDETAILV5_FLAG} requires DX11-derived and DX12-derived CEWGPU file paths`
     );
 }
-if (DRAW_QUADDETAILV5_INDEX >= 0
+if (ACTIVE_QUADDETAILV5_INDEX >= 0
   && (ACTIVE_QUADV5_INDEX >= 0
     || ACTIVE_QUADGLASSV5_INDEX >= 0
     || DRAW_QUADHEATV5_INDEX >= 0
     || ACTIVE_QUADSAILSV5_INDEX >= 0))
 {
     throw new Error(
-        "--draw-quaddetailv5 cannot be combined with another QuadV5 draw flag"
+        `${QUADDETAILV5_FLAG} cannot be combined with another QuadV5 draw flag`
     );
 }
-const DRAW_QUADDETAILV5_PATHS = DRAW_QUADDETAILV5_INDEX >= 0
+const DRAW_QUADDETAILV5_PATHS = ACTIVE_QUADDETAILV5_INDEX >= 0
     ? [
-        resolve(process.argv[DRAW_QUADDETAILV5_INDEX + 1]),
-        resolve(process.argv[DRAW_QUADDETAILV5_INDEX + 2])
+        resolve(process.argv[ACTIVE_QUADDETAILV5_INDEX + 1]),
+        resolve(process.argv[ACTIVE_QUADDETAILV5_INDEX + 2])
     ]
     : null;
 if ([
@@ -269,9 +284,9 @@ if (ACTIVE_DECALV5_INDEX >= 0 && ACTIVE_QUADSAILSV5_INDEX >= 0)
 {
     throw new Error(`${DECALV5_FLAG} cannot be combined with ${QUADSAILSV5_FLAG}`);
 }
-if (ACTIVE_DECALV5_INDEX >= 0 && DRAW_QUADDETAILV5_INDEX >= 0)
+if (ACTIVE_DECALV5_INDEX >= 0 && ACTIVE_QUADDETAILV5_INDEX >= 0)
 {
-    throw new Error(`${DECALV5_FLAG} cannot be combined with --draw-quaddetailv5`);
+    throw new Error(`${DECALV5_FLAG} cannot be combined with ${QUADDETAILV5_FLAG}`);
 }
 if (ACTIVE_DECALV5_INDEX >= 0
   && (!process.argv[ACTIVE_DECALV5_INDEX + 1] || !process.argv[ACTIVE_DECALV5_INDEX + 2]
@@ -298,7 +313,7 @@ const CAPTURE_QUADV5_PATH = CAPTURE_QUADV5_INDEX >= 0
     : null;
 if ((ACTIVE_QUADV5_INDEX >= 0 || ACTIVE_QUADGLASSV5_INDEX >= 0
   || DRAW_QUADHEATV5_INDEX >= 0 || ACTIVE_QUADSAILSV5_INDEX >= 0
-  || DRAW_QUADDETAILV5_INDEX >= 0
+  || ACTIVE_QUADDETAILV5_INDEX >= 0
   || ACTIVE_DECALV5_INDEX >= 0)
   && (DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0))
 {
@@ -314,7 +329,7 @@ if (PREPARE_CEWGPU_INDEX >= 0
     || ACTIVE_QUADV5_INDEX >= 0 || ACTIVE_QUADGLASSV5_INDEX >= 0
     || DRAW_QUADHEATV5_INDEX >= 0
     || ACTIVE_QUADSAILSV5_INDEX >= 0
-    || DRAW_QUADDETAILV5_INDEX >= 0
+    || ACTIVE_QUADDETAILV5_INDEX >= 0
     || ACTIVE_DECALV5_INDEX >= 0))
 {
     throw new Error("--prepare-cewgpu cannot be combined with a draw input");
@@ -330,7 +345,7 @@ if (PREPARE_MATRIX_INDEX >= 0
     || ACTIVE_QUADV5_INDEX >= 0 || ACTIVE_QUADGLASSV5_INDEX >= 0
     || DRAW_QUADHEATV5_INDEX >= 0
     || ACTIVE_QUADSAILSV5_INDEX >= 0
-    || DRAW_QUADDETAILV5_INDEX >= 0
+    || ACTIVE_QUADDETAILV5_INDEX >= 0
     || ACTIVE_DECALV5_INDEX >= 0))
 {
     throw new Error("--prepare-matrix cannot be combined with another package or draw input");
@@ -591,7 +606,7 @@ async function ReadQuadSailsV5Packages(paths, variant)
     return records;
 }
 
-async function ReadQuadDetailV5Packages(paths)
+async function ReadQuadDetailV5Packages(paths, variant)
 {
     const comparablePath = (value) => process.platform === "win32"
         ? value.toLowerCase()
@@ -599,7 +614,7 @@ async function ReadQuadDetailV5Packages(paths)
     if (comparablePath(paths[0]) === comparablePath(paths[1]))
     {
         throw new Error(
-            "--draw-quaddetailv5 requires distinct DX11 and DX12 package files"
+            `${QUADDETAILV5_FLAG} requires distinct DX11 and DX12 package files`
         );
     }
     const [
@@ -611,8 +626,9 @@ async function ReadQuadDetailV5Packages(paths)
     ]);
     const requests = [ "dx11", "dx12" ].map((backend, index) => ({
         backend,
+        variant,
         filePath: paths[index],
-        resourcePath: `res:/webgpu-harness/quaddetailv5/static/${backend}.cewgpu`
+        resourcePath: `res:/webgpu-harness/quaddetailv5/${variant}/${backend}.cewgpu`
     }));
     const records = [];
     for (const request of requests)
@@ -632,7 +648,7 @@ async function ReadQuadDetailV5Packages(paths)
         }
         records.push({
             backend: request.backend,
-            variant: "static",
+            variant: request.variant,
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
@@ -730,7 +746,7 @@ const QUADSAILSV5_DRAW = DRAW_QUADSAILSV5_PATHS
     ? await ReadQuadSailsV5Packages(DRAW_QUADSAILSV5_PATHS, QUADSAILSV5_VARIANT)
     : null;
 const QUADDETAILV5_DRAW = DRAW_QUADDETAILV5_PATHS
-    ? await ReadQuadDetailV5Packages(DRAW_QUADDETAILV5_PATHS)
+    ? await ReadQuadDetailV5Packages(DRAW_QUADDETAILV5_PATHS, QUADDETAILV5_VARIANT)
     : null;
 const DECALV5_DRAW = DRAW_DECALV5_PATHS
     ? await ReadDecalV5Packages(DRAW_DECALV5_PATHS, DECALV5_VARIANT)
@@ -1147,8 +1163,10 @@ async function Main()
         {
             const detail = result.quadDetailV5Comparison;
             const oracle = detail.quadDetailOracle;
+            const skinned = detail.variant === "skinned";
             console.log(
-                `Rendered non-bindless PPT-on static QuadDetailV5 body ` +
+                `Rendered non-bindless PPT-on ${skinned ? "skinned" : "static"} ` +
+                `QuadDetailV5 body ` +
                 `${detail.bodyIndex} from ${detail.labels.join(" and ")} from direct ` +
                 `CEWGPU reads; ${detail.pixelCount} pixels matched exactly across ` +
                 `${detail.renderCaseCount} synthetic PPT/detail cases, both MRTs, and ` +
@@ -1157,7 +1175,9 @@ async function Main()
                 `Detail1 ${oracle.detail1.changedPixels}/` +
                 `${oracle.detail1.coveredPixels}, Detail2 ` +
                 `${oracle.detail2.changedPixels}/${oracle.detail2.coveredPixels} ` +
-                `covered pixels changed; Detail1/Detail2 delta maps were distinct).`
+                `covered pixels changed; Detail1/Detail2 delta maps were distinct` +
+                (skinned ? "; indexed non-identity BoneTransforms observed" : "") +
+                `).`
             );
         }
         if (result.quadSailsV5Comparison)
