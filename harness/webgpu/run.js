@@ -62,6 +62,7 @@ import {
     QUADV5_SKINNED_VERTEX_BUFFER_LAYOUT,
     QUADV5_VERTEX_BUFFER_LAYOUT,
     createQuadV5FixtureValues,
+    createQuadV5HeatDetailBindingCases,
     createQuadV5MainBindingValues,
     getQuadV5ResourcePlan,
     validateQuadV5PackagePair
@@ -655,8 +656,9 @@ async function CreateGeneratedDraw(webgpu)
 
 async function CreateQuadV5GpuResources(webgpu, records)
 {
-    const values = createQuadV5FixtureValues(WIDTH, HEIGHT);
-    const skinned = records[0]?.variant === "skinned";
+    const variant = records[0]?.variant ?? "static";
+    const values = createQuadV5FixtureValues(WIDTH, HEIGHT, variant);
+    const skinned = variant === "skinned" || variant === "skinnedHeatDetail";
     const geometrySource = Object.freeze({
         kind: "synthetic-quadv5",
         variant: skinned ? "skinned" : "static"
@@ -793,8 +795,17 @@ async function CreateQuadV5GpuResources(webgpu, records)
             }
             resourcesByBackend.set(record.backend, resources);
         }
+        const heatDetailCases = variant === "skinnedHeatDetail"
+            ? createQuadV5HeatDetailBindingCases(WIDTH, HEIGHT)
+            : null;
+        const caseNames = heatDetailCases?.caseNames ?? Object.freeze([ "base" ]);
+        const bindingValuesByCase = heatDetailCases?.bindingValuesByCase
+            ?? Object.freeze({
+                base: createQuadV5MainBindingValues(WIDTH, HEIGHT)
+            });
         return {
-            bindingValues: createQuadV5MainBindingValues(WIDTH, HEIGHT),
+            caseNames,
+            bindingValuesByCase,
             resourcesByBackend,
             geometry: bundle.geometries.main,
             geometrySource,
@@ -1308,11 +1319,12 @@ async function CreateDecalV5GpuResources(webgpu, records, profile)
     }
 }
 
-function CreateQuadV5TrinityBatch(record, fixture)
+function CreateQuadV5TrinityBatch(record, fixture, renderCase)
 {
     return Object.freeze({
         material: record,
         shader: record.pipeline,
+        renderCase,
         geometrySource: Object.freeze({
             geometry: fixture.geometrySource,
             meshIndex: 0,
@@ -1320,7 +1332,7 @@ function CreateQuadV5TrinityBatch(record, fixture)
             count: 1,
             reversed: false
         }),
-        objectData: fixture.bindingValues,
+        objectData: fixture.bindingValuesByCase[renderCase],
         topology: 4,
         indexCountPerInstance: 0,
         instanceCount: 0,
@@ -1333,9 +1345,11 @@ function CreateQuadV5TrinityBatch(record, fixture)
     });
 }
 
-function CreateQuadV5TrinityAccumulator(record, fixture)
+function CreateQuadV5TrinityAccumulator(record, fixture, renderCase)
 {
-    const batches = Object.freeze([ CreateQuadV5TrinityBatch(record, fixture) ]);
+    const batches = Object.freeze([
+        CreateQuadV5TrinityBatch(record, fixture, renderCase)
+    ]);
     const gdprBatches = Object.freeze([]);
     return Object.freeze({
         GetGdprBatches: () => gdprBatches,
@@ -1345,9 +1359,9 @@ function CreateQuadV5TrinityAccumulator(record, fixture)
     });
 }
 
-function CreateQuadV5TrinityBatchMap(record, fixture)
+function CreateQuadV5TrinityBatchMap(record, fixture, renderCase)
 {
-    const accumulator = CreateQuadV5TrinityAccumulator(record, fixture);
+    const accumulator = CreateQuadV5TrinityAccumulator(record, fixture, renderCase);
     const batchTypes = Object.freeze([ TRINITY_BATCH_TYPE_OPAQUE ]);
     return Object.freeze({
         GetBatchTypes: () => batchTypes,
@@ -1407,7 +1421,8 @@ function CreateQuadV5TrinityDispatcher(webgpu, fixture)
             const record = batch.material;
             Assert(
                 context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
-                    && batch.objectData === fixture.bindingValues,
+                    && fixture.caseNames.includes(batch.renderCase)
+                    && batch.objectData === fixture.bindingValuesByCase[batch.renderCase],
                 `QuadV5 ${record.label} batch references unknown object data`
             );
             return {
@@ -1823,12 +1838,13 @@ function PixelNeighborhoodHasDraw(bytes, x, y, clear, radius)
 
 function AssertQuadV5Silhouette(bytes, targetIndex, label, variant)
 {
+    const skinned = variant === "skinned" || variant === "skinnedHeatDetail";
     const clear = QUADV5_CLEAR_TARGETS[targetIndex];
     for (const [ x, y ] of [ [ 0, 0 ], [ WIDTH - 1, 0 ], [ 0, HEIGHT - 1 ], [ WIDTH - 1, HEIGHT - 1 ] ])
     {
         Assert(PixelEquals(bytes, x, y, clear), `${label} corner (${x}, ${y}) did not remain clear`);
     }
-    const anchors = variant === "skinned"
+    const anchors = skinned
         ? [
             [ "nose", 36, 10 ],
             [ "center", 35, 32 ]
@@ -1843,7 +1859,7 @@ function AssertQuadV5Silhouette(bytes, targetIndex, label, variant)
         ];
     for (const [ name, x, y ] of anchors)
     {
-        const radius = variant === "skinned" ? 3 : 0;
+        const radius = skinned ? 3 : 0;
         Assert(
             PixelNeighborhoodHasDraw(bytes, x, y, clear, radius),
             `${label} ${name} anchor neighborhood (${x}, ${y}) remained clear`
@@ -1873,9 +1889,9 @@ function AssertQuadV5Silhouette(bytes, targetIndex, label, variant)
             }
         }
     }
-    const minimumCoverage = variant === "skinned" ? 500 : 700;
+    const minimumCoverage = skinned ? 500 : 700;
     Assert(coverage >= minimumCoverage && coverage <= 2000, `${label} has implausible ship coverage ${coverage}`);
-    if (variant === "skinned")
+    if (skinned)
     {
         Assert(
             minimumX >= 25 && maximumX >= 54,
@@ -1893,12 +1909,12 @@ function AssertQuadV5Silhouette(bytes, targetIndex, label, variant)
         rowCoverage[10] >= 2 && rowCoverage[10] <= 16,
         `${label} has an implausible nose width ${rowCoverage[10]}`
     );
-    const minimumWingWidth = variant === "skinned" ? 20 : 34;
+    const minimumWingWidth = skinned ? 20 : 34;
     Assert(
         rowCoverage[31] >= minimumWingWidth,
         `${label} has an implausible wing width ${rowCoverage[31]}`
     );
-    const minimumTailWidth = variant === "skinned" ? 4 : 10;
+    const minimumTailWidth = skinned ? 4 : 10;
     Assert(
         rowCoverage[52] >= minimumTailWidth && rowCoverage[52] <= 28,
         `${label} has an implausible tail width ${rowCoverage[52]}`
@@ -1915,6 +1931,167 @@ function AssertQuadV5Silhouette(bytes, targetIndex, label, variant)
         rowCoverage: Array.from(rowCoverage),
         distinctColors: colors.size
     };
+}
+
+function QuadV5PixelIsActive(bytes, x, y)
+{
+    return !PixelEquals(bytes, x, y, QUADV5_CLEAR_TARGETS[1]);
+}
+
+function AssertQuadV5MrtCoverage(color, motion, label)
+{
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            Assert(
+                QuadV5PixelIsActive(motion, x, y)
+                    === !PixelEquals(color, x, y, QUADV5_CLEAR_TARGETS[0]),
+                `${label} MRT coverage differs at (${x}, ${y})`
+            );
+        }
+    }
+}
+
+function MeasureQuadV5ColorControl(control, active, motion, label)
+{
+    let coveredPixels = 0;
+    let changedPixels = 0;
+    let totalRgbDelta = 0;
+    let maximumChannelDelta = 0;
+    const distinctDeltas = new Set();
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            if (!QuadV5PixelIsActive(motion, x, y)) continue;
+            coveredPixels += 1;
+            const offset = PixelOffset(x, y);
+            Assert(
+                control[offset + 3] === active[offset + 3],
+                `${label} changed MRT0 alpha at (${x}, ${y})`
+            );
+            const delta = [ 0, 1, 2 ].map((component) =>
+                Math.abs(active[offset + component] - control[offset + component]));
+            if (delta.some((value) => value > 0))
+            {
+                changedPixels += 1;
+                totalRgbDelta += delta[0] + delta[1] + delta[2];
+                maximumChannelDelta = Math.max(maximumChannelDelta, ...delta);
+                distinctDeltas.add(delta.join(","));
+            }
+        }
+    }
+    Assert(coveredPixels > 0, `${label} has no covered pixels`);
+    Assert(
+        changedPixels >= Math.ceil(coveredPixels * 0.5),
+        `${label} changed only ${changedPixels}/${coveredPixels} covered pixels`
+    );
+    Assert(
+        maximumChannelDelta >= 4 && distinctDeltas.size >= 3,
+        `${label} lacks a spatially varied color response`
+    );
+    return {
+        coveredPixels,
+        changedPixels,
+        changedRatio: changedPixels / coveredPixels,
+        averageChangedRgbDelta: totalRgbDelta / changedPixels,
+        maximumChannelDelta,
+        distinctDeltas: distinctDeltas.size
+    };
+}
+
+function MeasureQuadV5HeatControl(cold, hot, motion, label)
+{
+    let coveredPixels = 0;
+    let changedPixels = 0;
+    let totalRedDelta = 0;
+    let maximumRedDelta = 0;
+    const distinctRedDeltas = new Set();
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            if (!QuadV5PixelIsActive(motion, x, y)) continue;
+            coveredPixels += 1;
+            const offset = PixelOffset(x, y);
+            Assert(
+                cold[offset + 1] === hot[offset + 1]
+                    && cold[offset + 2] === hot[offset + 2]
+                    && cold[offset + 3] === hot[offset + 3],
+                `${label} changed non-red output at (${x}, ${y})`
+            );
+            const redDelta = hot[offset] - cold[offset];
+            Assert(redDelta >= 0, `${label} reduced red output at (${x}, ${y})`);
+            if (redDelta > 0)
+            {
+                changedPixels += 1;
+                totalRedDelta += redDelta;
+                maximumRedDelta = Math.max(maximumRedDelta, redDelta);
+                distinctRedDeltas.add(redDelta);
+            }
+        }
+    }
+    Assert(coveredPixels > 0, `${label} has no covered pixels`);
+    Assert(
+        changedPixels >= Math.ceil(coveredPixels * 0.5),
+        `${label} changed only ${changedPixels}/${coveredPixels} covered pixels`
+    );
+    Assert(
+        maximumRedDelta >= 8 && distinctRedDeltas.size >= 3,
+        `${label} lacks a spatially varied red response`
+    );
+    return {
+        coveredPixels,
+        changedPixels,
+        changedRatio: changedPixels / coveredPixels,
+        averageChangedRedDelta: totalRedDelta / changedPixels,
+        maximumRedDelta,
+        distinctRedDeltas: distinctRedDeltas.size
+    };
+}
+
+function AssertQuadV5HeatDetailControls(instances)
+{
+    const byKey = new Map(instances.map((instance) => [
+        `${instance.record.backend}:${instance.renderCase}`,
+        instance
+    ]));
+    let dx11Oracle = null;
+    for (const backend of [ "dx11", "dx12" ])
+    {
+        const surface = byKey.get(`${backend}:surface`);
+        const detail = byKey.get(`${backend}:detail`);
+        const hotDetail = byKey.get(`${backend}:hotDetail`);
+        Assert(surface && detail && hotDetail, `QuadHeatDetailV5 ${backend} cases are incomplete`);
+        AssertExactTargetMatch(
+            surface.snapshots[1],
+            detail.snapshots[1],
+            `${backend} QuadHeatDetailV5 detail-invariant MRT1`
+        );
+        AssertExactTargetMatch(
+            detail.snapshots[1],
+            hotDetail.snapshots[1],
+            `${backend} QuadHeatDetailV5 heat-invariant MRT1`
+        );
+        const detailOracle = MeasureQuadV5ColorControl(
+            surface.snapshots[0],
+            detail.snapshots[0],
+            surface.snapshots[1],
+            `QuadHeatDetailV5 ${backend} detail control`
+        );
+        const heatOracle = MeasureQuadV5HeatControl(
+            detail.snapshots[0],
+            hotDetail.snapshots[0],
+            detail.snapshots[1],
+            `QuadHeatDetailV5 ${backend} heat control`
+        );
+        if (backend === "dx11")
+        {
+            dx11Oracle = { detail: detailOracle, heat: heatOracle };
+        }
+    }
+    return dx11Oracle;
 }
 
 function QuadGlassV5PixelIsActive(bytes, x, y)
@@ -2862,61 +3039,80 @@ async function RunQuadV5Comparison(webgpu)
 
     const device = webgpu.GetDevice();
     const fixture = await CreateQuadV5GpuResources(webgpu, records);
-    const dispatcher = CreateQuadV5TrinityDispatcher(webgpu, fixture);
-    const passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+    let dispatcher = null;
+    let passEncoder = null;
     const instances = [];
     let warningCount = 0;
     try
     {
+        dispatcher = CreateQuadV5TrinityDispatcher(webgpu, fixture);
+        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
         for (const record of records)
         {
-            let preparedBatchMap = null;
-            const targets = [];
-            const readbacks = [];
-            try
+            for (const renderCase of fixture.caseNames)
             {
-                preparedBatchMap = await dispatcher.PrepareBatchMap(
-                    CreateQuadV5TrinityBatchMap(record, fixture)
-                );
-                warningCount += preparedBatchMap.entries.reduce(
-                    (mapTotal, entry) => mapTotal + entry.accumulator.batches.reduce(
-                        (batchTotal, batch) => batchTotal
-                            + batch.prepared.diagnostics.filter((item) => item.type === "warning").length,
+                let preparedBatchMap = null;
+                const targets = [];
+                const readbacks = [];
+                try
+                {
+                    preparedBatchMap = await dispatcher.PrepareBatchMap(
+                        CreateQuadV5TrinityBatchMap(record, fixture, renderCase)
+                    );
+                    warningCount += preparedBatchMap.entries.reduce(
+                        (mapTotal, entry) => mapTotal + entry.accumulator.batches.reduce(
+                            (batchTotal, batch) => batchTotal
+                                + batch.prepared.diagnostics
+                                    .filter((item) => item.type === "warning").length,
+                            0
+                        ),
                         0
-                    ),
-                    0
-                );
-                for (let targetIndex = 0; targetIndex < QUADV5_CLEAR_TARGETS.length; targetIndex += 1)
-                {
-                    targets.push(device.createTexture({
-                        label: `QuadV5 ${record.label} MRT${targetIndex}`,
-                        size: { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 },
-                        format: "rgba8unorm",
-                        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
-                    }));
+                    );
+                    for (let targetIndex = 0;
+                        targetIndex < QUADV5_CLEAR_TARGETS.length;
+                        targetIndex += 1)
+                    {
+                        targets.push(device.createTexture({
+                            label: `QuadV5 ${record.label} ${renderCase} MRT${targetIndex}`,
+                            size: { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 },
+                            format: "rgba8unorm",
+                            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
+                        }));
+                    }
+                    for (let targetIndex = 0;
+                        targetIndex < QUADV5_CLEAR_TARGETS.length;
+                        targetIndex += 1)
+                    {
+                        readbacks.push(device.createBuffer({
+                            label:
+                                `QuadV5 ${record.label} ${renderCase} ` +
+                                `MRT${targetIndex} readback`,
+                            size: BYTES_PER_ROW * HEIGHT,
+                            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+                        }));
+                    }
+                    instances.push({
+                        record,
+                        renderCase,
+                        preparedBatchMap,
+                        targets,
+                        readbacks,
+                        snapshots: []
+                    });
                 }
-                for (let targetIndex = 0; targetIndex < QUADV5_CLEAR_TARGETS.length; targetIndex += 1)
+                catch (error)
                 {
-                    readbacks.push(device.createBuffer({
-                        label: `QuadV5 ${record.label} MRT${targetIndex} readback`,
-                        size: BYTES_PER_ROW * HEIGHT,
-                        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
-                    }));
+                    if (preparedBatchMap) dispatcher.DestroyBatchMap(preparedBatchMap);
+                    for (const buffer of readbacks)
+                    {
+                        buffer.destroy();
+                    }
+                    for (const texture of targets)
+                    {
+                        texture.destroy();
+                    }
+                    throw error;
                 }
-                instances.push({ record, preparedBatchMap, targets, readbacks, snapshots: [] });
-            }
-            catch (error)
-            {
-                if (preparedBatchMap) dispatcher.DestroyBatchMap(preparedBatchMap);
-                for (const buffer of readbacks)
-                {
-                    buffer.destroy();
-                }
-                for (const texture of targets)
-                {
-                    texture.destroy();
-                }
-                throw error;
             }
         }
 
@@ -2925,7 +3121,9 @@ async function RunQuadV5Comparison(webgpu)
         {
             passEncoder.Encode(encoder, [ {
                 descriptor: {
-                    label: `QuadV5 ${instance.record.label} Main.pass0`,
+                    label:
+                        `QuadV5 ${instance.record.label} Main.pass0 ` +
+                        `${instance.renderCase}`,
                     colorAttachments: instance.targets.map((texture, targetIndex) => ({
                         view: texture.createView(),
                         clearValue: {
@@ -2970,47 +3168,77 @@ async function RunQuadV5Comparison(webgpu)
                 AssertQuadV5Silhouette(
                     bytes,
                     targetIndex,
-                    `${instance.record.label} MRT${targetIndex}`,
+                    `${instance.record.label} ${instance.renderCase} MRT${targetIndex}`,
                     instance.record.variant
                 ));
             Assert(
                 instance.statistics[0].coverage === instance.statistics[1].coverage,
                 `${instance.record.label} MRT coverage does not match`
             );
-        }
-        for (let targetIndex = 0; targetIndex < QUADV5_CLEAR_TARGETS.length; targetIndex += 1)
-        {
-            AssertExactTargetMatch(
-                instances[0].snapshots[targetIndex],
-                instances[1].snapshots[targetIndex],
-                `DX11/DX12 QuadV5 MRT${targetIndex}`
+            AssertQuadV5MrtCoverage(
+                instance.snapshots[0],
+                instance.snapshots[1],
+                `${instance.record.label} ${instance.renderCase}`
             );
         }
+        for (const renderCase of fixture.caseNames)
+        {
+            const paired = records.map((record) => instances.find((instance) =>
+                instance.record.backend === record.backend
+                    && instance.renderCase === renderCase));
+            Assert(
+                paired.every(Boolean),
+                `QuadV5 ${renderCase} DX11/DX12 pair is incomplete`
+            );
+            for (let targetIndex = 0;
+                targetIndex < QUADV5_CLEAR_TARGETS.length;
+                targetIndex += 1)
+            {
+                AssertExactTargetMatch(
+                    paired[0].snapshots[targetIndex],
+                    paired[1].snapshots[targetIndex],
+                    `DX11/DX12 QuadV5 ${renderCase} MRT${targetIndex}`
+                );
+            }
+        }
+        const variant = records[0].variant ?? "static";
+        const heatDetailOracle = variant === "skinnedHeatDetail"
+            ? AssertQuadV5HeatDetailControls(instances)
+            : null;
+        const baselineCase = variant === "skinnedHeatDetail" ? "hotDetail" : "base";
+        const baseline = instances.find((instance) =>
+            instance.record.backend === "dx11"
+                && instance.renderCase === baselineCase);
+        Assert(baseline, `QuadV5 ${baselineCase} DX11 baseline is missing`);
         return {
             bodyIndex: 4,
-            variant: records[0].variant ?? "static",
+            variant,
             labels: records.map((record) => `${record.backend}:${record.label}`),
             loadPath: records[0].loadPath,
             pixelCount: WIDTH * HEIGHT,
             targetCount: QUADV5_CLEAR_TARGETS.length,
+            renderCaseCount: fixture.caseNames.length,
             drawKind: records[0].variant === "skinned"
+                || records[0].variant === "skinnedHeatDetail"
                 ? "indexed skinned synthetic silhouette"
                 : "indexed synthetic silhouette",
             indexCount: fixture.geometry.indexCount,
             warningCount,
             clearTargets: QUADV5_CLEAR_TARGETS,
-            topLeftClearPixels: instances[0].snapshots.map((bytes) => Array.from(bytes.slice(0, 4))),
-            statistics: instances[0].statistics,
+            topLeftClearPixels: baseline.snapshots
+                .map((bytes) => Array.from(bytes.slice(0, 4))),
+            statistics: baseline.statistics,
+            heatDetailOracle,
             targetWidth: WIDTH,
             targetHeight: HEIGHT,
-            targetPixels: instances[0].snapshots.map(GetActiveTargetPixels)
+            targetPixels: baseline.snapshots.map(GetActiveTargetPixels)
         };
     }
     finally
     {
         for (const instance of instances)
         {
-            dispatcher.DestroyBatchMap(instance.preparedBatchMap);
+            dispatcher?.DestroyBatchMap(instance.preparedBatchMap);
             for (const buffer of instance.readbacks)
             {
                 if (buffer.mapState === "mapped") buffer.unmap();

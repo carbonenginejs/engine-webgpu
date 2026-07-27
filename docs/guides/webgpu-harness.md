@@ -154,6 +154,24 @@ Use the skinned family gate with the corresponding pair:
 npm.cmd run test:webgpu:required -- --draw-skinned-quadv5 .\artifacts\quadv5-skinned-dx11.cewgpu .\artifacts\quadv5-skinned-dx12.cewgpu
 ```
 
+The skinned heat/detail material-block high-water mark is gated separately
+with explicit PPT-on `unpackedskinned_quadheatdetailv5` packages:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-skinned-quadheatdetailv5 .\artifacts\quadheatdetailv5-ppt-dx11.cewgpu .\artifacts\quadheatdetailv5-ppt-dx12.cewgpu
+```
+
+This command requires body `4` with all five local selections, including
+`SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`. Its Main pass uses 14 fragment
+sampled textures and three fragment samplers. Those are separate WebGPU limit
+categories: the gate does not flatten them into a misleading 17-texture
+count. Together with five uniform buffers and the vertex bone-transform
+storage buffer, the canonical group contains 23 bindings, tied for the largest
+active binding contract covered here. This is a contract-breadth and material-
+block high-water gate, not evidence that HeatDetail is a common-frequency
+shader. PPT-on is the representative/default focus for this slice; a PPT-off
+draw would not substitute for this coverage.
+
 The hull-derived glass gate requires packages explicitly selecting the whole
 default `unpacked_quadglassv5` `Main` technique, not only `Main.pass0`:
 
@@ -238,20 +256,23 @@ capture.
 
 The launcher rejects identical or misordered inputs and any package that is not
 body index `4` with the complete expected selection set, including
-`SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`. Static packages carry seven
-selections; skinned packages carry six because they do not expose the
-instanced-attachment axis. The launcher reads each file directly, decodes it
-with `CjsFormatWebgpu`, and constructs `CjsWebGPUPackage`. No runtime library,
-resource manager, or Trinity contract participates in this gate.
+`SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`. Static QuadV5 packages carry seven
+selections, ordinary skinned QuadV5 carries six, and skinned
+QuadHeatDetailV5 carries its exact five-axis effect contract. The launcher
+reads each file directly, decodes it with `CjsFormatWebgpu`, and constructs
+`CjsWebGPUPackage`. No runtime library, resource manager, or Trinity contract
+participates in this gate.
 
-The browser harness supplies an authored 13-vertex, 36-index silhouette, ten
-generated 8x8 2D texture payloads, one generated six-face environment cube,
-and three explicit filtering-sampler descriptors. Geometry, textures, and
-material/per-frame/per-object values are synthetic harness inputs. The gate
-does not read SOF, source per-object data from it, or infer production
-defaults. The 2D textures, geometry, and samplers are atomically realized and
-published as one device resource bundle. Its harness-local structural adapter
-slot does not assert a `CjsResource` or runtime integration contract.
+The browser harness supplies an authored 13-vertex, 36-index silhouette and
+three explicit filtering-sampler descriptors. The base QuadV5 variants use ten
+generated 8x8 2D texture payloads plus one generated six-face environment
+cube; skinned QuadHeatDetailV5 uses 13 generated 8x8 2D payloads plus that
+cube. Geometry, textures, and material/per-frame/per-object values are
+synthetic harness inputs. The gate does not read SOF, source per-object data
+from it, or infer production defaults. The 2D textures, geometry, and samplers
+are atomically realized and published as one device resource bundle. Its
+harness-local structural adapter slot does not assert a `CjsResource` or
+runtime integration contract.
 `CjsWebGPUDevice.CreateGeometry(...)`
 owns the silhouette's native vertex/index buffers, exposes the exact frozen 64-byte
 common vertex layout, validates draw capacity and device generation, and
@@ -284,15 +305,21 @@ native bind group, and destroys only those owned buffers. Static
 `Main.pass0` uses six active vertex attributes and 19 canonical bindings.
 Skinned `Main.pass0` uses seven attributes and 20 bindings, including its
 vertex-stage read-only bone-transform storage buffer.
+Skinned QuadHeatDetailV5 retains those seven attributes while expanding to 23
+bindings: 14 textures, three samplers, five uniform buffers, and the bone
+buffer. Each backend renders three controlled cases: cold/detail-neutral with
+`DetailSelector=0`, cold/detail-active, and hot/detail-active. Activating detail
+must measurably change MRT0 from the neutral case, and activating heat must
+measurably change MRT0 from the cold/detail-active case. Coverage and every
+covered MRT1 byte must remain invariant across all three cases.
 DX11 and DX12 assign several material textures to different D3D registers, so
 the gate maps their canonical identities through the independently reflected
-Carbon resource names. Both pipelines render into two `rgba8unorm` targets,
-check clear corners, silhouette anchors, bounded coverage, nose/wing/tail widths, and
-varied MRT0 color, and then require
-byte-exact DX11/DX12 equality across the active bytes of both MRTs. That
-equality is measured after `rgba8unorm` target quantization; it is not a claim
-of unquantized floating-point shader-semantic equivalence. Every WGSL warning
-or WebGPU validation error fails the command.
+Carbon resource names. Every case renders into two `rgba8unorm` targets,
+checks clear corners, silhouette anchors, bounded coverage, nose/wing/tail
+widths, and varied MRT0 color, and then requires byte-exact DX11/DX12 equality
+for both MRTs. That equality is measured after `rgba8unorm` target
+quantization; it is not a claim of unquantized floating-point shader-semantic
+equivalence. Every WGSL warning or WebGPU validation error fails the command.
 
 The QuadGlassV5 gate reuses the bounded semantic space-object buffer packer
 and common 64-byte static vertex layout, but exercises its own exact

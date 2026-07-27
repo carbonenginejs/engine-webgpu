@@ -40,6 +40,8 @@ if (DRAW_CEWGPU_INDEX >= 0 && DRAW_WGSL_INDEX >= 0)
 const DRAW_CEWGPU_PATH = DRAW_CEWGPU_INDEX >= 0 ? resolve(process.argv[DRAW_CEWGPU_INDEX + 1]) : null;
 const DRAW_QUADV5_INDEX = process.argv.indexOf("--draw-quadv5");
 const DRAW_SKINNED_QUADV5_INDEX = process.argv.indexOf("--draw-skinned-quadv5");
+const DRAW_SKINNED_QUADHEATDETAILV5_INDEX =
+    process.argv.indexOf("--draw-skinned-quadheatdetailv5");
 const DRAW_QUADGLASSV5_INDEX = process.argv.indexOf("--draw-quadglassv5");
 const DRAW_QUADHEATV5_INDEX = process.argv.indexOf("--draw-quadheatv5");
 const DRAW_DECALV5_INDEX = process.argv.indexOf("--draw-decalv5");
@@ -49,15 +51,23 @@ const DRAW_DECALCOUNTERV5_INDEX = process.argv.indexOf("--draw-decalcounterv5");
 const DRAW_DECALGLOWV5_INDEX = process.argv.indexOf("--draw-decalglowv5");
 const DRAW_DECALGLOWCYLINDRICV5_INDEX =
     process.argv.indexOf("--draw-decalglowcylindricv5");
-if (DRAW_QUADV5_INDEX >= 0 && DRAW_SKINNED_QUADV5_INDEX >= 0)
+if ([
+    DRAW_QUADV5_INDEX,
+    DRAW_SKINNED_QUADV5_INDEX,
+    DRAW_SKINNED_QUADHEATDETAILV5_INDEX
+].filter((index) => index >= 0).length > 1)
 {
-    throw new Error("--draw-quadv5 and --draw-skinned-quadv5 are mutually exclusive");
+    throw new Error("QuadV5 draw flags are mutually exclusive");
 }
-const ACTIVE_QUADV5_INDEX = DRAW_SKINNED_QUADV5_INDEX >= 0
-    ? DRAW_SKINNED_QUADV5_INDEX
-    : DRAW_QUADV5_INDEX;
-const QUADV5_VARIANT = DRAW_SKINNED_QUADV5_INDEX >= 0 ? "skinned" : "static";
-const QUADV5_FLAG = QUADV5_VARIANT === "skinned" ? "--draw-skinned-quadv5" : "--draw-quadv5";
+const ACTIVE_QUADV5_INDEX = DRAW_SKINNED_QUADHEATDETAILV5_INDEX >= 0
+    ? DRAW_SKINNED_QUADHEATDETAILV5_INDEX
+    : (DRAW_SKINNED_QUADV5_INDEX >= 0 ? DRAW_SKINNED_QUADV5_INDEX : DRAW_QUADV5_INDEX);
+const QUADV5_VARIANT = DRAW_SKINNED_QUADHEATDETAILV5_INDEX >= 0
+    ? "skinnedHeatDetail"
+    : (DRAW_SKINNED_QUADV5_INDEX >= 0 ? "skinned" : "static");
+const QUADV5_FLAG = QUADV5_VARIANT === "skinnedHeatDetail"
+    ? "--draw-skinned-quadheatdetailv5"
+    : (QUADV5_VARIANT === "skinned" ? "--draw-skinned-quadv5" : "--draw-quadv5");
 if (ACTIVE_QUADV5_INDEX >= 0
   && (!process.argv[ACTIVE_QUADV5_INDEX + 1] || !process.argv[ACTIVE_QUADV5_INDEX + 2]
     || process.argv[ACTIVE_QUADV5_INDEX + 1].startsWith("--")
@@ -719,7 +729,9 @@ canvas { width: 100%; height: 100%; image-rendering: pixelated; }
     linear-gradient(#fff2 1px, transparent 1px); background-size: 25% 25%; }
 .footer { margin-top: 24px; color: #7f8ba5; }
 </style></head><body>
-<h1>${comparison.variant === "skinned" ? "Skinned " : ""}QuadV5 PPT-on · body 4</h1>
+<h1>${comparison.variant === "skinnedHeatDetail"
+        ? "Skinned QuadHeatDetailV5"
+        : `${comparison.variant === "skinned" ? "Skinned " : ""}QuadV5`} PPT-on · body 4</h1>
 <div class="subtitle">Actual WebGPU readback - DX11 and DX12 RGBA8 bytes matched after target quantization</div>
 <div class="targets">
   <section class="card"><h2>MRT 0 · color</h2><div class="rgba" id="rgba0"></div>
@@ -821,12 +833,19 @@ async function Main()
         }
         if (result.quadV5Comparison)
         {
+            const quad = result.quadV5Comparison;
+            const controls = quad.heatDetailOracle;
             console.log(
-                `Rendered PPT-on QuadV5 body ${result.quadV5Comparison.bodyIndex} from ` +
-                `${result.quadV5Comparison.variant} ` +
-                `${result.quadV5Comparison.labels.join(" and ")} from direct CEWGPU reads; ` +
-                `${result.quadV5Comparison.pixelCount} pixels matched exactly across both MRTs and backends ` +
-                `with 0 WGSL warnings.`
+                `Rendered PPT-on QuadV5 body ${quad.bodyIndex} from ` +
+                `${quad.variant} ${quad.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `${quad.pixelCount} pixels matched exactly across ${quad.renderCaseCount} ` +
+                `case${quad.renderCaseCount === 1 ? "" : "s"}, both MRTs, and both ` +
+                `backends with 0 WGSL warnings.` +
+                (controls
+                    ? ` Detail changed ${controls.detail.changedPixels}/` +
+                        `${controls.detail.coveredPixels} covered pixels; heat changed ` +
+                        `${controls.heat.changedPixels}/${controls.heat.coveredPixels}.`
+                    : "")
             );
         }
         if (result.quadGlassV5Comparison)

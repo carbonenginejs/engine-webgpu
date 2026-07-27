@@ -107,13 +107,17 @@ technique without the dispatcher importing or interpreting `TriBatchType`.
 
 This class is internal and is not exported from the package root. It is a
 conformance prototype, not a frozen renderer API. The static/skinned QuadV5,
-independently gated QuadGlassV5 Main passes, cold/hot QuadHeatV5, non-bindless
+PPT-on skinned QuadHeatDetailV5 material-block high-water gate, independently
+gated QuadGlassV5 Main passes, cold/hot QuadHeatV5, non-bindless
 DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter DecalCounterV5,
 DecalGlowV5, and DecalGlowCylindricV5 browser gates use its one-type batch-map
 path, with the glass fixture keeping complementary pass selection explicit,
-the heat fixture keeping its caller-owned raster recipe and semantic heat
-cases explicit, and the decal fixtures proving that numeric batch type `1`
-stays caller-selected. The duck-typed boundary is shaped for future
+the heat fixtures keeping their caller-owned raster recipes and semantic cases
+explicit, and the decal fixtures proving that numeric batch type `1` stays
+caller-selected. HeatDetail is a tied-largest active-binding contract, not a
+common-frequency shader gate: cold/detail-neutral, cold/detail-active, and
+hot/detail-active cases isolate its detail and heat response while holding
+coverage and MRT1 invariant. The duck-typed boundary is shaped for future
 `runtime-trinity` `Tr2RenderBatch`,
 `TriRenderBatchAccumulator`, and `TriRenderBatchMap` instances, but this
 package does not yet run an integration gate against them. A later
