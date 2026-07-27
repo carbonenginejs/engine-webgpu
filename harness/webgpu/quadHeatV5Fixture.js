@@ -540,7 +540,7 @@ export function getQuadHeatV5PrimitiveRecipe()
 }
 
 /**
- * Fail closed unless the record is the exact default, static, high-quality,
+ * Fail closed unless the record is the exact default, static, medium-quality,
  * unpacked QuadHeatV5 Main pass used by this gate.
  *
  * @param {object} record Resource provenance plus a pipeline descriptor.
@@ -564,7 +564,7 @@ export function validateQuadHeatV5PackageRecord(record)
     "/managed/space/spaceobject/v5/quad/unpacked_quadheatv5.sm_hi"
   ))
   {
-    fail("package source must be the high-quality unpacked_quadheatv5 ship shader");
+    fail("package source must be the medium-quality unpacked_quadheatv5 ship shader");
   }
   if (record.analysis?.bodyIndex !== TARGET_BODY_INDEX
     || record.metadata?.bodyIndex !== TARGET_BODY_INDEX)

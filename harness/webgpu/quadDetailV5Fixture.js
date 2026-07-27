@@ -968,7 +968,7 @@ export function validateQuadDetailV5PackageRecord(record)
     ))
   {
     fail(
-      `package source must be the ${record.backend} high-quality ` +
+      `package source must be the ${record.backend} medium-quality ` +
         `${profile.variant} QuadDetailV5 shader`
     );
   }

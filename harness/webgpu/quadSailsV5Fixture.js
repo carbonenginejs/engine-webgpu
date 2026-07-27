@@ -782,7 +782,7 @@ export function getQuadSailsV5PrimitiveRecipe()
 }
 
 /**
- * Fail closed unless the record is one exact high-quality, whole-Main
+ * Fail closed unless the record is one exact medium-quality, whole-Main
  * QuadSailsV5 profile: PPT-on body 4 skinned, or PPT-off body 0 static.
  *
  * @param {object} record Resource provenance plus a pipeline descriptor.
@@ -807,7 +807,7 @@ export function validateQuadSailsV5PackageRecord(record)
     `/managed/space/spaceobject/v5/quad/${profile.sourceFile}`
   ))
   {
-    fail(`package source must be the high-quality ${profile.sourceFile} ship shader`);
+    fail(`package source must be the medium-quality ${profile.sourceFile} ship shader`);
   }
   if (record.analysis?.bodyIndex !== profile.bodyIndex
     || record.metadata?.bodyIndex !== profile.bodyIndex)

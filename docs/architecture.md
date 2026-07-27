@@ -121,6 +121,13 @@ caller-selected. HeatDetail is a tied-largest active-binding contract, not a
 common-frequency shader gate: cold/detail-neutral, cold/detail-active, and
 hot/detail-active cases isolate its detail and heat response while holding
 coverage and MRT1 invariant.
+The Heat, HeatDetail, Glass, Sails, Detail, and Oil browser gates currently use
+Carbon's medium `.sm_hi` tier. High quality is `.sm_depth`; the exact PPT-on
+high QuadDetail and QuadHeatDetail packages expose 17 fragment textures. They
+fail on the current 16-texture harness adapter before a pipeline can be
+prepared. A device explicitly requested with a supported higher limit may
+accept them. They remain the target for the documented cross-adapter
+detail-array transforms.
 The build-3444265 common skinned-heat evidence (313 ship areas across 205
 hulls) remains a synthetic 21-binding cold/hot conformance gate: it uses the
 internal dispatcher shape but imports neither runtime-trinity nor a Trinity
@@ -162,9 +169,13 @@ gates reuse four synthetic cases that isolate pattern projection, Detail1, and
 Detail2 while exercising five uniform buffers, fourteen textures, and three
 samplers; the skinned total includes its bone buffer. Texture and sampler limit
 categories remain distinct. These totals describe the current pre-transform
-CEWGPU packages: the agreed Detail1/2/3-to-array resource transform is not yet
-emitted by `format-webgpu` or realized by this package, and would reduce the
-QuadDetail physical sampled-texture count from fourteen to twelve.
+medium `.sm_hi` CEWGPU packages: the agreed Detail1/2/3-to-array resource
+transform is not yet emitted by `format-webgpu` or realized by this package,
+and would reduce the medium QuadDetail physical sampled-texture count from
+fourteen to twelve after exact sample-pattern and layer-compatibility proof.
+The corresponding high `.sm_depth` PPT-on body contains 17 fragment textures
+and four samplers; the same proven transform would reduce it to 15 textures
+for portable/default-limit preparation.
 
 The real `aca1_t1:amarrbase:amarr` base DNA emits two opaque skinned
 QuadDetail effects with PPT disabled and black pattern masks. Adding
@@ -182,7 +193,7 @@ records. Applying the live ship-geometry filter leaves seven areas across
 seven hulls: six skinned Sleeper hulls and one static hull. All six skinned
 graphs emit `skinned_quad/quadoilv5.fx` with `SOT_OPAQUE`,
 `SOPPT_DISABLED`, and only `GeneralData=[1,0,0,0]` as an authored constant.
-The separate browser gate freezes the exact body-0
+The separate browser gate freezes the exact medium `.sm_hi` body-0
 `unpackedskinned_quadoilv5` Main contract: five uniform buffers, vertex
 `BoneTransforms`, ten fragment textures, and two samplers for 18 canonical
 bindings. Two otherwise-identical synthetic draws replace only the sRGB

@@ -112,7 +112,8 @@ import tools-core at runtime.
 
 The specialized full-permutation matrix and paired DX11/DX12 QuadV5 commands
 below remain explicit compiler/engine qualification. The registered
-`eve-webgpu` target currently represents selected DX11 SM5.0 `.sm_hi` inputs,
+`eve-webgpu` target currently represents selected medium-tier DX11 SM5.0
+`.sm_hi` inputs,
 so do not mislabel those broader experiments as tools-core corpus output.
 
 To prepare a real CEWGPU `Main.pass0` without pretending the package contains
@@ -156,7 +157,7 @@ Use the skinned family gate with the corresponding pair:
 npm.cmd run test:webgpu:required -- --draw-skinned-quadv5 .\artifacts\quadv5-skinned-dx11.cewgpu .\artifacts\quadv5-skinned-dx12.cewgpu
 ```
 
-The representative skinned heat gate requires current high-quality
+The representative skinned heat gate currently requires medium-quality
 `unpackedskinned_quadheatv5` packages with the explicit PPT-on `Main.pass0`
 vertex/pixel pair:
 
@@ -165,7 +166,7 @@ npm.cmd run test:webgpu:required -- --draw-skinned-quadheatv5 .\artifacts\quadhe
 ```
 
 The build-3444265 SOF/resource audit correlates this compiled family to 313
-ship areas across 205 hulls. The high-quality body-4 gate requires the exact
+ship areas across 205 hulls. The medium-quality body-4 gate requires the exact
 five local selections, including `SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`.
 The browser command deliberately does not load SOF, production textures,
 geometry, per-object defaults, runtime-trinity, or a Trinity graph. It supplies
@@ -187,18 +188,27 @@ npm.cmd run test:webgpu:required -- --draw-skinned-quadheatdetailv5 .\artifacts\
 This command requires body `4` with all five local selections, including
 `SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`. Its Main pass uses 14 fragment
 sampled textures and three fragment samplers. Those are separate WebGPU limit
-categories: the gate does not flatten them into a misleading 17-texture
-count. Together with five uniform buffers and the vertex bone-transform
+categories: the gate does not flatten this medium body's 14 textures plus
+three samplers into a 17-texture count. Together with five uniform buffers and
+the vertex bone-transform
 storage buffer, the canonical group contains 23 bindings, tied for the largest
 active binding contract covered here. This is a contract-breadth and material-
 block high-water gate, not evidence that HeatDetail is a common-frequency
 shader. PPT-on is the representative/default focus for this slice; a PPT-off
 draw would not substitute for this coverage.
 
-These counts describe the exact current, pre-transform CEWGPU packages. This
-HeatDetail body exposes `Detail1Map` and `Detail2Map` but no `Detail3Map`, so
-the separately agreed full Detail1/2/3-to-array transform cannot be assumed to
-apply. The gate does not yet qualify compiler-emitted texture-array recipes,
+These counts describe the exact current medium-tier `.sm_hi`, pre-transform
+CEWGPU packages. This HeatDetail body exposes `Detail1Map` and `Detail2Map`
+but no `Detail3Map`. The canonical plan applies the same ordered array
+mechanism to those two layers after the compiler proves the exact
+shared-sampler/sample pattern and the engine proves compatible layer payloads.
+That transform would reduce this medium package from 14 to 13 physical sampled
+textures. The exact PPT-on high-tier `.sm_depth` body instead has 17 fragment
+textures and four samplers; packing its two compatible detail layers would
+bring it to the portable 16-texture limit. That high package currently fails
+bind-group-layout validation on the 16-texture harness adapter. A device
+explicitly requested with a supported higher limit may accept the untransformed
+layout. This gate does not yet qualify compiler-emitted texture-array recipes,
 array payload composition, or engine-side array realization.
 
 The hull-derived glass gate requires packages explicitly selecting the whole
@@ -228,7 +238,7 @@ npm.cmd run test:webgpu:required -- --draw-skinned-quadglassv5 .\artifacts\skinn
 
 The build-3444265 SOF/resource audit correlates
 `unpackedskinned_quadglassv5` to 57 ship areas across 57 hulls. It requires
-the exact high-quality body-4 five-axis selection, including
+the exact medium-quality body-4 five-axis selection, including
 `SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`, both complete Main passes, and 15
 canonical bindings. An 8-byte-stride `uint16x4` blend-index stream selects palette
 entry 1; entry 0 is zero and entry 1 applies a non-identity horizontal scale
@@ -299,7 +309,7 @@ draws, or verify depth ordering. Neither command loads SOF, runtime-trinity, a
 Trinity graph, production texture, ship mesh, or authoritative default value,
 and neither qualifies production scene construction or pass scheduling.
 
-The static QuadDetailV5 gate requires the exact high-quality PPT-on
+The static QuadDetailV5 gate requires the exact medium-quality PPT-on
 `unpacked_quaddetailv5` `Main.pass0` pair:
 
 ```powershell
@@ -362,12 +372,19 @@ quantization, with zero WGSL warnings. Neither gate makes a depth-attachment,
 depth-write, or depth-ordering claim.
 
 The 14-texture and 22/23-binding totals are measurements of the current
-pre-transform packages, where `Detail1Map`, `Detail2Map`, and `Detail3Map`
-remain three separate `texture_2d` bindings. The agreed 3-to-1 detail-array
-design would reduce the physical sampled-texture count to 12, but
-`format-webgpu` does not yet emit that resource-transform recipe and
-`engine-webgpu` does not yet realize it. These gates therefore qualify the
-separate-texture contract only.
+medium-tier `.sm_hi`, pre-transform packages, where `Detail1Map`,
+`Detail2Map`, and `Detail3Map` remain three separate `texture_2d` bindings.
+The agreed 3-to-1 detail-array design would reduce their physical
+sampled-texture count to 12 after exact sample-pattern and
+layer-compatibility proof. The exact PPT-on high-tier `.sm_depth` body adds
+`DustNoiseMap`, `DirtMap`, and the already-native `LightProfileArray`, reaching
+17 fragment textures and four samplers; the same proven packing would reduce
+it to 15. That high package currently fails bind-group-layout validation on
+the 16-texture harness adapter at the untransformed 17-texture count. A device
+explicitly requested with a supported higher limit may accept it.
+`format-webgpu` does not yet emit the detail resource-transform recipe and
+`engine-webgpu` does not yet realize it, so these browser draws qualify the
+medium separate-texture contract only.
 
 The live-ship QuadOilV5 slice uses the exact PPT-off
 `unpackedskinned_quadoilv5` `Main.pass0` pair:
@@ -384,7 +401,7 @@ skinned records each emit one opaque `area_hull` using
 `GeneralData=[1,0,0,0]`; none lists an applicable pattern. The command itself
 does not load those graphs.
 
-Each supplied package must resolve high-quality body `0` with the complete
+Each supplied package must resolve medium-quality body `0` with the complete
 five-axis contract: non-bindless, clipping disabled, PPT disabled, opaque,
 and debug off. Only the non-bindless and PPT selections were explicit in the
 audited package build; the other three retain their compiled defaults. The
@@ -419,7 +436,7 @@ loads no SOF, EVE mesh or texture, authoritative defaults, runtime-core,
 runtime-resource, runtime-trinity, or Trinity graph, and it attaches no depth
 target.
 
-The older PPT-off static heat gate requires explicitly selected high-quality
+The older PPT-off static heat gate requires explicitly selected medium-quality
 `unpacked_quadheatv5` `Main.pass0` packages:
 
 ```powershell
@@ -789,7 +806,7 @@ rather than hand-addressed constant-buffer rows. It calls
 this package's stage-local
 material `cb0`, then packs Carbon's full `PerFrameVSData` (736 bytes),
 `PerFramePSData` (1888 bytes), `EveSpaceObjectVSData` (464 bytes), and
-`EveSpaceObjectPSData` (464 bytes). The static high-quality package's WGSL
+`EveSpaceObjectPSData` (464 bytes). The static medium-quality package's WGSL
 minimum binding sizes are 384, 512, 352, 416, and 432 bytes; the skinned
 package raises the fourth minimum to 432 bytes. WebGPU permits the full Carbon
 payloads because each is at least its canonical minimum. This proves the first

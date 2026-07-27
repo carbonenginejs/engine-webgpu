@@ -627,7 +627,7 @@ function assertBindings(record)
 }
 
 /**
- * Fail closed unless the record is the exact high-quality, PPT-off, skinned
+ * Fail closed unless the record is the exact medium-quality, PPT-off, skinned
  * QuadOilV5 Main.pass0 profile used by the live-ship gate.
  *
  * @param {object} record Resource provenance plus a pipeline descriptor.

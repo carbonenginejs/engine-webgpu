@@ -757,11 +757,11 @@ export function validateQuadV5PackageRecord(record)
     : (heat
       ? "unpackedskinned_quadheatv5"
       : (skinned ? "unpackedskinned_quadv5" : "unpacked_quadv5"));
-  const highQualitySuffix = `/managed/space/spaceobject/v5/quad/${expectedStem}.sm_hi`;
+  const mediumQualitySuffix = `/managed/space/spaceobject/v5/quad/${expectedStem}.sm_hi`;
   const lowQualitySuffix = `/managed/space/spaceobject/v5/quad/${expectedStem}.sm_lo`;
   if (strictHeat
-    ? !analysisSource.endsWith(highQualitySuffix)
-    : (!analysisSource.endsWith(highQualitySuffix) && !analysisSource.endsWith(lowQualitySuffix)))
+    ? !analysisSource.endsWith(mediumQualitySuffix)
+    : (!analysisSource.endsWith(mediumQualitySuffix) && !analysisSource.endsWith(lowQualitySuffix)))
   {
     fail(`package source must be the ${expectedStem} ship shader`);
   }
