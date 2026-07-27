@@ -48,15 +48,15 @@ Fixture creation and pixel expectations remain harness responsibilities, so
 the reusable engine class does not acquire resource paths or infer format/
 geometry policy.
 
-The static and skinned QuadV5 modes additionally route each draw through the
-internal `CjsWebGPUTrinityBatchDispatcher`. The fixture constructs the
-duck-typed fields of a transient `Tr2RenderBatch` inside a finalized
-ordinary-batch accumulator and a one-type batch-map shape. The caller selects
-the opaque batch type's render pass; injected hooks resolve its material,
-geometry source, and object data to the existing WebGPU resources and assert
-that the immutable resolver context identifies that opaque type. Like
-`Tr2MeshBase.CreateGeometryBatch`, the fixture leaves batch draw counts zero;
-the geometry resolver supplies validated arguments from the realized
+The static/skinned QuadV5 and two-pass QuadGlassV5 modes additionally route
+each draw through the internal `CjsWebGPUTrinityBatchDispatcher`. The fixtures
+construct the duck-typed fields of a transient `Tr2RenderBatch` inside a
+finalized ordinary-batch accumulator and a one-type batch-map shape. The
+caller selects the opaque batch type's render pass; injected hooks resolve its
+material, geometry source, and object data to the existing WebGPU resources
+and assert that the immutable resolver context identifies that opaque type.
+Like `Tr2MeshBase.CreateGeometryBatch`, the fixture leaves batch draw counts
+zero; the geometry resolver supplies validated arguments from the realized
 geometry. This tests
 the engine crossing without importing `runtime-trinity`, loading a Trinity
 graph, depending on grouped or indirect GDPR optimization, inferring pass
@@ -152,6 +152,25 @@ Use the skinned family gate with the corresponding pair:
 ```powershell
 npm.cmd run test:webgpu:required -- --draw-skinned-quadv5 .\artifacts\quadv5-skinned-dx11.cewgpu .\artifacts\quadv5-skinned-dx12.cewgpu
 ```
+
+The hull-derived glass gate requires packages explicitly selecting the whole
+default `unpacked_quadglassv5` `Main` technique, not only `Main.pass0`:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-quadglassv5 .\artifacts\quadglassv5-main-dx11.cewgpu .\artifacts\quadglassv5-main-dx12.cewgpu
+```
+
+This is a synthetic conformance gate for the shader family identified on the
+audited `gb2_t1:gallentebase:gallente` hull; the command itself does not load
+SOF or GB2 assets. It rejects anything except body `0`, the six default
+non-bindless/PPT-disabled/opaque selections, and both complete Main passes.
+Pass 0 must carry `RS_CULLMODE=CULL_CCW`; pass 1 must carry
+`RS_CULLMODE=CULL_CW`. The provisional caller-authored recipes map those
+states with `frontFace: "cw"` to complementary back/front culling. Opposite-
+winding synthetic probes must render on disjoint sides, so disabling culling
+or silently running only one pass cannot pass.
+Each pass/case is rendered independently into separate attachments. The gate
+does not yet prove pass 0 then pass 1 ordering or same-target composition.
 
 The first decal-family gate uses the explicitly selected non-bindless
 `unpacked_decalv5` Main pass:
@@ -259,6 +278,29 @@ byte-exact DX11/DX12 equality across the active bytes of both MRTs. That
 equality is measured after `rgba8unorm` target quantization; it is not a claim
 of unquantized floating-point shader-semantic equivalence. Every WGSL warning
 or WebGPU validation error fails the command.
+
+The QuadGlassV5 gate reuses the bounded semantic space-object buffer packer
+and common 64-byte static vertex layout, but exercises its own exact
+14-binding contract in both Main passes. The active textures are the scene
+environment cube, autoregistered 2D-array fog volume, NormalMap, GlowMap,
+RoughnessMap, MaterialMap, and PaintMaskMap, plus two samplers. The audited
+SOF effect also authors AlbedoMap, DirtMap, and DustNoiseMap; they are inactive
+in this selected shader body and are deliberately not invented as live
+bindings. The environment and neutral four-layer-capable fog views remain
+harness-owned because the provisional public texture adapter is still 2D
+only.
+
+Each backend renders both cull passes with an opaque PaintMask and a
+transparent PaintMask. MRT1 supplies stable `[0, 0, 0, 255]` motion/coverage
+bytes. Across every covered pixel, PaintMask red `0` must produce MRT0 alpha
+`255`, red `255` must produce alpha `0`, and both passes must preserve the
+same MRT1 silhouette. The mask also participates in the shader's RGB
+normalization path, so the control must visibly change almost all covered RGB
+pixels. Finally, both MRTs must match byte-for-byte between independently
+derived DX11 and DX12 packages for every pass and mask case with zero WGSL
+warnings. This verifies selected shader execution and paired backend parity;
+it does not qualify Depth/Picking techniques, skinned glass, production
+textures, authoritative per-object values, or renderer pass scheduling.
 
 The DecalV5 command independently requires canonical DX11/DX12
 `unpacked_decalv5` provenance, body index `0`, all three default selections,
@@ -448,8 +490,8 @@ dispatch and does not widen the render-only public `CjsWebGPUDevice` API.
 Unlike the ship-family draw flags, preparation requires no geometry or live
 resource fixtures.
 
-The QuadV5 and decal-family commands are direct format/engine integration
-gates. They do not load `runtime-core`, `runtime-resource`, or
+The QuadV5, QuadGlassV5, and decal-family commands are direct format/engine
+integration gates. They do not load `runtime-core`, `runtime-resource`, or
 `runtime-trinity`.
 
 To exercise the real package boundary, pass a CEWGPU package containing the

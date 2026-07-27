@@ -107,10 +107,12 @@ technique without the dispatcher importing or interpreting `TriBatchType`.
 
 This class is internal and is not exported from the package root. It is a
 conformance prototype, not a frozen renderer API. The static/skinned QuadV5,
-non-bindless DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter
-DecalCounterV5, DecalGlowV5, and DecalGlowCylindricV5 browser gates use its
-one-type batch-map path, with the decal fixtures proving that numeric batch
-type `1` stays caller-selected. The duck-typed boundary is shaped for future
+independently gated QuadGlassV5 Main passes, non-bindless
+DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter DecalCounterV5,
+DecalGlowV5, and DecalGlowCylindricV5 browser gates use its one-type batch-map
+path, with the glass fixture keeping complementary pass selection explicit
+and the decal fixtures proving that numeric batch type `1` stays
+caller-selected. The duck-typed boundary is shaped for future
 `runtime-trinity` `Tr2RenderBatch`,
 `TriRenderBatchAccumulator`, and `TriRenderBatchMap` instances, but this
 package does not yet run an integration gate against them. A later
@@ -149,8 +151,8 @@ realize render-job intents, or schedule a render loop.
 
 The public engine texture adapter currently uploads only explicit,
 single-mip, uncompressed 2D RGBA8 data. The standalone harness may create
-harness-owned native resources, such as a cube view, when a shader contract
-requires a shape outside that provisional adapter.
+harness-owned native resources, such as cube and 2D-array views, when a shader
+contract requires a shape outside that provisional adapter.
 
 ## Related documentation
 

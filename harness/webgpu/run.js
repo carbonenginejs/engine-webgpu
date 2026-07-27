@@ -66,6 +66,16 @@ import {
     getQuadV5ResourcePlan,
     validateQuadV5PackagePair
 } from "/quadV5Fixture.js";
+import {
+    QUAD_GLASS_V5_CLEAR_TARGETS,
+    QUAD_GLASS_V5_TARGET_HEIGHT,
+    QUAD_GLASS_V5_TARGET_WIDTH,
+    QUAD_GLASS_V5_VERTEX_BUFFER_LAYOUT,
+    createQuadGlassV5FixtureValues,
+    getQuadGlassV5PrimitiveRecipe,
+    getQuadGlassV5ResourcePlan,
+    validateQuadGlassV5PackagePair
+} from "/quadGlassV5Fixture.js";
 import { CjsWebGPUDevice } from "/CjsWebGPUDevice.js";
 import { buildEveSpaceObjectMainUniformData } from "/spaceObjectMainBindings.js";
 import { CjsWebGPUTrinityBatchDispatcher } from "/trinityBatchDispatcher.js";
@@ -795,6 +805,211 @@ async function CreateQuadV5GpuResources(webgpu, records)
     }
 }
 
+async function CreateQuadGlassV5GpuResources(webgpu, records)
+{
+    Assert(
+        QUAD_GLASS_V5_TARGET_WIDTH === WIDTH
+            && QUAD_GLASS_V5_TARGET_HEIGHT === HEIGHT,
+        "QuadGlassV5 and harness target dimensions must match"
+    );
+    const values = createQuadGlassV5FixtureValues(WIDTH, HEIGHT);
+    const geometrySource = Object.freeze({ kind: "synthetic-quadglassv5" });
+    const texturePayloads = Object.fromEntries(values.textures
+        .filter((entry) => entry.dimension === "2d")
+        .map((entry) => [
+            entry.name,
+            {
+                label: `QuadGlassV5 ${entry.name}`,
+                width: entry.width,
+                height: entry.height,
+                format: entry.format,
+                bytesPerRow: entry.bytesPerRow,
+                data: entry.data
+            }
+        ]));
+    const samplerPayloads = Object.fromEntries(values.samplers.map(({ name, ...descriptor }) => [
+        name,
+        {
+            label: `QuadGlassV5 ${name}`,
+            ...descriptor
+        }
+    ]));
+    const bundle = await PublishPreparedResourceBundle(webgpu, {
+        label: "QuadGlassV5 resources",
+        geometries: {
+            main: {
+                label: "QuadGlassV5 complementary-winding silhouette geometry",
+                vertexBuffers: [ {
+                    slot: 0,
+                    data: values.vertices,
+                    layout: QUAD_GLASS_V5_VERTEX_BUFFER_LAYOUT
+                } ],
+                indexBuffer: {
+                    data: values.indices,
+                    format: "uint16"
+                }
+            }
+        },
+        textures: texturePayloads,
+        samplers: samplerPayloads
+    }, "quadglassv5-resources");
+    const device = webgpu.GetDevice();
+    const ownedTextures = [];
+    try
+    {
+        const cubeViews = new Map();
+        for (const definition of values.textures.filter((entry) => entry.dimension === "cube"))
+        {
+            const texture = device.createTexture({
+                label: `QuadGlassV5 ${definition.name}`,
+                size: {
+                    width: definition.width,
+                    height: definition.height,
+                    depthOrArrayLayers: definition.depthOrArrayLayers
+                },
+                mipLevelCount: 1,
+                sampleCount: 1,
+                dimension: "2d",
+                format: definition.format,
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+            });
+            ownedTextures.push(texture);
+            const layerSize = definition.width * definition.height * 4;
+            for (let layer = 0; layer < definition.depthOrArrayLayers; layer += 1)
+            {
+                device.queue.writeTexture(
+                    { texture, origin: { x: 0, y: 0, z: layer } },
+                    definition.data.slice(layer * layerSize, (layer + 1) * layerSize),
+                    {
+                        offset: 0,
+                        bytesPerRow: definition.width * 4,
+                        rowsPerImage: definition.height
+                    },
+                    {
+                        width: definition.width,
+                        height: definition.height,
+                        depthOrArrayLayers: 1
+                    }
+                );
+            }
+            cubeViews.set(definition.name, texture.createView({
+                label: `QuadGlassV5 ${definition.name} cube view`,
+                dimension: "cube"
+            }));
+        }
+
+        const arrayViews = new Map();
+        for (const definition of values.textures
+            .filter((entry) => entry.dimension === "2d-array"))
+        {
+            const texture = device.createTexture({
+                label: `QuadGlassV5 ${definition.name}`,
+                size: {
+                    width: definition.width,
+                    height: definition.height,
+                    depthOrArrayLayers: definition.depthOrArrayLayers
+                },
+                mipLevelCount: 1,
+                sampleCount: 1,
+                dimension: "2d",
+                format: definition.format,
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+            });
+            ownedTextures.push(texture);
+            const layerSize = definition.width * definition.height * 4;
+            for (let layer = 0; layer < definition.depthOrArrayLayers; layer += 1)
+            {
+                device.queue.writeTexture(
+                    { texture, origin: { x: 0, y: 0, z: layer } },
+                    definition.data.slice(layer * layerSize, (layer + 1) * layerSize),
+                    {
+                        offset: 0,
+                        bytesPerRow: definition.width * 4,
+                        rowsPerImage: definition.height
+                    },
+                    {
+                        width: definition.width,
+                        height: definition.height,
+                        depthOrArrayLayers: 1
+                    }
+                );
+            }
+            arrayViews.set(definition.name, texture.createView({
+                label: `QuadGlassV5 ${definition.name} array view`,
+                dimension: "2d-array",
+                baseArrayLayer: 0,
+                arrayLayerCount: definition.depthOrArrayLayers
+            }));
+        }
+
+        const resourceVariantNames = Object.freeze(
+            Object.keys(values.textureResourceVariants)
+        );
+        Assert(
+            resourceVariantNames.length === 2
+                && resourceVariantNames[0] === "base"
+                && resourceVariantNames[1] === "transparentPaint",
+            "QuadGlassV5 texture controls must be base then transparentPaint"
+        );
+        const resourcesByBackend = new Map();
+        for (const record of records)
+        {
+            const plan = getQuadGlassV5ResourcePlan(record);
+            const variants = new Map();
+            for (const variantName of resourceVariantNames)
+            {
+                const resources = new Map();
+                const overrides = values.textureResourceVariants[variantName];
+                for (const texture of plan.textures)
+                {
+                    const resourceName = overrides[texture.name] ?? texture.name;
+                    const resource = texture.viewDimension === "cube"
+                        ? cubeViews.get(resourceName)
+                        : (texture.viewDimension === "2d-array"
+                            ? arrayViews.get(resourceName)
+                            : bundle.textures[resourceName]);
+                    Assert(
+                        resource,
+                        `QuadGlassV5 ${variantName} fixture is missing texture ${resourceName}`
+                    );
+                    resources.set(texture.scopeIdentity, resource);
+                }
+                for (const sampler of plan.samplers)
+                {
+                    const resource = bundle.samplers[sampler.name];
+                    Assert(
+                        resource,
+                        `QuadGlassV5 fixture is missing sampler ${sampler.name}`
+                    );
+                    resources.set(sampler.scopeIdentity, resource);
+                }
+                variants.set(variantName, resources);
+            }
+            resourcesByBackend.set(record.backend, variants);
+        }
+        return {
+            label: "QuadGlassV5",
+            bindingValues: values.bindingValues,
+            resourcesByBackend,
+            resourceVariantNames,
+            geometry: bundle.geometries.main,
+            geometrySource,
+            bundle,
+            destroy()
+            {
+                ownedTextures.forEach((texture) => texture.destroy());
+                bundle.Destroy();
+            }
+        };
+    }
+    catch (error)
+    {
+        ownedTextures.forEach((texture) => texture.destroy());
+        bundle.Destroy();
+        throw error;
+    }
+}
+
 async function CreateDecalV5GpuResources(webgpu, records, profile)
 {
     Assert(
@@ -1068,6 +1283,135 @@ function CreateQuadV5TrinityDispatcher(webgpu, fixture)
     });
 }
 
+function CreateQuadGlassV5TrinityBatchMap(record, fixture, passIndex, resourceVariant)
+{
+    const material = Object.freeze({
+        record,
+        pipeline: record.pipelines[passIndex],
+        passIndex
+    });
+    const batch = Object.freeze({
+        material,
+        shader: material.pipeline,
+        resourceVariant,
+        geometrySource: Object.freeze({
+            geometry: fixture.geometrySource,
+            meshIndex: 0,
+            areaIndex: 0,
+            count: 1,
+            reversed: false
+        }),
+        objectData: fixture.bindingValues,
+        topology: 4,
+        indexCountPerInstance: 0,
+        instanceCount: 0,
+        startIndexLocation: 0,
+        baseVertexLocation: 0,
+        startInstanceLocation: 0,
+        renderingMode: 0,
+        pickingData: 0,
+        groupCount: 1
+    });
+    const batches = Object.freeze([ batch ]);
+    const gdprBatches = Object.freeze([]);
+    const accumulator = Object.freeze({
+        GetGdprBatches: () => gdprBatches,
+        GetBatches: () => batches,
+        GetBatchCount: () => batches.length,
+        IsChainedByEffect: () => true
+    });
+    const batchTypes = Object.freeze([ TRINITY_BATCH_TYPE_OPAQUE ]);
+    return Object.freeze({
+        GetBatchTypes: () => batchTypes,
+        GetAccumulator: (value) =>
+            value === TRINITY_BATCH_TYPE_OPAQUE ? accumulator : null,
+        GetBatchCount: () => accumulator.GetBatchCount()
+    });
+}
+
+function CreateQuadGlassV5TrinityDispatcher(webgpu, fixture)
+{
+    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+        ResolveMaterial(material, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && material?.pipeline === material.record?.pipelines?.[material.passIndex]
+                    && (material.passIndex === 0 || material.passIndex === 1),
+                "QuadGlassV5 material resolved outside its complementary Main passes"
+            );
+            return {
+                pipeline: material.pipeline,
+                prepareOptions: { warningsAsErrors: true },
+                recipe: {
+                    label:
+                        `QuadGlassV5 ${material.record.label} Main.pass${material.passIndex}`,
+                    vertex: { buffers: fixture.geometry.vertexBufferLayouts },
+                    fragment: {
+                        targets: [ { format: "rgba8unorm" }, { format: "rgba8unorm" } ]
+                    },
+                    primitive: getQuadGlassV5PrimitiveRecipe(material.passIndex)
+                }
+            };
+        },
+        ResolveGeometry(source, _batch, context)
+        {
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && source?.geometry === fixture.geometrySource
+                    && source.meshIndex === 0
+                    && source.areaIndex === 0
+                    && source.count === 1
+                    && source.reversed === false,
+                "QuadGlassV5 batch references an unknown geometry source"
+            );
+            return {
+                geometry: fixture.geometry,
+                indexed: true,
+                draw: {
+                    indexCount: fixture.geometry.indexCount,
+                    instanceCount: 1,
+                    firstIndex: 0,
+                    baseVertex: 0,
+                    firstInstance: 0
+                }
+            };
+        },
+        ResolveBindings(batch, _livePipeline, context)
+        {
+            const material = batch.material;
+            const record = material.record;
+            Assert(
+                context?.batchType === TRINITY_BATCH_TYPE_OPAQUE
+                    && batch.objectData === fixture.bindingValues
+                    && fixture.resourceVariantNames.includes(batch.resourceVariant),
+                `QuadGlassV5 ${record.label} batch references unknown fixture data`
+            );
+            const passZeroRecord = {
+                analysis: record.analysis,
+                pipeline: record.pipelines[0]
+            };
+            return {
+                uniformData: ScopeFixtureBindingValues(
+                    material.pipeline,
+                    new Map(Object.entries(buildEveSpaceObjectMainUniformData(
+                        passZeroRecord,
+                        batch.objectData
+                    ))),
+                    `QuadGlassV5 ${record.label} Main.pass${material.passIndex} uniform data`
+                ),
+                resources: ScopeFixtureBindingValues(
+                    material.pipeline,
+                    fixture.resourcesByBackend
+                        .get(record.backend)
+                        .get(batch.resourceVariant),
+                    `QuadGlassV5 ${record.label} ${batch.resourceVariant} resources`
+                )
+            };
+        }
+    });
+}
+
 function CreateDecalV5TrinityBatch(record, fixture, resourceVariant)
 {
     return Object.freeze({
@@ -1312,6 +1656,171 @@ function AssertQuadV5Silhouette(bytes, targetIndex, label, variant)
         bounds: { minimumX, maximumX, minimumY, maximumY },
         rowCoverage: Array.from(rowCoverage),
         distinctColors: colors.size
+    };
+}
+
+function QuadGlassV5PixelIsActive(bytes, x, y)
+{
+    return !PixelEquals(bytes, x, y, QUAD_GLASS_V5_CLEAR_TARGETS[1]);
+}
+
+function AssertQuadGlassV5Pass(instance)
+{
+    const [ color, motion ] = instance.snapshots;
+    for (const [ x, y ] of [
+        [ 0, 0 ],
+        [ WIDTH - 1, 0 ],
+        [ 0, HEIGHT - 1 ],
+        [ WIDTH - 1, HEIGHT - 1 ]
+    ])
+    {
+        Assert(
+            PixelEquals(color, x, y, QUAD_GLASS_V5_CLEAR_TARGETS[0])
+                && PixelEquals(motion, x, y, QUAD_GLASS_V5_CLEAR_TARGETS[1]),
+            `QuadGlassV5 ${instance.record.label} pass ${instance.passIndex} corner ` +
+                `(${x}, ${y}) did not remain clear`
+        );
+    }
+    const expectedAlpha = instance.resourceVariant === "base" ? 255 : 0;
+    let coverage = 0;
+    let leftCoverage = 0;
+    let rightCoverage = 0;
+    const colors = new Set();
+    for (let y = 0; y < HEIGHT; y += 1)
+    {
+        for (let x = 0; x < WIDTH; x += 1)
+        {
+            const active = QuadGlassV5PixelIsActive(motion, x, y);
+            const colorClear = PixelEquals(color, x, y, QUAD_GLASS_V5_CLEAR_TARGETS[0]);
+            Assert(
+                active === !colorClear,
+                `QuadGlassV5 ${instance.record.label} pass ${instance.passIndex} MRT ` +
+                    `coverage differs at (${x}, ${y})`
+            );
+            if (!active) continue;
+            coverage += 1;
+            if (x < WIDTH / 2) leftCoverage += 1;
+            else rightCoverage += 1;
+            const offset = PixelOffset(x, y);
+            Assert(
+                motion[offset] === 0 && motion[offset + 1] === 0
+                    && motion[offset + 2] === 0 && motion[offset + 3] === 255,
+                `QuadGlassV5 ${instance.record.label} pass ${instance.passIndex} ` +
+                    `MRT1 drifted at (${x}, ${y})`
+            );
+            Assert(
+                color[offset + 3] === expectedAlpha,
+                `QuadGlassV5 ${instance.record.label} ${instance.resourceVariant} alpha ` +
+                    `was ${color[offset + 3]} at (${x}, ${y}), expected ${expectedAlpha}`
+            );
+            colors.add(`${color[offset]},${color[offset + 1]},${color[offset + 2]}`);
+        }
+    }
+    Assert(
+        coverage >= 220 && coverage <= 800,
+        `QuadGlassV5 ${instance.record.label} pass ${instance.passIndex} ` +
+            `has implausible coverage ${coverage}`
+    );
+    const side = leftCoverage === 0 && rightCoverage === coverage
+        ? "right"
+        : (rightCoverage === 0 && leftCoverage === coverage ? "left" : null);
+    Assert(
+        side,
+        `QuadGlassV5 ${instance.record.label} pass ${instance.passIndex} did not ` +
+            `isolate one complementary winding (${leftCoverage}/${rightCoverage})`
+    );
+    Assert(
+        colors.size >= 8,
+        `QuadGlassV5 ${instance.record.label} pass ${instance.passIndex} ` +
+            "must contain varied shaded RGB"
+    );
+    return { coverage, leftCoverage, rightCoverage, side, distinctColors: colors.size };
+}
+
+function AssertQuadGlassV5Controls(instances)
+{
+    const byKey = new Map(instances.map((instance) => [
+        `${instance.record.backend}:${instance.passIndex}:${instance.resourceVariant}`,
+        instance
+    ]));
+    for (const backend of [ "dx11", "dx12" ])
+    {
+        const passSides = [];
+        for (const passIndex of [ 0, 1 ])
+        {
+            const base = byKey.get(`${backend}:${passIndex}:base`);
+            const transparent = byKey.get(`${backend}:${passIndex}:transparentPaint`);
+            Assert(base && transparent, `QuadGlassV5 ${backend} control instances are incomplete`);
+            AssertExactTargetMatch(
+                base.snapshots[1],
+                transparent.snapshots[1],
+                `${backend} QuadGlassV5 pass${passIndex} PaintMask-invariant MRT1`
+            );
+            let changedAlpha = 0;
+            let changedRgb = 0;
+            for (let y = 0; y < HEIGHT; y += 1)
+            {
+                for (let x = 0; x < WIDTH; x += 1)
+                {
+                    if (!QuadGlassV5PixelIsActive(base.snapshots[1], x, y)) continue;
+                    const offset = PixelOffset(x, y);
+                    let rgbDiffers = false;
+                    for (let component = 0; component < 3; component += 1)
+                    {
+                        rgbDiffers ||= base.snapshots[0][offset + component]
+                            !== transparent.snapshots[0][offset + component];
+                    }
+                    if (rgbDiffers) changedRgb += 1;
+                    Assert(
+                        base.snapshots[0][offset + 3] === 255
+                            && transparent.snapshots[0][offset + 3] === 0,
+                        `QuadGlassV5 ${backend} pass${passIndex} PaintMask alpha oracle ` +
+                            `drifted at (${x}, ${y})`
+                    );
+                    changedAlpha += 1;
+                }
+            }
+            Assert(
+                changedAlpha === base.statistics.coverage,
+                `QuadGlassV5 ${backend} pass${passIndex} PaintMask did not control every pixel`
+            );
+            Assert(
+                changedRgb >= Math.floor(base.statistics.coverage * 0.95),
+                `QuadGlassV5 ${backend} pass${passIndex} PaintMask RGB normalization ` +
+                    `changed only ${changedRgb}/${base.statistics.coverage} pixels`
+            );
+            passSides.push(base.statistics.side);
+        }
+        Assert(
+            passSides[0] === "left" && passSides[1] === "right",
+            `QuadGlassV5 ${backend} cull mapping was ${passSides.join("/")}, ` +
+                "expected pass0/pass1 left/right"
+        );
+        const pass0 = byKey.get(`${backend}:0:base`);
+        const pass1 = byKey.get(`${backend}:1:base`);
+        let overlap = 0;
+        for (let y = 0; y < HEIGHT; y += 1)
+        {
+            for (let x = 0; x < WIDTH; x += 1)
+            {
+                if (QuadGlassV5PixelIsActive(pass0.snapshots[1], x, y)
+                    && QuadGlassV5PixelIsActive(pass1.snapshots[1], x, y))
+                {
+                    overlap += 1;
+                }
+            }
+        }
+        Assert(overlap === 0, `QuadGlassV5 ${backend} complementary winding probes overlap`);
+    }
+    return {
+        opaqueAlpha: 255,
+        transparentAlpha: 0,
+        controlledPixels: byKey.get("dx11:0:base").statistics.coverage
+            + byKey.get("dx11:1:base").statistics.coverage,
+        passSides: [
+            byKey.get("dx11:0:base").statistics.side,
+            byKey.get("dx11:1:base").statistics.side
+        ]
     };
 }
 
@@ -2127,6 +2636,225 @@ async function RunQuadV5Comparison(webgpu)
     }
 }
 
+async function RunQuadGlassV5Comparison(webgpu)
+{
+    if (!CONFIG.drawQuadGlassV5) return null;
+    const response = await fetch("/draw-quadglassv5.json");
+    Assert(
+        response.ok,
+        `Failed to load QuadGlassV5 package records: HTTP ${response.status}`
+    );
+    const records = await response.json();
+    Assert(
+        Array.isArray(records) && records.length === 2,
+        "QuadGlassV5 comparison requires two package records"
+    );
+    validateQuadGlassV5PackagePair(records);
+
+    const device = webgpu.GetDevice();
+    const fixture = await CreateQuadGlassV5GpuResources(webgpu, records);
+    let dispatcher = null;
+    let passEncoder = null;
+    const instances = [];
+    let warningCount = 0;
+    try
+    {
+        dispatcher = CreateQuadGlassV5TrinityDispatcher(webgpu, fixture);
+        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+        for (const record of records)
+        {
+            for (const passIndex of [ 0, 1 ])
+            {
+                for (const resourceVariant of fixture.resourceVariantNames)
+                {
+                    let preparedBatchMap = null;
+                    const targets = [];
+                    const readbacks = [];
+                    try
+                    {
+                        preparedBatchMap = await dispatcher.PrepareBatchMap(
+                            CreateQuadGlassV5TrinityBatchMap(
+                                record,
+                                fixture,
+                                passIndex,
+                                resourceVariant
+                            )
+                        );
+                        warningCount += preparedBatchMap.entries.reduce(
+                            (mapTotal, entry) => mapTotal + entry.accumulator.batches.reduce(
+                                (batchTotal, batch) => batchTotal
+                                    + batch.prepared.diagnostics
+                                        .filter((item) => item.type === "warning").length,
+                                0
+                            ),
+                            0
+                        );
+                        for (let targetIndex = 0;
+                            targetIndex < QUAD_GLASS_V5_CLEAR_TARGETS.length;
+                            targetIndex += 1)
+                        {
+                            targets.push(device.createTexture({
+                                label:
+                                    `QuadGlassV5 ${record.label} pass${passIndex} ` +
+                                    `${resourceVariant} MRT${targetIndex}`,
+                                size: {
+                                    width: WIDTH,
+                                    height: HEIGHT,
+                                    depthOrArrayLayers: 1
+                                },
+                                format: "rgba8unorm",
+                                usage:
+                                    GPUTextureUsage.RENDER_ATTACHMENT
+                                    | GPUTextureUsage.COPY_SRC
+                            }));
+                            readbacks.push(device.createBuffer({
+                                label:
+                                    `QuadGlassV5 ${record.label} pass${passIndex} ` +
+                                    `${resourceVariant} MRT${targetIndex} readback`,
+                                size: BYTES_PER_ROW * HEIGHT,
+                                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+                            }));
+                        }
+                        instances.push({
+                            record,
+                            passIndex,
+                            resourceVariant,
+                            preparedBatchMap,
+                            targets,
+                            readbacks,
+                            snapshots: []
+                        });
+                    }
+                    catch (error)
+                    {
+                        if (preparedBatchMap)
+                        {
+                            dispatcher.DestroyBatchMap(preparedBatchMap);
+                        }
+                        readbacks.forEach((buffer) => buffer.destroy());
+                        targets.forEach((texture) => texture.destroy());
+                        throw error;
+                    }
+                }
+            }
+        }
+
+        const encoder = device.createCommandEncoder({
+            label: "QuadGlassV5 complementary-pass DX11/DX12 comparison encoder"
+        });
+        for (const instance of instances)
+        {
+            passEncoder.Encode(encoder, [ {
+                descriptor: {
+                    label:
+                        `QuadGlassV5 ${instance.record.label} ` +
+                        `Main.pass${instance.passIndex} ${instance.resourceVariant}`,
+                    colorAttachments: instance.targets.map((texture, targetIndex) => ({
+                        view: texture.createView(),
+                        clearValue: {
+                            r: QUAD_GLASS_V5_CLEAR_TARGETS[targetIndex][0] / 255,
+                            g: QUAD_GLASS_V5_CLEAR_TARGETS[targetIndex][1] / 255,
+                            b: QUAD_GLASS_V5_CLEAR_TARGETS[targetIndex][2] / 255,
+                            a: QUAD_GLASS_V5_CLEAR_TARGETS[targetIndex][3] / 255
+                        },
+                        loadOp: "clear",
+                        storeOp: "store"
+                    }))
+                },
+                selections: [ {
+                    preparedBatchMap: instance.preparedBatchMap,
+                    batchType: TRINITY_BATCH_TYPE_OPAQUE
+                } ]
+            } ]);
+            instance.targets.forEach((texture, targetIndex) =>
+            {
+                encoder.copyTextureToBuffer(
+                    { texture },
+                    {
+                        buffer: instance.readbacks[targetIndex],
+                        bytesPerRow: BYTES_PER_ROW,
+                        rowsPerImage: HEIGHT
+                    },
+                    { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 }
+                );
+            });
+        }
+        webgpu.Submit([ encoder.finish() ]);
+        await device.queue.onSubmittedWorkDone();
+        await Promise.all(instances.flatMap((instance) => instance.readbacks.map(
+            (buffer) => buffer.mapAsync(GPUMapMode.READ)
+        )));
+
+        for (const instance of instances)
+        {
+            instance.snapshots = instance.readbacks.map((buffer) =>
+                new Uint8Array(buffer.getMappedRange()).slice());
+            instance.statistics = AssertQuadGlassV5Pass(instance);
+        }
+        for (const passIndex of [ 0, 1 ])
+        {
+            for (const resourceVariant of fixture.resourceVariantNames)
+            {
+                const paired = records.map((record) => instances.find((instance) =>
+                    instance.record.backend === record.backend
+                        && instance.passIndex === passIndex
+                        && instance.resourceVariant === resourceVariant));
+                Assert(
+                    paired.every(Boolean),
+                    `QuadGlassV5 pass${passIndex} ${resourceVariant} pair is incomplete`
+                );
+                for (let targetIndex = 0;
+                    targetIndex < QUAD_GLASS_V5_CLEAR_TARGETS.length;
+                    targetIndex += 1)
+                {
+                    AssertExactTargetMatch(
+                        paired[0].snapshots[targetIndex],
+                        paired[1].snapshots[targetIndex],
+                        `DX11/DX12 QuadGlassV5 pass${passIndex} ` +
+                            `${resourceVariant} MRT${targetIndex}`
+                    );
+                }
+            }
+        }
+        const paintMaskOracle = AssertQuadGlassV5Controls(instances);
+        const baseline = instances.filter((instance) =>
+            instance.record.backend === "dx11"
+                && instance.resourceVariant === "base");
+        return {
+            bodyIndex: 0,
+            labels: records.map((record) => `${record.backend}:${record.label}`),
+            loadPath: records[0].loadPath,
+            pixelCount: WIDTH * HEIGHT,
+            passCount: 2,
+            targetCount: QUAD_GLASS_V5_CLEAR_TARGETS.length,
+            renderCaseCount: fixture.resourceVariantNames.length,
+            drawKind: "indexed complementary-winding synthetic silhouettes",
+            indexCount: fixture.geometry.indexCount,
+            warningCount,
+            clearTargets: QUAD_GLASS_V5_CLEAR_TARGETS,
+            statistics: baseline.map((instance) => ({
+                passIndex: instance.passIndex,
+                ...instance.statistics
+            })),
+            paintMaskOracle
+        };
+    }
+    finally
+    {
+        for (const instance of instances)
+        {
+            dispatcher?.DestroyBatchMap(instance.preparedBatchMap);
+            for (const buffer of instance.readbacks)
+            {
+                if (buffer.mapState === "mapped") buffer.unmap();
+                buffer.destroy();
+            }
+            instance.targets.forEach((texture) => texture.destroy());
+        }
+        fixture.destroy();
+    }
+}
+
 async function RunDecalV5Comparison(webgpu)
 {
     const variant = CONFIG.drawDecalHoleV5
@@ -2477,6 +3205,7 @@ async function RunHarness()
     let generatedDraw = null;
     let phaseZeroDraw = null;
     let quadV5Comparison = null;
+    let quadGlassV5Comparison = null;
     let decalV5Comparison = null;
     let decalCylindricV5Comparison = null;
     let decalHoleV5Comparison = null;
@@ -2494,6 +3223,7 @@ async function RunHarness()
         generatedDraw = await CreateGeneratedDraw(webgpu);
         phaseZeroDraw = generatedDraw ? null : await CreatePhaseZeroDraw(webgpu);
         quadV5Comparison = await RunQuadV5Comparison(webgpu);
+        quadGlassV5Comparison = await RunQuadGlassV5Comparison(webgpu);
         const decalComparison = await RunDecalV5Comparison(webgpu);
         if (decalComparison?.variant === "cylindric")
         {
@@ -2588,6 +3318,7 @@ async function RunHarness()
                 ? "complete selected WebGPU state -> sampler bundle -> atomic adapter slot"
                 : null,
             quadV5Comparison,
+            quadGlassV5Comparison,
             decalV5Comparison,
             decalCylindricV5Comparison,
             decalHoleV5Comparison,
