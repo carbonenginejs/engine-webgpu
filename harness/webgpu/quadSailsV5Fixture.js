@@ -8,8 +8,6 @@ import {
   createQuadV5MainBindingValues
 } from "./quadV5Fixture.js";
 
-const TARGET_BODY_INDEX = 4;
-
 export const QUAD_SAILS_V5_TARGET_WIDTH = QUADV5_TARGET_WIDTH;
 export const QUAD_SAILS_V5_TARGET_HEIGHT = QUADV5_TARGET_HEIGHT;
 export const QUAD_SAILS_V5_VERTEX_BUFFER_LAYOUT = QUADV5_VERTEX_BUFFER_LAYOUT;
@@ -18,14 +16,30 @@ export const QUAD_SAILS_V5_SKINNED_VERTEX_BUFFER_LAYOUT =
 export const QUAD_SAILS_V5_CLEAR_TARGETS = QUADV5_CLEAR_TARGETS;
 export const QUAD_SAILS_V5_CASES = Object.freeze([ "unrotated", "authored" ]);
 
-export const QUAD_SAILS_V5_SELECTION = Object.freeze({
+const SKINNED_SELECTION = Object.freeze({
   BINDLESS_RENDERING: "BINDLESS_RENDERING_DISABLED",
   SPACE_OBJECT_CLIPPING: "SOC_DISABLED",
   SPACE_OBJECT_PPT_ENABLED: "SOPPT_ENABLED",
   V5_DEBUG: "OFF"
 });
 
-const SELECTION_PROVENANCE = Object.freeze({
+const STATIC_SELECTION = Object.freeze({
+  BINDLESS_RENDERING: "BINDLESS_RENDERING_DISABLED",
+  SPACE_OBJECT_CLIPPING: "SOC_DISABLED",
+  SPACE_OBJECT_PPT_ENABLED: "SOPPT_DISABLED",
+  V5_DEBUG: "OFF",
+  SPACE_OBJECT_INSTANCED_ATTACHMENT: "SOIA_DISABLED"
+});
+
+export const QUAD_SAILS_V5_SELECTIONS = Object.freeze({
+  skinned: SKINNED_SELECTION,
+  static: STATIC_SELECTION
+});
+
+// Retain the original export as the exact skinned contract.
+export const QUAD_SAILS_V5_SELECTION = SKINNED_SELECTION;
+
+const SKINNED_SELECTION_PROVENANCE = Object.freeze({
   BINDLESS_RENDERING: Object.freeze({
     optionIndex: 0,
     defaultOption: 0,
@@ -48,7 +62,35 @@ const SELECTION_PROVENANCE = Object.freeze({
   })
 });
 
-const UNIFORMS = Object.freeze([
+const STATIC_SELECTION_PROVENANCE = Object.freeze({
+  BINDLESS_RENDERING: Object.freeze({
+    optionIndex: 0,
+    defaultOption: 0,
+    defaultValue: "BINDLESS_RENDERING_DISABLED"
+  }),
+  SPACE_OBJECT_CLIPPING: Object.freeze({
+    optionIndex: 0,
+    defaultOption: 0,
+    defaultValue: "SOC_DISABLED"
+  }),
+  SPACE_OBJECT_PPT_ENABLED: Object.freeze({
+    optionIndex: 0,
+    defaultOption: 0,
+    defaultValue: "SOPPT_DISABLED"
+  }),
+  V5_DEBUG: Object.freeze({
+    optionIndex: 0,
+    defaultOption: 0,
+    defaultValue: "OFF"
+  }),
+  SPACE_OBJECT_INSTANCED_ATTACHMENT: Object.freeze({
+    optionIndex: 0,
+    defaultOption: 0,
+    defaultValue: "SOIA_DISABLED"
+  })
+});
+
+const BASE_UNIFORMS = Object.freeze([
   Object.freeze({
     identity: "uniform-buffer:0:0",
     scopeIdentity: "uniform-buffer:0:0@fragment",
@@ -75,7 +117,7 @@ const UNIFORMS = Object.freeze([
     scopeIdentity: "uniform-buffer:0:3@vertex",
     binding: 3,
     visibility: "vertex",
-    minBindingSize: 432
+    minBindingSize: null
   }),
   Object.freeze({
     identity: "uniform-buffer:0:4",
@@ -85,6 +127,14 @@ const UNIFORMS = Object.freeze([
     minBindingSize: 208
   })
 ]);
+
+function uniformsFor(minBindingSize3)
+{
+  return BASE_UNIFORMS.map((entry) => Object.freeze({
+    ...entry,
+    minBindingSize: entry.binding === 3 ? minBindingSize3 : entry.minBindingSize
+  }));
+}
 
 const BONE_TRANSFORMS = Object.freeze({
   name: "BoneTransforms",
@@ -109,9 +159,39 @@ const RESOURCE_NAMES = Object.freeze([
   "SailsDetailMap"
 ]);
 
-const RESOURCE_REGISTERS = Object.freeze({
-  dx11: Object.freeze([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ]),
-  dx12: Object.freeze([ 0, 1, 2, 3, 4, 6, 7, 9, 10, 13 ])
+const PROFILES = Object.freeze({
+  skinned: Object.freeze({
+    variant: "skinned",
+    bodyIndex: 4,
+    sourceFile: "unpackedskinned_quadsailsv5.sm_hi",
+    selection: SKINNED_SELECTION,
+    selectionProvenance: SKINNED_SELECTION_PROVENANCE,
+    uniforms: Object.freeze(uniformsFor(432)),
+    bone: BONE_TRANSFORMS,
+    textureBindingBase: 6,
+    samplerBinding: 16,
+    pixelTailLocation: 9,
+    resourceRegisters: Object.freeze({
+      dx11: Object.freeze([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ]),
+      dx12: Object.freeze([ 0, 1, 2, 3, 4, 6, 7, 9, 10, 13 ])
+    })
+  }),
+  static: Object.freeze({
+    variant: "static",
+    bodyIndex: 0,
+    sourceFile: "unpacked_quadsailsv5.sm_hi",
+    selection: STATIC_SELECTION,
+    selectionProvenance: STATIC_SELECTION_PROVENANCE,
+    uniforms: Object.freeze(uniformsFor(128)),
+    bone: null,
+    textureBindingBase: 5,
+    samplerBinding: 15,
+    pixelTailLocation: 8,
+    resourceRegisters: Object.freeze({
+      dx11: Object.freeze([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ]),
+      dx12: Object.freeze([ 0, 1, 2, 3, 4, 6, 7, 9, 10, 11 ])
+    })
+  })
 });
 
 const RESOURCE_SRGB = Object.freeze([
@@ -154,36 +234,43 @@ function normalizedPath(value)
   return typeof value === "string" ? value.replace(/\\/gu, "/").toLowerCase() : "";
 }
 
-function expectedResources(backend)
+function profileForVariant(variant)
 {
-  const registers = RESOURCE_REGISTERS[backend];
+  const profile = PROFILES[variant];
+  if (!profile) fail("package variant must be static or skinned");
+  return profile;
+}
+
+function expectedResources(backend, profile)
+{
+  const registers = profile.resourceRegisters[backend];
   if (!registers) fail(`unsupported package backend ${String(backend)}`);
   return RESOURCE_NAMES.map((name, index) => Object.freeze({
     name,
     identity: `sampled-resource:0:${registers[index]}`,
     scopeIdentity: `sampled-resource:0:${registers[index]}@fragment`,
     registerIndex: registers[index],
-    binding: 6 + index,
+    binding: profile.textureBindingBase + index,
     viewDimension: index === 0 ? "cube" : "2d",
     isSRGB: RESOURCE_SRGB[index],
     isAutoregister: name === "EveSpaceSceneShadowMap"
   }));
 }
 
-function expectedSampler()
+function expectedSampler(profile)
 {
   return Object.freeze({
     name: "SurfaceSampler",
     identity: "sampler:0:0",
     scopeIdentity: "sampler:0:0@fragment",
     registerIndex: 0,
-    binding: 16
+    binding: profile.samplerBinding
   });
 }
 
-function assertSelections(options, owner)
+function assertSelections(options, owner, profile)
 {
-  if (!Array.isArray(options) || options.length !== Object.keys(QUAD_SAILS_V5_SELECTION).length)
+  if (!Array.isArray(options) || options.length !== Object.keys(profile.selection).length)
   {
     fail(`${owner} must contain every QuadSailsV5 permutation selection`);
   }
@@ -196,10 +283,10 @@ function assertSelections(options, owner)
     }
     selected.set(entry.name, entry);
   }
-  for (const [ name, value ] of Object.entries(QUAD_SAILS_V5_SELECTION))
+  for (const [ name, value ] of Object.entries(profile.selection))
   {
     const entry = selected.get(name);
-    const provenance = SELECTION_PROVENANCE[name];
+    const provenance = profile.selectionProvenance[name];
     if (!entry || entry.value !== value) fail(`${owner} requires ${name}=${value}`);
     if (entry.optionIndex !== provenance.optionIndex
       || entry.defaultOption !== provenance.defaultOption
@@ -239,7 +326,7 @@ function activeInterface(stage)
     .sort((left, right) => left.registerIndex - right.registerIndex);
 }
 
-function assertVertexInputs(record)
+function assertVertexInputs(record, profile)
 {
   const expected = [
     {
@@ -250,14 +337,14 @@ function assertVertexInputs(record)
       type: 0,
       dimension: 3
     },
-    {
+    ...(profile.bone ? [ {
       usageName: "BLENDINDICES",
       usageIndex: 0,
       registerIndex: 1,
       usedMask: 1,
       type: 2,
       dimension: 4
-    },
+    } ] : []),
     {
       usageName: "TEXCOORD",
       usageIndex: 0,
@@ -305,7 +392,7 @@ function assertVertexInputs(record)
   }
 }
 
-function assertPixelInputs(record)
+function assertPixelInputs(record, profile)
 {
   const expected = [
     {
@@ -351,7 +438,7 @@ function assertPixelInputs(record)
     {
       usageName: "TEXCOORD",
       usageIndex: 9,
-      registerIndex: 9,
+      registerIndex: profile.pixelTailLocation,
       usedMask: 11,
       type: 0,
       dimension: 4
@@ -391,7 +478,7 @@ function assertWgslStruct(wgsl, name, expected)
   }
 }
 
-function assertShaderModules(pipeline)
+function assertShaderModules(pipeline, profile)
 {
   if (!Array.isArray(pipeline.shaderModules) || pipeline.shaderModules.length !== 2)
   {
@@ -412,7 +499,9 @@ function assertShaderModules(pipeline)
     {
       assertWgslStruct(matches[0].wgsl, "VertexInput", [
         { attribute: "location", value: "0", name: "input0", type: "vec3<f32>" },
-        { attribute: "location", value: "1", name: "input1", type: "vec4<u32>" },
+        ...(profile.bone ? [
+          { attribute: "location", value: "1", name: "input1", type: "vec4<u32>" }
+        ] : []),
         { attribute: "location", value: "2", name: "input2", type: "vec2<f32>" },
         { attribute: "location", value: "3", name: "input3", type: "vec3<f32>" },
         { attribute: "location", value: "4", name: "input4", type: "vec3<f32>" },
@@ -429,7 +518,9 @@ function assertShaderModules(pipeline)
         { attribute: "location", value: "6", name: "output6", type: "vec4<f32>" },
         { attribute: "location", value: "7", name: "output7", type: "vec4<f32>" },
         { attribute: "location", value: "8", name: "output8", type: "vec4<f32>" },
-        { attribute: "location", value: "9", name: "output9", type: "vec4<f32>" }
+        ...(profile.pixelTailLocation === 9 ? [
+          { attribute: "location", value: "9", name: "output9", type: "vec4<f32>" }
+        ] : [])
       ]);
     }
     else
@@ -441,7 +532,12 @@ function assertShaderModules(pipeline)
         { attribute: "location", value: "3", name: "input3", type: "vec3<f32>" },
         { attribute: "location", value: "4", name: "input4", type: "vec3<f32>" },
         { attribute: "location", value: "5", name: "input5", type: "vec4<f32>" },
-        { attribute: "location", value: "9", name: "input9", type: "vec4<f32>" }
+        {
+          attribute: "location",
+          value: String(profile.pixelTailLocation),
+          name: `input${profile.pixelTailLocation}`,
+          type: "vec4<f32>"
+        }
       ]);
       assertWgslStruct(matches[0].wgsl, "FragmentOutput", [
         { attribute: "location", value: "0", name: "output0", type: "vec4<f32>" },
@@ -519,7 +615,7 @@ function hasExactSurfaceSampler(state)
     && state.isDynamic === false;
 }
 
-function assertAnalysisResources(record, resources)
+function assertAnalysisResources(record, resources, profile)
 {
   const vertexBindings = mainStage(record, "vertex").bindings || [];
   const vertexInventory = vertexBindings.map((entry) =>
@@ -527,7 +623,7 @@ function assertAnalysisResources(record, resources)
   const expectedVertexInventory = [
     "constantBuffer:0:1",
     "constantBuffer:0:3",
-    "resource:0:0"
+    ...(profile.bone ? [ "resource:0:0" ] : [])
   ].sort();
   if (JSON.stringify(vertexInventory) !== JSON.stringify(expectedVertexInventory))
   {
@@ -537,14 +633,18 @@ function assertAnalysisResources(record, resources)
     entry?.kind === "resource"
       && entry.registerSpace === 0
       && entry.registerIndex === 0);
-  if (bone.length !== 1 || bone[0].registerType !== 33
+  if (profile.bone && (bone.length !== 1 || bone[0].registerType !== 33
     || bone[0].carbon?.name !== "BoneTransforms"
     || bone[0].carbon?.type !== 7
     || bone[0].carbon?.arrayElements !== 1
     || bone[0].carbon?.isSRGB !== false
-    || bone[0].carbon?.isAutoregister !== false)
+    || bone[0].carbon?.isAutoregister !== false))
   {
     fail("vertex t0 BoneTransforms has unexpected Carbon metadata");
+  }
+  if (!profile.bone && bone.length !== 0)
+  {
+    fail("static vertex analysis must not contain BoneTransforms");
   }
 
   const bindings = mainStage(record, "pixel").bindings || [];
@@ -596,7 +696,7 @@ function assertAnalysisResources(record, resources)
   }
 }
 
-function assertBindings(record)
+function assertBindings(record, profile)
 {
   const groups = record.pipeline?.bindGroups;
   if (!Array.isArray(groups) || groups.length !== 1 || groups[0]?.group !== 0)
@@ -604,19 +704,22 @@ function assertBindings(record)
     fail("Main.pass0 requires exactly canonical bind group 0");
   }
   const bindings = groups[0].bindings;
-  const resources = expectedResources(record.backend);
-  const sampler = expectedSampler();
+  const resources = expectedResources(record.backend, profile);
+  const sampler = expectedSampler(profile);
   if (!Array.isArray(bindings)
-    || bindings.length !== UNIFORMS.length + 1 + resources.length + 1)
+    || bindings.length !== profile.uniforms.length
+      + (profile.bone ? 1 : 0) + resources.length + 1)
   {
-    fail("Main.pass0 requires exactly 17 canonical bindings");
+    fail(
+      `Main.pass0 requires exactly ${profile.bone ? 17 : 16} canonical bindings`
+    );
   }
   const byScope = new Map(bindings.map((entry) => [ entry.scopeIdentity, entry ]));
   if (byScope.size !== bindings.length)
   {
     fail("Main.pass0 contains duplicate binding scopes");
   }
-  for (const expected of UNIFORMS)
+  for (const expected of profile.uniforms)
   {
     const binding = byScope.get(expected.scopeIdentity);
     assertBindingSlot(binding, expected, "buffer", expected.visibility);
@@ -628,13 +731,20 @@ function assertBindings(record)
     }
   }
   const bone = byScope.get(BONE_TRANSFORMS.scopeIdentity);
-  assertBindingSlot(bone, BONE_TRANSFORMS, "buffer", "vertex");
-  if (bone.layout.buffer.type !== "read-only-storage"
-    || bone.layout.buffer.hasDynamicOffset !== false
-    || bone.layout.buffer.minBindingSize !== BONE_TRANSFORMS.minBindingSize
-    || bone.structureStride !== BONE_TRANSFORMS.structureStride)
+  if (profile.bone)
   {
-    fail("BoneTransforms has an unexpected read-only storage layout");
+    assertBindingSlot(bone, BONE_TRANSFORMS, "buffer", "vertex");
+    if (bone.layout.buffer.type !== "read-only-storage"
+      || bone.layout.buffer.hasDynamicOffset !== false
+      || bone.layout.buffer.minBindingSize !== BONE_TRANSFORMS.minBindingSize
+      || bone.structureStride !== BONE_TRANSFORMS.structureStride)
+    {
+      fail("BoneTransforms has an unexpected read-only storage layout");
+    }
+  }
+  else if (bone)
+  {
+    fail("static Main.pass0 must not bind BoneTransforms");
   }
   for (const expected of resources)
   {
@@ -656,7 +766,7 @@ function assertBindings(record)
     fail("sampler:0:0 has an unexpected sampler layout");
   }
   assertMaterialReflection(record);
-  assertAnalysisResources(record, resources);
+  assertAnalysisResources(record, resources, profile);
 }
 
 /**
@@ -672,8 +782,8 @@ export function getQuadSailsV5PrimitiveRecipe()
 }
 
 /**
- * Fail closed unless the record is the exact skinned, high-quality, PPT-on,
- * whole-Main QuadSailsV5 pass used by this fixture.
+ * Fail closed unless the record is one exact high-quality, whole-Main
+ * QuadSailsV5 profile: PPT-on body 4 skinned, or PPT-off body 0 static.
  *
  * @param {object} record Resource provenance plus a pipeline descriptor.
  * @returns {object} The validated input record.
@@ -681,7 +791,7 @@ export function getQuadSailsV5PrimitiveRecipe()
 export function validateQuadSailsV5PackageRecord(record)
 {
   if (!record || typeof record !== "object") fail("package record is required");
-  if (record.variant !== "skinned") fail("package variant must be skinned");
+  const profile = profileForVariant(record.variant);
   if (record.backend !== "dx11" && record.backend !== "dx12")
   {
     fail("package backend must be dx11 or dx12");
@@ -694,18 +804,18 @@ export function validateQuadSailsV5PackageRecord(record)
     fail(`package source provenance must match ${record.backend}`);
   }
   if (!analysisSource.endsWith(
-    "/managed/space/spaceobject/v5/quad/unpackedskinned_quadsailsv5.sm_hi"
+    `/managed/space/spaceobject/v5/quad/${profile.sourceFile}`
   ))
   {
-    fail("package source must be the high-quality unpackedskinned_quadsailsv5 ship shader");
+    fail(`package source must be the high-quality ${profile.sourceFile} ship shader`);
   }
-  if (record.analysis?.bodyIndex !== TARGET_BODY_INDEX
-    || record.metadata?.bodyIndex !== TARGET_BODY_INDEX)
+  if (record.analysis?.bodyIndex !== profile.bodyIndex
+    || record.metadata?.bodyIndex !== profile.bodyIndex)
   {
-    fail(`package must resolve body index ${TARGET_BODY_INDEX}`);
+    fail(`package must resolve body index ${profile.bodyIndex}`);
   }
-  assertSelections(record.analysis.selectedOptions, "analysis.selectedOptions");
-  assertSelections(record.metadata.selectedOptions, "metadata.selectedOptions");
+  assertSelections(record.analysis.selectedOptions, "analysis.selectedOptions", profile);
+  assertSelections(record.metadata.selectedOptions, "metadata.selectedOptions", profile);
   const selection = record.metadata.wgslSelection;
   if (selection?.mode !== "explicit"
     || selection.techniqueName !== "Main" || selection.passIndex !== null
@@ -733,10 +843,10 @@ export function validateQuadSailsV5PackageRecord(record)
   {
     fail("pipeline Main.pass0 must retain RS_ZWRITEENABLE=1");
   }
-  assertVertexInputs(record);
-  assertPixelInputs(record);
-  assertShaderModules(pipeline);
-  assertBindings(record);
+  assertVertexInputs(record, profile);
+  assertPixelInputs(record, profile);
+  assertShaderModules(pipeline, profile);
+  assertBindings(record, profile);
   return record;
 }
 
@@ -744,15 +854,16 @@ export function validateQuadSailsV5PackageRecord(record)
  * Return backend-local binding identities for the shared semantic fixture.
  *
  * @param {object} record One validated QuadSailsV5 package record.
- * @returns {{bone: object, textures: object[], samplers: object[]}} Frozen resource plan.
+ * @returns {{bone: object|null, textures: object[], samplers: object[]}} Frozen resource plan.
  */
 export function getQuadSailsV5ResourcePlan(record)
 {
   validateQuadSailsV5PackageRecord(record);
+  const profile = profileForVariant(record.variant);
   return Object.freeze({
-    bone: BONE_TRANSFORMS,
-    textures: Object.freeze(expectedResources(record.backend)),
-    samplers: Object.freeze([ expectedSampler() ])
+    bone: profile.bone,
+    textures: Object.freeze(expectedResources(record.backend, profile)),
+    samplers: Object.freeze([ expectedSampler(profile) ])
   });
 }
 
@@ -767,6 +878,10 @@ export function validateQuadSailsV5PackagePair(records)
   if (!Array.isArray(records) || records.length !== 2)
   {
     fail("comparison requires exactly one DX11 and one DX12 package");
+  }
+  if (records[0]?.variant !== records[1]?.variant)
+  {
+    fail("comparison requires matching package variants");
   }
   records.forEach(validateQuadSailsV5PackageRecord);
   if (records[0].backend !== "dx11" || records[1].backend !== "dx12")
@@ -872,20 +987,27 @@ export function createQuadSailsV5BindingCases(width, height)
 }
 
 /**
- * Create deterministic skinned QuadV5 geometry plus the exact active Sails
- * texture inventory. The authored silhouette and surface textures are shared
- * with QuadV5; only SailsDetailMap is specific to this fixture.
+ * Create deterministic QuadV5 geometry plus the exact active Sails texture
+ * inventory for one explicit static or skinned profile. The authored
+ * silhouette and surface textures are shared with QuadV5; only SailsDetailMap
+ * is specific to this fixture.
  *
  * @param {number} width Render-target width.
  * @param {number} height Render-target height.
+ * @param {"static"|"skinned"} variant Exact package/geometry variant.
  * @returns {object} Typed-array fixture values.
  */
-export function createQuadSailsV5FixtureValues(width, height)
+export function createQuadSailsV5FixtureValues(width, height, variant)
 {
-  const surface = createQuadV5FixtureValues(width, height, "skinned");
+  const profile = profileForVariant(variant);
+  const surface = createQuadV5FixtureValues(width, height, profile.variant);
   const requiredSurfaceNames = new Set(RESOURCE_NAMES.filter((name) =>
     name !== "SailsDetailMap"));
-  const textures = surface.textures.filter((entry) => requiredSurfaceNames.has(entry.name));
+  const textures = surface.textures
+    .filter((entry) => requiredSurfaceNames.has(entry.name))
+    .map((entry) => profile.variant === "static" && entry.name === "MaterialMap"
+      ? rgbaTexture("MaterialMap", () => [ 0, 255, 128, 255 ])
+      : entry);
   if (textures.length !== requiredSurfaceNames.size)
   {
     fail("shared QuadV5 fixture does not expose every required surface texture");
@@ -899,7 +1021,7 @@ export function createQuadSailsV5FixtureValues(width, height)
   const cases = createQuadSailsV5BindingCases(width, height);
   return Object.freeze({
     vertices: surface.vertices,
-    boneIndices: surface.boneIndices,
+    boneIndices: profile.bone ? surface.boneIndices : null,
     indices: surface.indices,
     textures: Object.freeze([ ...textures, sailsDetail ]),
     samplers: Object.freeze([

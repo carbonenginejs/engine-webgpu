@@ -5,6 +5,7 @@ import {
   QUAD_SAILS_V5_CASES,
   QUAD_SAILS_V5_CLEAR_TARGETS,
   QUAD_SAILS_V5_SELECTION,
+  QUAD_SAILS_V5_SELECTIONS,
   QUAD_SAILS_V5_SKINNED_VERTEX_BUFFER_LAYOUT,
   QUAD_SAILS_V5_TARGET_HEIGHT,
   QUAD_SAILS_V5_TARGET_WIDTH,
@@ -17,11 +18,10 @@ import {
   validateQuadSailsV5PackageRecord
 } from "../harness/webgpu/quadSailsV5Fixture.js";
 
-const UNIFORMS = [
+const BASE_UNIFORMS = [
   [ 0, "fragment", 464, 29 ],
   [ 1, "vertex", 512, 32 ],
   [ 2, "fragment", 352, 22 ],
-  [ 3, "vertex", 432, 27 ],
   [ 4, "fragment", 208, 13 ]
 ];
 
@@ -38,9 +38,35 @@ const RESOURCE_NAMES = [
   "SailsDetailMap"
 ];
 
-const RESOURCE_REGISTERS = {
-  dx11: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ],
-  dx12: [ 0, 1, 2, 3, 4, 6, 7, 9, 10, 13 ]
+const PROFILES = {
+  skinned: {
+    bodyIndex: 4,
+    sourceFile: "unpackedskinned_quadsailsv5.sm_hi",
+    selection: QUAD_SAILS_V5_SELECTIONS.skinned,
+    bone: true,
+    cb3: [ 3, "vertex", 432, 27 ],
+    textureBindingBase: 6,
+    samplerBinding: 16,
+    pixelTailLocation: 9,
+    resourceRegisters: {
+      dx11: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ],
+      dx12: [ 0, 1, 2, 3, 4, 6, 7, 9, 10, 13 ]
+    }
+  },
+  static: {
+    bodyIndex: 0,
+    sourceFile: "unpacked_quadsailsv5.sm_hi",
+    selection: QUAD_SAILS_V5_SELECTIONS.static,
+    bone: false,
+    cb3: [ 3, "vertex", 128, 8 ],
+    textureBindingBase: 5,
+    samplerBinding: 15,
+    pixelTailLocation: 8,
+    resourceRegisters: {
+      dx11: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ],
+      dx12: [ 0, 1, 2, 3, 4, 6, 7, 9, 10, 11 ]
+    }
+  }
 };
 
 const MATERIAL_CONSTANTS = [
@@ -60,12 +86,26 @@ const MATERIAL_CONSTANTS = [
   [ "SailsDetailData", 448 ]
 ];
 
-function selectedOptions()
+function profileFor(variant)
 {
-  return Object.entries(QUAD_SAILS_V5_SELECTION).map(([ name, value ]) => ({
+  return PROFILES[variant];
+}
+
+function uniformsFor(variant)
+{
+  const profile = profileFor(variant);
+  return [ ...BASE_UNIFORMS.slice(0, 3), profile.cb3, BASE_UNIFORMS[3] ]
+    .sort((left, right) => left[0] - right[0]);
+}
+
+function selectedOptions(variant = "skinned")
+{
+  return Object.entries(profileFor(variant).selection).map(([ name, value ]) => ({
     name,
     value,
-    optionIndex: name === "SPACE_OBJECT_PPT_ENABLED" ? 1 : 0,
+    optionIndex: name === "SPACE_OBJECT_PPT_ENABLED" && value === "SOPPT_ENABLED"
+      ? 1
+      : 0,
     defaultOption: 0,
     defaultValue: name === "SPACE_OBJECT_PPT_ENABLED" ? "SOPPT_DISABLED" : value,
     source: "local"
@@ -127,9 +167,10 @@ function boneBinding()
   };
 }
 
-function resourceBinding(backend, index)
+function resourceBinding(backend, index, variant = "skinned")
 {
-  const registerIndex = RESOURCE_REGISTERS[backend][index];
+  const profile = profileFor(variant);
+  const registerIndex = profile.resourceRegisters[backend][index];
   const identity = `sampled-resource:0:${registerIndex}`;
   const isSRGB = index === 0 || index === 5;
   return {
@@ -141,7 +182,7 @@ function resourceBinding(backend, index)
     registerIndex,
     sourceTruth: "wgsl-layout",
     group: 0,
-    binding: 6 + index,
+    binding: profile.textureBindingBase + index,
     dynamic: false,
     visibility: [ "fragment" ],
     layout: {
@@ -158,8 +199,9 @@ function resourceBinding(backend, index)
   };
 }
 
-function samplerBinding()
+function samplerBinding(variant = "skinned")
 {
+  const profile = profileFor(variant);
   return {
     name: "SurfaceSampler",
     identity: "sampler:0:0",
@@ -169,7 +211,7 @@ function samplerBinding()
     registerIndex: 0,
     sourceTruth: "wgsl-layout",
     group: 0,
-    binding: 16,
+    binding: profile.samplerBinding,
     dynamic: false,
     visibility: [ "fragment" ],
     layout: {
@@ -219,12 +261,12 @@ function reflectedBone()
   };
 }
 
-function reflectedResource(backend, index)
+function reflectedResource(backend, index, variant = "skinned")
 {
   return {
     kind: "resource",
     registerSpace: 0,
-    registerIndex: RESOURCE_REGISTERS[backend][index],
+    registerIndex: profileFor(variant).resourceRegisters[backend][index],
     registerType: index === 0 ? 41 : 36,
     carbon: {
       name: RESOURCE_NAMES[index],
@@ -261,14 +303,15 @@ function reflectedSampler()
   };
 }
 
-function shaderModule(backend, stageName)
+function shaderModule(backend, stageName, variant = "skinned")
 {
+  const profile = profileFor(variant);
   const wgsl = stageName === "vertex"
     ? `
       // ${backend}
       struct VertexInput {
         @location(0) input0: vec3<f32>,
-        @location(1) input1: vec4<u32>,
+        ${profile.bone ? "@location(1) input1: vec4<u32>," : ""}
         @location(2) input2: vec2<f32>,
         @location(3) input3: vec3<f32>,
         @location(4) input4: vec3<f32>,
@@ -285,7 +328,9 @@ function shaderModule(backend, stageName)
         @location(6) output6: vec4<f32>,
         @location(7) output7: vec4<f32>,
         @location(8) output8: vec4<f32>,
-        @location(9) output9: vec4<f32>,
+        ${profile.pixelTailLocation === 9
+    ? "@location(9) output9: vec4<f32>,"
+    : ""}
       };
       @vertex fn main(input: VertexInput) -> VertexOutput {
         var result: VertexOutput;
@@ -301,7 +346,7 @@ function shaderModule(backend, stageName)
         @location(3) input3: vec3<f32>,
         @location(4) input4: vec3<f32>,
         @location(5) input5: vec4<f32>,
-        @location(9) input9: vec4<f32>,
+        @location(${profile.pixelTailLocation}) input${profile.pixelTailLocation}: vec4<f32>,
       };
       struct FragmentOutput {
         @location(0) output0: vec4<f32>,
@@ -310,7 +355,7 @@ function shaderModule(backend, stageName)
       @fragment fn main(input: FragmentInput) -> FragmentOutput {
         var result: FragmentOutput;
         result.output0 = input.position;
-        result.output1 = input.input9;
+        result.output1 = input.input${profile.pixelTailLocation};
         return result;
       }`;
   return {
@@ -324,8 +369,9 @@ function shaderModule(backend, stageName)
   };
 }
 
-function vertexInputs()
+function vertexInputs(variant = "skinned")
 {
+  const profile = profileFor(variant);
   return [
     {
       usageName: "POSITION",
@@ -335,14 +381,14 @@ function vertexInputs()
       type: 0,
       dimension: 3
     },
-    {
+    ...(profile.bone ? [ {
       usageName: "BLENDINDICES",
       usageIndex: 0,
       registerIndex: 1,
       usedMask: 1,
       type: 2,
       dimension: 4
-    },
+    } ] : []),
     {
       usageName: "TEXCOORD",
       usageIndex: 0,
@@ -386,8 +432,9 @@ function vertexInputs()
   ];
 }
 
-function pixelInputs()
+function pixelInputs(variant = "skinned")
 {
+  const profile = profileFor(variant);
   return [
     {
       usageName: "TEXCOORD",
@@ -432,7 +479,7 @@ function pixelInputs()
     {
       usageName: "TEXCOORD",
       usageIndex: 9,
-      registerIndex: 9,
+      registerIndex: profile.pixelTailLocation,
       usedMask: 11,
       type: 0,
       dimension: 4
@@ -440,29 +487,30 @@ function pixelInputs()
   ];
 }
 
-function makeRecord(backend)
+function makeRecord(backend, variant = "skinned")
 {
+  const profile = profileFor(variant);
   const source =
     `C:/fixtures/res/graphics/effect.${backend}/managed/space/spaceobject/` +
-    "v5/quad/unpackedskinned_quadsailsv5.sm_hi";
+    `v5/quad/${profile.sourceFile}`;
   const state = [ { state: 14, value: 1 } ];
   const pixelBindings = [
     ...(backend === "dx11" ? [ reflectedSampler() ] : []),
-    ...RESOURCE_NAMES.map((_name, index) => reflectedResource(backend, index)),
+    ...RESOURCE_NAMES.map((_name, index) => reflectedResource(backend, index, variant)),
     materialBinding(),
     { kind: "constantBuffer", registerSpace: 0, registerIndex: 2, carbon: {} },
     { kind: "constantBuffer", registerSpace: 0, registerIndex: 4, carbon: {} }
   ];
   return {
     backend,
-    variant: "skinned",
+    variant,
     label: `${backend}.cewgpu`,
     filePath: `C:/fixtures/quadsailsv5/${backend}.cewgpu`,
     resourcePath: `res:/webgpu-harness/quadsailsv5/${backend}.cewgpu`,
     analysis: {
       source,
-      bodyIndex: 4,
-      selectedOptions: selectedOptions(),
+      bodyIndex: profile.bodyIndex,
+      selectedOptions: selectedOptions(variant),
       passes: [ {
         techniqueName: "Main",
         passIndex: 0,
@@ -474,26 +522,26 @@ function makeRecord(backend)
           techniqueName: "Main",
           passIndex: 0,
           stageName: "vertex",
-          pipelineInputs: vertexInputs(),
+          pipelineInputs: vertexInputs(variant),
           bindings: [
             { kind: "constantBuffer", registerSpace: 0, registerIndex: 1, carbon: {} },
             { kind: "constantBuffer", registerSpace: 0, registerIndex: 3, carbon: {} },
-            reflectedBone()
+            ...(profile.bone ? [ reflectedBone() ] : [])
           ]
         },
         {
           techniqueName: "Main",
           passIndex: 0,
           stageName: "pixel",
-          pipelineInputs: pixelInputs(),
+          pipelineInputs: pixelInputs(variant),
           bindings: pixelBindings
         }
       ]
     },
     metadata: {
       sourcePath: source,
-      bodyIndex: 4,
-      selectedOptions: selectedOptions(),
+      bodyIndex: profile.bodyIndex,
+      selectedOptions: selectedOptions(variant),
       wgslSelection: {
         mode: "explicit",
         techniqueName: "Main",
@@ -509,30 +557,47 @@ function makeRecord(backend)
       renderStates: 1,
       states: structuredClone(state),
       shaderModules: [
-        shaderModule(backend, "vertex"),
-        shaderModule(backend, "pixel")
+        shaderModule(backend, "vertex", variant),
+        shaderModule(backend, "pixel", variant)
       ],
       bindGroups: [ {
         group: 0,
         bindings: [
-          ...UNIFORMS.map(([ registerIndex, visibility, size, vectors ]) =>
+          ...uniformsFor(variant).map(([ registerIndex, visibility, size, vectors ]) =>
             uniformBinding(registerIndex, visibility, size, vectors)),
-          boneBinding(),
-          ...RESOURCE_NAMES.map((_name, index) => resourceBinding(backend, index)),
-          samplerBinding()
+          ...(profile.bone ? [ boneBinding() ] : []),
+          ...RESOURCE_NAMES.map((_name, index) =>
+            resourceBinding(backend, index, variant)),
+          samplerBinding(variant)
         ]
       } ]
     }
   };
 }
 
-test("QuadSailsV5 fixture reuses skinned Quad geometry and isolates authored sail rotation", () =>
+test("QuadSailsV5 fixture requires an exact geometry variant and isolates authored sail rotation", () =>
 {
-  const fixture = createQuadSailsV5FixtureValues(64, 64);
+  const fixture = createQuadSailsV5FixtureValues(64, 64, "skinned");
+  const staticFixture = createQuadSailsV5FixtureValues(64, 64, "static");
   assert.equal(QUAD_SAILS_V5_TARGET_WIDTH, 64);
   assert.equal(QUAD_SAILS_V5_TARGET_HEIGHT, 64);
   assert.equal(fixture.vertices.length, 13 * 16);
   assert.equal(fixture.boneIndices.length, 13 * 4);
+  assert.equal(staticFixture.boneIndices, null);
+  assert.equal(staticFixture.vertices.length, fixture.vertices.length);
+  assert.deepEqual(
+    staticFixture.textures.map((entry) => entry.name),
+    fixture.textures.map((entry) => entry.name)
+  );
+  assert.deepEqual(
+    Array.from(staticFixture.textures
+      .find((entry) => entry.name === "MaterialMap").data.slice(0, 8)),
+    [ 0, 255, 128, 255, 0, 255, 128, 255 ]
+  );
+  assert.notDeepEqual(
+    staticFixture.textures.find((entry) => entry.name === "MaterialMap").data,
+    fixture.textures.find((entry) => entry.name === "MaterialMap").data
+  );
   assert.equal(fixture.indices.length, 36);
   assert.deepEqual(fixture.caseNames, QUAD_SAILS_V5_CASES);
   assert.deepEqual(QUAD_SAILS_V5_CASES, [ "unrotated", "authored" ]);
@@ -612,7 +677,14 @@ test("QuadSailsV5 fixture reuses skinned Quad geometry and isolates authored sai
     frontFace: "cw",
     cullMode: "back"
   });
-  assert.throws(() => createQuadSailsV5FixtureValues(0, 64), /positive integers/u);
+  assert.throws(
+    () => createQuadSailsV5FixtureValues(64, 64),
+    /variant must be static or skinned/u
+  );
+  assert.throws(
+    () => createQuadSailsV5FixtureValues(0, 64, "skinned"),
+    /positive integers/u
+  );
 });
 
 test("QuadSailsV5 validates exact ordered PPT-on skinned DX11/DX12 records", () =>
@@ -625,11 +697,11 @@ test("QuadSailsV5 validates exact ordered PPT-on skinned DX11/DX12 records", () 
   const dx12Plan = getQuadSailsV5ResourcePlan(records[1]);
   assert.deepEqual(
     dx11Plan.textures.map((entry) => entry.registerIndex),
-    RESOURCE_REGISTERS.dx11
+    PROFILES.skinned.resourceRegisters.dx11
   );
   assert.deepEqual(
     dx12Plan.textures.map((entry) => entry.registerIndex),
-    RESOURCE_REGISTERS.dx12
+    PROFILES.skinned.resourceRegisters.dx12
   );
   assert.deepEqual(dx11Plan.bone, {
     name: "BoneTransforms",
@@ -653,13 +725,57 @@ test("QuadSailsV5 validates exact ordered PPT-on skinned DX11/DX12 records", () 
   assert.deepEqual(records[0].pipeline.states, [ { state: 14, value: 1 } ]);
 });
 
+test("QuadSailsV5 validates exact ordered PPT-off static DX11/DX12 records", () =>
+{
+  const records = [ makeRecord("dx11", "static"), makeRecord("dx12", "static") ];
+  assert.equal(validateQuadSailsV5PackageRecord(records[0]), records[0]);
+  assert.equal(validateQuadSailsV5PackageRecord(records[1]), records[1]);
+  assert.equal(validateQuadSailsV5PackagePair(records), records);
+  const dx11Plan = getQuadSailsV5ResourcePlan(records[0]);
+  const dx12Plan = getQuadSailsV5ResourcePlan(records[1]);
+  assert.equal(dx11Plan.bone, null);
+  assert.deepEqual(
+    dx11Plan.textures.map((entry) => entry.registerIndex),
+    PROFILES.static.resourceRegisters.dx11
+  );
+  assert.deepEqual(
+    dx12Plan.textures.map((entry) => entry.registerIndex),
+    PROFILES.static.resourceRegisters.dx12
+  );
+  assert.deepEqual(
+    dx12Plan.textures.map((entry) => entry.binding),
+    [ 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 ]
+  );
+  assert.deepEqual(
+    dx12Plan.samplers.map((entry) => [
+      entry.name,
+      entry.registerIndex,
+      entry.binding
+    ]),
+    [ [ "SurfaceSampler", 0, 15 ] ]
+  );
+  assert.equal(dx12Plan.textures.at(-1).name, "SailsDetailMap");
+  assert.equal(dx12Plan.textures.at(-1).registerIndex, 11);
+  assert.equal(
+    records[0].pipeline.bindGroups[0].bindings
+      .find((entry) => entry.scopeIdentity === "uniform-buffer:0:3@vertex")
+      .layout.buffer.minBindingSize,
+    128
+  );
+  assert.equal(
+    records[0].pipeline.bindGroups[0].bindings
+      .some((entry) => entry.scopeIdentity === "sampled-resource:0:0@vertex"),
+    false
+  );
+});
+
 test("QuadSailsV5 rejects variant, provenance, body, permutation, and state drift", () =>
 {
   const invalidVariant = makeRecord("dx11");
-  invalidVariant.variant = "static";
+  invalidVariant.variant = "opaque";
   assert.throws(
     () => validateQuadSailsV5PackageRecord(invalidVariant),
-    /variant must be skinned/u
+    /variant must be static or skinned/u
   );
 
   const invalidSource = makeRecord("dx11");
@@ -881,6 +997,12 @@ test("QuadSailsV5 rejects interface, binding, reflection, and pair drift", () =>
   assert.throws(
     () => validateQuadSailsV5PackagePair(reversed),
     /order must be DX11 then DX12/u
+  );
+
+  const mixed = [ makeRecord("dx11", "static"), makeRecord("dx12", "skinned") ];
+  assert.throws(
+    () => validateQuadSailsV5PackagePair(mixed),
+    /matching package variants/u
   );
 
   const duplicatePath = [ makeRecord("dx11"), makeRecord("dx12") ];

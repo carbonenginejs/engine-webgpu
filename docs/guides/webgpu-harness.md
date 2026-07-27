@@ -49,8 +49,8 @@ the reusable engine class does not acquire resource paths or infer format/
 geometry policy.
 
 The static/skinned QuadV5, PPT-on skinned QuadHeatV5, static and PPT-on
-skinned two-pass QuadGlassV5, PPT-on skinned QuadSailsV5, and cold/hot
-PPT-off static QuadHeatV5 modes
+skinned two-pass QuadGlassV5, PPT-off static and PPT-on skinned QuadSailsV5,
+and cold/hot PPT-off static QuadHeatV5 modes
 additionally route each draw through the internal
 `CjsWebGPUTrinityBatchDispatcher`. The fixtures
 construct the duck-typed fields of a transient `Tr2RenderBatch` inside a
@@ -237,6 +237,18 @@ classification, pass scheduling, or composition. It does not load SOF,
 runtime-trinity, a Trinity graph, production textures, or authoritative
 per-object defaults.
 
+The SOF-authored static Sails path uses the exact PPT-off body-0 pair:
+
+```powershell
+npm.cmd run test:webgpu:required -- --draw-quadsailsv5 .\artifacts\quadsailsv5-main-dx11.cewgpu .\artifacts\quadsailsv5-main-dx12.cewgpu
+```
+
+The build-3444265 SOF/resource audit correlates `unpacked_quadsailsv5` to 77
+opaque ship areas across 27 hulls. Every audited effect authors PPT disabled.
+The command requires the exact non-bindless, unclipped, PPT-off, debug-off,
+instanced-attachment-disabled body-0 selection and one complete `Main.pass0`;
+transparency is not a local compiled axis for this effect.
+
 The skinned Sails family has a separate explicit PPT-on gate:
 
 ```powershell
@@ -248,33 +260,38 @@ The build-3444265 resource audit correlates the logical
 That count is family-frequency evidence, not a claim that the selected
 PPT-on body is the representative SOF-authored default. The command requires
 the exact non-bindless, unclipped, PPT-on, debug-off body-4 selection and one
-complete `Main.pass0`; this effect exposes no local transparency option. The
-older static `unpacked_quadsailsv5` family remains a separate future gate.
+complete `Main.pass0`; this effect exposes no local transparency option.
 
-The fixture supplies synthetic skinned silhouette geometry, textures,
-per-frame/per-object values, and a two-entry `BoneTransforms` table whose
-second entry is non-identity. It renders two otherwise-identical
+Both fixtures supply synthetic silhouette geometry, textures, and
+per-frame/per-object values. The skinned variant additionally supplies a
+two-entry `BoneTransforms` table whose second entry is non-identity. Each
+variant renders two otherwise-identical
 `SailsDetailData` cases: unrotated `[16, 0, 1, 0.65]` and authored
 `[16, pi / 2, 1, 0.65]`, using a patterned `SailsDetailMap`. Changing only
 that rotation must change at least half of covered MRT0 pixels with spatial
 variation while preserving coverage and every MRT1 byte. Both cases and both
 MRTs must then match byte-for-byte between the independently derived DX11 and
-DX12 packages.
+DX12 packages. The SOF audit found 30 distinct per-area `SailsDetailData`
+values, so these are controlled conformance inputs rather than a claimed
+family default. The static fixture keeps a static-only synthetic MaterialMap
+control at the sail-blend end of the material channel so the rotation response
+is observable across the surface; it is not a production texture value.
 
-The exact contract has 17 canonical bindings: five uniform buffers, a
-vertex-stage read-only bone buffer, ten textures, and one filtering sampler.
+The static contract has 16 canonical bindings: five uniform buffers, ten
+textures, and one filtering sampler. Its vertex `cb3` minimum is 128 bytes and
+DX12 reflects `SailsDetailMap` at `t11`. The skinned contract has 17 bindings:
+the same resources plus a vertex-stage read-only bone buffer, a 432-byte
+vertex `cb3`, and DX12 `SailsDetailMap` at `t13`.
 The sparse material buffer reaches 464 bytes because `SailsDetailData` begins
-at byte 448. The DX12 package reflects `SailsDetailMap` at `t13`, so resource
-binding follows reflected Carbon names rather than assuming DX11 register
-numbers. The selected pass also carries
+at byte 448. Resource binding follows reflected Carbon names rather than
+assuming DX11 register numbers. Both selected passes carry
 `RS_ZWRITEENABLE=true`; the provisional caller recipe attaches
 `depth24plus`, enables depth writes, and compares with `less` so that state is
 actually exercised. This is not yet a frozen WebGL/WebGPU render-state rule.
 The harness clears and stores but does not read depth back, overlap multiple
-draws, or verify depth ordering.
-The command loads no SOF, runtime-trinity, Trinity graph, production texture,
-ship mesh, or authoritative default value, and it does not qualify production
-scene construction or pass scheduling.
+draws, or verify depth ordering. Neither command loads SOF, runtime-trinity, a
+Trinity graph, production texture, ship mesh, or authoritative default value,
+and neither qualifies production scene construction or pass scheduling.
 
 The older PPT-off static heat gate requires explicitly selected high-quality
 `unpacked_quadheatv5` `Main.pass0` packages:
@@ -345,7 +362,8 @@ body index `4` with the complete expected selection set, including
 `SPACE_OBJECT_PPT_ENABLED=SOPPT_ENABLED`. Static QuadV5 packages carry seven
 selections, ordinary skinned QuadV5 carries six, and skinned QuadHeatV5 and
 QuadHeatDetailV5 each carry their exact five-axis effect contract.
-QuadSailsV5 carries its exact four-axis effect contract. The launcher
+Static QuadSailsV5 carries its exact five-axis contract; skinned QuadSailsV5
+carries its exact four-axis contract. The launcher
 reads each file directly, decodes it with `CjsFormatWebgpu`, and constructs
 `CjsWebGPUPackage`. No runtime library, resource manager, or Trinity contract
 participates in this gate.

@@ -110,7 +110,8 @@ conformance prototype, not a frozen renderer API. The static/skinned QuadV5,
 common PPT-on skinned QuadHeatV5, PPT-on skinned QuadHeatDetailV5 material-block
 high-water gate, independently gated static and common PPT-on skinned
 QuadGlassV5 Main passes, cold/hot PPT-off
-static QuadHeatV5, PPT-on skinned QuadSailsV5, non-bindless
+static QuadHeatV5, independently gated PPT-off static and PPT-on skinned
+QuadSailsV5, non-bindless
 DecalV5/DecalCylindricV5/DecalHoleV5, kill-counter DecalCounterV5,
 DecalGlowV5, and DecalGlowCylindricV5 browser gates use its one-type batch-map
 path, with the glass fixture keeping complementary pass selection explicit,
@@ -137,16 +138,18 @@ draws and observes non-identity transformed bounds. All current probes still
 use numeric opaque batch type `0`; the three audited transparent SOF uses do
 not yet qualify production transparent classification or scheduling.
 
-The build-3444265 SOF audit correlates the skinned-Sails logical family to 72
-opaque ship areas across 33 hulls. Its browser gate is synthetic and
-library-free. The independently selected body-4 gate exercises one PPT-on
-Main pass, its sparse 464-byte material buffer through `SailsDetailData`,
-indexed non-identity skinning, and the shader's depth-write render state
-through a caller-owned `depth24plus` recipe.
-The frequency count applies to the logical family, not specifically to the
-PPT-on body, and the recipe remains provisional until the WebGL/WebGPU
-renderer rules are designed. This gate does not load SOF, runtime-trinity, a
-Trinity graph, production textures, or authoritative per-object defaults.
+The build-3444265 SOF audit correlates the static Sails family to 77 opaque
+ship areas across 27 hulls and the skinned-Sails logical family to 72 opaque
+areas across 33 hulls. Both browser gates are synthetic and library-free. The
+static gate exercises the SOF-authored PPT-off body-0 Main pass; the separate
+skinned gate deliberately selects PPT-on body 4 and adds indexed non-identity
+skinning. Both exercise the sparse 464-byte material buffer through
+`SailsDetailData` and the shader's depth-write render state through a
+caller-owned `depth24plus` recipe. The skinned frequency count applies to the
+logical family, not specifically to the PPT-on body, and the recipe remains
+provisional until the WebGL/WebGPU renderer rules are designed. These gates
+do not load SOF, runtime-trinity, a Trinity graph, production textures, or
+authoritative per-object defaults.
 
 The internal `CjsWebGPUTrinityStepRecorder` proves the synchronous
 `Tr2RenderContext.SetStepExecutor(...)` seam separately. It delegates the

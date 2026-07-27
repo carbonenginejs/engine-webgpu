@@ -853,7 +853,13 @@ async function CreateQuadSailsV5GpuResources(webgpu, records)
             && QUAD_SAILS_V5_TARGET_HEIGHT === HEIGHT,
         "QuadSailsV5 and harness target dimensions must match"
     );
-    const values = createQuadSailsV5FixtureValues(WIDTH, HEIGHT);
+    const variant = records[0]?.variant;
+    const skinned = variant === "skinned";
+    Assert(
+        variant === "static" || skinned,
+        "QuadSailsV5 resources require an exact static or skinned variant"
+    );
+    const values = createQuadSailsV5FixtureValues(WIDTH, HEIGHT, variant);
     const cases = createQuadSailsV5BindingCases(WIDTH, HEIGHT);
     Assert(
         JSON.stringify(values.caseNames) === JSON.stringify(cases.caseNames),
@@ -861,7 +867,7 @@ async function CreateQuadSailsV5GpuResources(webgpu, records)
     );
     const geometrySource = Object.freeze({
         kind: "synthetic-quadsailsv5",
-        variant: "skinned"
+        variant
     });
     const texturePayloads = Object.fromEntries(values.textures
         .filter((entry) => entry.dimension === "2d")
@@ -887,18 +893,18 @@ async function CreateQuadSailsV5GpuResources(webgpu, records)
         label: "QuadSailsV5 resources",
         geometries: {
             main: {
-                label: "QuadSailsV5 skinned silhouette geometry",
+                label: `QuadSailsV5 ${variant} silhouette geometry`,
                 vertexBuffers: [
                     {
                         slot: 0,
                         data: values.vertices,
                         layout: QUAD_SAILS_V5_VERTEX_BUFFER_LAYOUT
                     },
-                    {
+                    ...(skinned ? [ {
                         slot: 1,
                         data: values.boneIndices,
                         layout: QUAD_SAILS_V5_SKINNED_VERTEX_BUFFER_LAYOUT
-                    }
+                    } ] : [])
                 ],
                 indexBuffer: {
                     data: values.indices,
@@ -955,31 +961,38 @@ async function CreateQuadSailsV5GpuResources(webgpu, records)
             label: "QuadSailsV5 EveSpaceSceneEnvMap cube view",
             dimension: "cube"
         });
-        const boneTransform = new Float32Array([
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0.8660253882408142, 0, -0.5, 0.125,
-            0, 1, 0, 0,
-            0.5, 0, 0.8660253882408142, 0
-        ]);
-        boneBuffer = device.createBuffer({
-            label: "QuadSailsV5 indexed non-identity BoneTransforms",
-            size: boneTransform.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-        });
-        device.queue.writeBuffer(boneBuffer, 0, boneTransform);
+        if (skinned)
+        {
+            const boneTransform = new Float32Array([
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0.8660253882408142, 0, -0.5, 0.125,
+                0, 1, 0, 0,
+                0.5, 0, 0.8660253882408142, 0
+            ]);
+            boneBuffer = device.createBuffer({
+                label: "QuadSailsV5 indexed non-identity BoneTransforms",
+                size: boneTransform.byteLength,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            });
+            device.queue.writeBuffer(boneBuffer, 0, boneTransform);
+        }
 
         const resourcesByBackend = new Map();
         for (const record of records)
         {
             const plan = getQuadSailsV5ResourcePlan(record);
             const resources = new Map();
-            resources.set(plan.bone.scopeIdentity, {
-                buffer: boneBuffer,
-                offset: 0,
-                size: boneBuffer.size
-            });
+            if (plan.bone)
+            {
+                Assert(boneBuffer, "QuadSailsV5 skinned resource plan requires BoneTransforms");
+                resources.set(plan.bone.scopeIdentity, {
+                    buffer: boneBuffer,
+                    offset: 0,
+                    size: boneBuffer.size
+                });
+            }
             for (const texture of plan.textures)
             {
                 const resource = texture.name === "EveSpaceSceneEnvMap"
@@ -1002,10 +1015,11 @@ async function CreateQuadSailsV5GpuResources(webgpu, records)
             resourcesByBackend,
             geometry: bundle.geometries.main,
             geometrySource,
+            variant,
             bundle,
             destroy()
             {
-                boneBuffer.destroy();
+                boneBuffer?.destroy();
                 cubeTexture.destroy();
                 bundle.Destroy();
             }
@@ -3848,7 +3862,7 @@ async function RunQuadSailsV5Comparison(webgpu)
                     bytes,
                     targetIndex,
                     `${instance.record.label} ${instance.renderCase} MRT${targetIndex}`,
-                    "skinned"
+                    fixture.variant
                 ));
             Assert(
                 instance.statistics[0].coverage === instance.statistics[1].coverage,
@@ -3910,14 +3924,16 @@ async function RunQuadSailsV5Comparison(webgpu)
         const baseline = byKey.get("dx11:authored");
         Assert(baseline, "QuadSailsV5 authored DX11 baseline is missing");
         return {
-            bodyIndex: 4,
-            variant: "skinned",
+            bodyIndex: fixture.variant === "skinned" ? 4 : 0,
+            variant: fixture.variant,
             labels: records.map((record) => `${record.backend}:${record.label}`),
             loadPath: records[0].loadPath,
             pixelCount: WIDTH * HEIGHT,
             targetCount: QUAD_SAILS_V5_CLEAR_TARGETS.length,
             renderCaseCount: fixture.caseNames.length,
-            drawKind: "indexed skinned synthetic silhouette",
+            drawKind: fixture.variant === "skinned"
+                ? "indexed skinned synthetic silhouette"
+                : "indexed synthetic silhouette",
             indexCount: fixture.geometry.indexCount,
             warningCount,
             clearTargets: QUAD_SAILS_V5_CLEAR_TARGETS,
