@@ -37,15 +37,29 @@ the semantic serializer or be transposed a second time.
 
 ## Per-object data boundary
 
-The intended `RawDataStore` seam keeps WebGPU and WebGL packing independent.
-Registration supplies logical field definitions and encoding kinds. Their
-production catalog and final ownership are still pending. A WebGPU
-`ResolveLayout(structName, definition)` packer will supply CPU-staging
-float-lane offsets, padding, and the full struct stride; a WebGL packer may
-resolve the same definition differently. `RawData.Set(...)` applies its
-declared matrix or integer encoder into that resolved CPU staging layout, while
-the engine owns GPU allocation, stage-slot binding, upload, and lifetime.
-WebGPU ring offsets and their device alignment are a separate allocation
+**Settled 2026-07-28: there is ONE layout, not one per backend.** The
+`RawDataStore` seam was designed to keep WebGPU and WebGL packing independent,
+on the assumption that their physical layouts would differ. They do not. Every
+backend declares these buffers as a flat vec4 array — WGSL
+`array<vec4<f32>, N>`, GLSL `vec4 cbN[N]`, or a std140 block wrapping
+`vec4 data[N]` — and std140's stride for an array of vec4 is 16 bytes, the same
+as tight C++ packing. The std140 rules that *do* differ (vec3 padded to 16,
+scalar array stride) never engage, because there are no struct members to pad.
+
+So `runtime-trinity` carries Carbon's layout directly, in
+`src/trinityCore/rawData/CjsPerObjectLayouts.js`, and a packer is no longer
+required. An engine that genuinely needs a different physical layout may still
+inject a `ResolveLayout(structName, definition)` packer; none does. This
+package's own `spaceObjectMainBindings.js` already packs tight C++ layout
+rather than std140 — `Sun.DirWorld` is a vec3 at byte 640 followed immediately
+by `unused_pad0` at 652 — which is the same conclusion reached independently.
+
+Matrices are always stored transposed, and the accessors enforce it:
+`SetAndTranspose`/`GetTransposed` for matrix fields, `Set`/`Get` for everything
+else, each throwing on the other's fields. There is no `SetRaw`.
+
+The engine still owns GPU allocation, stage-slot binding, upload, and lifetime.
+WebGPU ring offsets and their device alignment remain a separate allocation
 concern, not the `RawData` struct stride.
 
 The current CEWGPU reflection cannot define a general packer by itself. Local
