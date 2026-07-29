@@ -1,4 +1,5 @@
 import { buildPackageJson, buildPipelines, buildShaderModules, normalizePackageShape } from "./core/packageHelpers.js";
+import { createBackendBodySource, isRawPackage, projectRawPackage } from "./core/backendBodySource.js";
 import { deepFreeze } from "./core/freeze.js";
 
 /**
@@ -42,7 +43,10 @@ export class CjsWebGPUPackage
    */
   constructor(value)
   {
-    const normalized = normalizePackageShape(value);
+    // A raw reader result carries the WGSB body set; plain JSON never can. Both
+    // converge on one normalized document, so the existing path is untouched.
+    const raw = isRawPackage(value);
+    const normalized = normalizePackageShape(raw ? projectRawPackage(value) : value);
     const shaderModules = buildShaderModules(normalized);
     const { pipelines, bindGroups } = buildPipelines(normalized, shaderModules);
 
@@ -57,8 +61,20 @@ export class CjsWebGPUPackage
     this.shaderModules = deepFreeze(shaderModules);
     this.pipelines = deepFreeze(pipelines);
     this.bindGroups = deepFreeze(bindGroups);
+    this.backendBodySource = raw ? createBackendBodySource(value) : null;
     this._json = buildPackageJson(normalized, shaderModules, pipelines, bindGroups);
     Object.freeze(this);
+  }
+
+  /**
+   * Resolve one permutation index to its translated backend passes.
+   *
+   * @param {number} permutationIndex Exact PGRF permutation index.
+   * @returns {object|null} Resolved body record, or null without a body set.
+   */
+  GetBackendBody(permutationIndex)
+  {
+    return this.backendBodySource ? this.backendBodySource.ResolveBody(permutationIndex) : null;
   }
 
   /**
