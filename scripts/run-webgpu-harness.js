@@ -402,13 +402,13 @@ const BROWSER_ARGS = Object.freeze([
 
 async function ReadPackagePipeline(path)
 {
-    const [ { CjsFormatWebgpu }, { CjsWebGPUPackage }, { buildCopyblitDrawDescriptor } ] = await Promise.all([
-        import("@carbonenginejs/format-webgpu"),
+    const [ { CjsWebgpuFormat }, { CjsWebGPUPackage }, { buildCopyblitDrawDescriptor } ] = await Promise.all([
+        import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js"),
         import("../src/core/packageDraw.js")
     ]);
     const pkg = CjsWebGPUPackage.fromBytes(await readFile(path), {
-        read: CjsFormatWebgpu.read,
+        read: CjsWebgpuFormat.read,
         readOptions: { source: path }
     });
     const pipeline = pkg.GetPipeline("Main", 0);
@@ -425,10 +425,10 @@ async function ReadQuadV5Packages(paths, variant)
         throw new Error(`${QUADV5_FLAG} requires distinct DX11 and DX12 package files`);
     }
     const [
-        { CjsFormatWebgpu },
+        { CjsWebgpuFormat },
         { CjsWebGPUPackage }
     ] = await Promise.all([
-        import("@carbonenginejs/format-webgpu"),
+        import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
     ]);
     const requests = [ "dx11", "dx12" ].map((backend, index) => ({
@@ -442,7 +442,7 @@ async function ReadQuadV5Packages(paths, variant)
     for (const request of requests)
     {
         const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
-            read: CjsFormatWebgpu.read,
+            read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
         if (!(pkg instanceof CjsWebGPUPackage))
@@ -460,7 +460,7 @@ async function ReadQuadV5Packages(paths, variant)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsFormatWebgpu -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
@@ -483,10 +483,10 @@ async function ReadQuadGlassV5Packages(paths, variant)
         );
     }
     const [
-        { CjsFormatWebgpu },
+        { CjsWebgpuFormat },
         { CjsWebGPUPackage }
     ] = await Promise.all([
-        import("@carbonenginejs/format-webgpu"),
+        import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
     ]);
     const requests = [ "dx11", "dx12" ].map((backend, index) => ({
@@ -501,7 +501,7 @@ async function ReadQuadGlassV5Packages(paths, variant)
     for (const request of requests)
     {
         const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
-            read: CjsFormatWebgpu.read,
+            read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
         if (!(pkg instanceof CjsWebGPUPackage))
@@ -525,7 +525,7 @@ async function ReadQuadGlassV5Packages(paths, variant)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsFormatWebgpu -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipelines
@@ -547,10 +547,10 @@ async function ReadQuadHeatV5Packages(paths)
         );
     }
     const [
-        { CjsFormatWebgpu },
+        { CjsWebgpuFormat },
         { CjsWebGPUPackage }
     ] = await Promise.all([
-        import("@carbonenginejs/format-webgpu"),
+        import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
     ]);
     const requests = [ "dx11", "dx12" ].map((backend, index) => ({
@@ -562,7 +562,7 @@ async function ReadQuadHeatV5Packages(paths)
     for (const request of requests)
     {
         const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
-            read: CjsFormatWebgpu.read,
+            read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
         if (!(pkg instanceof CjsWebGPUPackage))
@@ -579,7 +579,7 @@ async function ReadQuadHeatV5Packages(paths)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsFormatWebgpu -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
@@ -601,10 +601,10 @@ async function ReadQuadSailsV5Packages(paths, variant)
         );
     }
     const [
-        { CjsFormatWebgpu },
+        { CjsWebgpuFormat },
         { CjsWebGPUPackage }
     ] = await Promise.all([
-        import("@carbonenginejs/format-webgpu"),
+        import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
     ]);
     const requests = [ "dx11", "dx12" ].map((backend, index) => ({
@@ -617,7 +617,7 @@ async function ReadQuadSailsV5Packages(paths, variant)
     for (const request of requests)
     {
         const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
-            read: CjsFormatWebgpu.read,
+            read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
         if (!(pkg instanceof CjsWebGPUPackage))
@@ -635,7 +635,7 @@ async function ReadQuadSailsV5Packages(paths, variant)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsFormatWebgpu -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
@@ -657,10 +657,10 @@ async function ReadQuadDetailV5Packages(paths, variant)
         );
     }
     const [
-        { CjsFormatWebgpu },
+        { CjsWebgpuFormat },
         { CjsWebGPUPackage }
     ] = await Promise.all([
-        import("@carbonenginejs/format-webgpu"),
+        import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
     ]);
     const requests = [ "dx11", "dx12" ].map((backend, index) => ({
@@ -673,7 +673,7 @@ async function ReadQuadDetailV5Packages(paths, variant)
     for (const request of requests)
     {
         const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
-            read: CjsFormatWebgpu.read,
+            read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
         if (!(pkg instanceof CjsWebGPUPackage))
@@ -691,7 +691,7 @@ async function ReadQuadDetailV5Packages(paths, variant)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsFormatWebgpu -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
@@ -713,10 +713,10 @@ async function ReadQuadOilV5Packages(paths)
         );
     }
     const [
-        { CjsFormatWebgpu },
+        { CjsWebgpuFormat },
         { CjsWebGPUPackage }
     ] = await Promise.all([
-        import("@carbonenginejs/format-webgpu"),
+        import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
     ]);
     const requests = [ "dx11", "dx12" ].map((backend, index) => ({
@@ -730,7 +730,7 @@ async function ReadQuadOilV5Packages(paths)
     for (const request of requests)
     {
         const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
-            read: CjsFormatWebgpu.read,
+            read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
         if (!(pkg instanceof CjsWebGPUPackage))
@@ -748,7 +748,7 @@ async function ReadQuadOilV5Packages(paths)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsFormatWebgpu -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
@@ -766,10 +766,10 @@ async function ReadDecalV5Packages(paths, variant)
         throw new Error(`${DECALV5_FLAG} requires distinct DX11 and DX12 package files`);
     }
     const [
-        { CjsFormatWebgpu },
+        { CjsWebgpuFormat },
         { CjsWebGPUPackage }
     ] = await Promise.all([
-        import("@carbonenginejs/format-webgpu"),
+        import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
     ]);
     const requests = [ "dx11", "dx12" ].map((backend, index) => ({
@@ -783,7 +783,7 @@ async function ReadDecalV5Packages(paths, variant)
     for (const request of requests)
     {
         const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
-            read: CjsFormatWebgpu.read,
+            read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
         if (!(pkg instanceof CjsWebGPUPackage))
@@ -801,7 +801,7 @@ async function ReadDecalV5Packages(paths, variant)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsFormatWebgpu -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
