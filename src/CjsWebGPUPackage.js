@@ -23,7 +23,7 @@ export class CjsWebGPUPackage
    *
    * @param {Uint8Array|ArrayBuffer|Buffer|DataView} bytes Package bytes.
    * @param {object} options Options with an injected `read` function.
-   * @param {Function} options.read Reader such as `CjsFormatWebgpu.read`.
+   * @param {Function} options.read Reader such as `CjsWebgpuFormat.read`.
    * @param {object} [options.readOptions] Options forwarded to `read`.
    * @returns {CjsWebGPUPackage} Immutable descriptor package.
    */
@@ -31,7 +31,7 @@ export class CjsWebGPUPackage
   {
     if (typeof options.read !== "function")
     {
-      throw new TypeError("CjsWebGPUPackage.fromBytes: options.read must be a function such as CjsFormatWebgpu.read");
+      throw new TypeError("CjsWebGPUPackage.fromBytes: options.read must be a function such as CjsWebgpuFormat.read");
     }
 
     return CjsWebGPUPackage.from(options.read(bytes, options.readOptions || {}));

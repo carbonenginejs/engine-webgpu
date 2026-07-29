@@ -512,7 +512,7 @@ carries its exact four-axis contract. Static QuadDetailV5 carries its exact
 seven-axis contract; skinned QuadDetailV5 carries its exact six-axis contract.
 Skinned QuadOilV5 carries its exact five-axis PPT-off contract.
 The launcher
-reads each file directly, decodes it with `CjsFormatWebgpu`, and constructs
+reads each file directly, decodes it with `CjsWebgpuFormat`, and constructs
 `CjsWebGPUPackage`. No runtime library, resource manager, or Trinity contract
 participates in this gate.
 
