@@ -63,6 +63,113 @@
           "packageSha256": "4527faeeeef49a0ed3aa5b02366e2ef3c5e62f81efd7e1522d402f9ab25e41f3",
           "packageByteLength": 12320201
         }
+      ],
+      "allBody": [
+        {
+          "backend": "dx11",
+          "mode": "all",
+          "packageSha256": "5d73de6fe8c73a42690c6e510343e97e95d5fdc541cce4be17b87f7028a4eed9",
+          "packageByteLength": 15054155,
+          "permutations": 480,
+          "uniqueBodies": 144,
+          "translationUnits": 144,
+          "unsupportedBodies": 0
+        },
+        {
+          "backend": "dx12",
+          "mode": "all",
+          "packageSha256": "9b09e853b5a16305c5b99c748ff6c71c1f62f536b4da9c690a6ae68f73d5b6cc",
+          "packageByteLength": 23806313,
+          "permutations": 480,
+          "uniqueBodies": 288,
+          "translationUnits": 144,
+          "unsupportedBodies": 144,
+          "note": "DX12 exposes bindless bodies that do not lower. They are retained as explicitly unsupported records with their reason; DX12 is comparison-only evidence."
+        }
+      ]
+    },
+    {
+      "id": "quadv5-high-ppt-main",
+      "family": "Quad V5",
+      "variant": "static",
+      "packing": "unpacked",
+      "tier": "high",
+      "tierSuffix": "sm_depth",
+      "buildId": "3444265",
+      "bodyIndex": 4,
+      "bodyMode": "selected",
+      "technique": "Main",
+      "passIndex": 0,
+      "stages": [ "vertex", "pixel" ],
+      "infoVersion": 3,
+      "wgslSetVersion": 3,
+      "layoutBindings": 25,
+      "resourceTransforms": 0,
+      "gates": {
+        "prepared": "--prepare-cewgpu and --prepare-bodyset are green at High: 25 canonical bindings per selected package, and all 168 all-body translation units, with 0 WGSL warnings",
+        "drawn": "not yet - the --draw-quadv5 fixture encodes the 19-binding Medium inventory only. See inventory below for what a High draw fixture needs."
+      },
+      "inventory": {
+        "uniformBuffers": 5,
+        "uniformMinBindingSizes": [ 384, 512, 352, 416, 432 ],
+        "sampledTextures": 13,
+        "readOnlyStorageBuffers": 2,
+        "arrayTextures": 1,
+        "samplers": 4,
+        "renderTargets": 2,
+        "note": "Uniform buffer sizes and the vertex layout are identical to Medium. cb0 keeps the same 384-byte footprint and adds Mtl1..4DustDiffuseColor at offsets 224-287, which Medium leaves as a hole; packMaterial is reflection-driven, so only those four values are new. The pixel interface adds TEXCOORD11 at register 10 (vec3) and the vertex output adds output10.",
+        "textureNames": [
+          "EveSpaceSceneEnvMap", "SSAOMap", "EveSpaceSceneShadowMap", "NormalMap", "GlowMap",
+          "DustNoiseMap", "AlbedoMap", "RoughnessMap", "DirtMap", "MaterialMap",
+          "PaintMaskMap", "PatternMask1Map", "PatternMask2Map"
+        ],
+        "storageBuffers": [
+          { "name": "LightIndexBuffer", "structureStride": 4, "minBindingSize": 4 },
+          { "name": "LightBuffer", "structureStride": 48, "minBindingSize": 48 }
+        ],
+        "arrayTexture": { "name": "LightProfileArray", "viewDimension": "2d-array", "transform": null },
+        "samplerNames": [ "s0", "PatternMask1MapSampler", "PatternMask2MapSampler", "s3" ],
+        "textureRegisters": {
+          "dx11": [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ],
+          "dx12": [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ]
+        },
+        "storageRegisters": { "dx11": [ 13, 14 ], "dx12": [ 14, 15 ] },
+        "arrayTextureRegister": { "dx11": 15, "dx12": 16 }
+      },
+      "permutation": {
+        "BINDLESS_RENDERING": "BINDLESS_RENDERING_DISABLED",
+        "SPACE_OBJECT_CLIPPING": "SOC_DISABLED",
+        "SPACE_OBJECT_PPT_ENABLED": "SOPPT_ENABLED",
+        "SPACE_OBJECT_TRANSPARENCY": "SOT_OPAQUE",
+        "V5_DEBUG": "OFF",
+        "SPACE_OBJECT_INSTANCED_ATTACHMENT": "SOIA_DISABLED",
+        "BLEND_MODE": "BLEND_MODE_OVERLAY"
+      },
+      "backends": [
+        {
+          "backend": "dx11",
+          "sourceLogicalPath": "res:/graphics/effect.dx11/managed/space/spaceobject/v5/quad/unpacked_quadv5.sm_depth",
+          "packageSha256": "ee15928dc13a613955566d372678da1351528062b3b026609ef2bca766d69e73",
+          "packageByteLength": 6368066
+        },
+        {
+          "backend": "dx12",
+          "sourceLogicalPath": "res:/graphics/effect.dx12/managed/space/spaceobject/v5/quad/unpacked_quadv5.sm_depth",
+          "packageSha256": "9e1c31d62aba872211c6a7e3b8bf3dcda5df789d54b8dc56928f61cad03f55ef",
+          "packageByteLength": 14291690
+        }
+      ],
+      "allBody": [
+        {
+          "backend": "dx11",
+          "mode": "all",
+          "packageSha256": "f90b7c2cf8db4672d30cf22f5d15cc3f3294721747e7aa308a848784e7eb52a2",
+          "packageByteLength": 22657641,
+          "permutations": 480,
+          "uniqueBodies": 144,
+          "translationUnits": 168,
+          "unsupportedBodies": 0
+        }
       ]
     }
   ]
