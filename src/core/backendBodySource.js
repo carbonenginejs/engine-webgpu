@@ -101,6 +101,11 @@ export function createBackendBodySource(value)
     sourcePath: value.sourcePath,
     bodyCount,
     unitCount: unitsByKey.size,
+    // Every permutation maps to a body; the body set stores only the unique
+    // ones. Both counts are needed to state coverage honestly.
+    permutationCount: Number.isInteger(value.info?.permutationGraph?.permutationCount)
+      ? value.info.permutationGraph.permutationCount
+      : 0,
 
     /**
      * Resolve one permutation index to its translated passes.

@@ -390,6 +390,30 @@ if (PREPARE_MATRIX_INDEX >= 0
     throw new Error("--prepare-matrix cannot be combined with another package or draw input");
 }
 const PREPARE_MATRIX_PATH = PREPARE_MATRIX_INDEX >= 0 ? resolve(process.argv[PREPARE_MATRIX_INDEX + 1]) : null;
+const PREPARE_BODYSET_INDEX = process.argv.indexOf("--prepare-bodyset");
+if (PREPARE_BODYSET_INDEX >= 0
+  && (!process.argv[PREPARE_BODYSET_INDEX + 1] || process.argv[PREPARE_BODYSET_INDEX + 1].startsWith("--")))
+{
+    throw new Error("--prepare-bodyset requires an all-body CEWGPU file path");
+}
+if (PREPARE_BODYSET_INDEX >= 0 && PREPARE_MATRIX_INDEX >= 0)
+{
+    throw new Error("--prepare-bodyset cannot be combined with --prepare-matrix");
+}
+if (PREPARE_BODYSET_INDEX >= 0
+  && (PREPARE_CEWGPU_INDEX >= 0 || DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0
+    || ACTIVE_QUADV5_INDEX >= 0 || ACTIVE_QUADGLASSV5_INDEX >= 0
+    || DRAW_QUADHEATV5_INDEX >= 0
+    || ACTIVE_QUADSAILSV5_INDEX >= 0
+    || ACTIVE_QUADDETAILV5_INDEX >= 0
+    || DRAW_SKINNED_QUADOILV5_INDEX >= 0
+    || ACTIVE_DECALV5_INDEX >= 0))
+{
+    throw new Error("--prepare-bodyset cannot be combined with another package or draw input");
+}
+const PREPARE_BODYSET_PATH = PREPARE_BODYSET_INDEX >= 0
+    ? resolve(process.argv[PREPARE_BODYSET_INDEX + 1])
+    : null;
 const HOST = "127.0.0.1";
 const BROWSER_ARGS = Object.freeze([
     "--enable-unsafe-webgpu",
@@ -415,6 +439,26 @@ async function ReadPackagePipeline(path)
     if (!pipeline) throw new Error("CEWGPU package has no Main pass 0 pipeline");
     if (!pipeline.HasCompleteWgsl()) throw new Error("CEWGPU Main pass 0 does not have complete WGSL");
     return { pipeline: pipeline.ToJSON(), validateCopyblit: buildCopyblitDrawDescriptor };
+}
+
+async function ReadBodySetPrepare(path)
+{
+    const [ { CjsWebgpuFormat }, { CjsWebGPUPackage }, { buildBodySetPipelines } ] = await Promise.all([
+        import("@carbonenginejs/runtime-resource/formats/webgpu"),
+        import("../src/index.js"),
+        import("../src/core/bodySetPipelines.js")
+    ]);
+    // Raw emit is the only route to the WGSB chunk: the default JSON emit does
+    // not project the body set, and its chunk records carry no bytes.
+    const pkg = CjsWebGPUPackage.fromBytes(await readFile(path), {
+        read: CjsWebgpuFormat.read,
+        readOptions: { source: path, emit: CjsWebgpuFormat.OUTPUT_RAW }
+    });
+    if (!pkg.backendBodySource)
+    {
+        throw new Error(`${path} carries no WGSB body set; build it with mode "all"`);
+    }
+    return buildBodySetPipelines(pkg);
 }
 
 async function ReadQuadV5Packages(paths, variant)
@@ -826,9 +870,11 @@ const PACKAGE_DRAW_RECORD = DRAW_CEWGPU_PATH ? await ReadPackagePipeline(DRAW_CE
 if (PACKAGE_DRAW_RECORD) PACKAGE_DRAW_RECORD.validateCopyblit(PACKAGE_DRAW_RECORD.pipeline);
 const PACKAGE_DRAW = PACKAGE_DRAW_RECORD?.pipeline || null;
 const PACKAGE_PREPARE = PREPARE_CEWGPU_PATH ? (await ReadPackagePipeline(PREPARE_CEWGPU_PATH)).pipeline : null;
+// Both prepare inputs converge on one CJS_WEBGPU_PREPARE_MATRIX document, so
+// the browser prepares a body set with no browser-side code of its own.
 const MATRIX_PREPARE = PREPARE_MATRIX_PATH
     ? buildMatrixPipelines(JSON.parse(await readFile(PREPARE_MATRIX_PATH, "utf8")))
-    : null;
+    : (PREPARE_BODYSET_PATH ? await ReadBodySetPrepare(PREPARE_BODYSET_PATH) : null);
 const QUADV5_DRAW = DRAW_QUADV5_PATHS
     ? await ReadQuadV5Packages(DRAW_QUADV5_PATHS, QUADV5_VARIANT)
     : null;
@@ -914,7 +960,9 @@ const ASSETS = new Map([
                 DRAW_QUADSAILSV5_PATHS?.map((path) => basename(path)) || [],
             decalV5Labels: DRAW_DECALV5_PATHS?.map((path) => basename(path)) || [],
             preparePackageLabel: PREPARE_CEWGPU_PATH ? basename(PREPARE_CEWGPU_PATH) : null,
-            prepareMatrixLabel: PREPARE_MATRIX_PATH ? basename(PREPARE_MATRIX_PATH) : null,
+            prepareMatrixLabel: PREPARE_MATRIX_PATH
+                ? basename(PREPARE_MATRIX_PATH)
+                : (PREPARE_BODYSET_PATH ? basename(PREPARE_BODYSET_PATH) : null),
             vertexLabel: DRAW_VERTEX_PATH ? basename(DRAW_VERTEX_PATH) : null,
             fragmentLabel: DRAW_FRAGMENT_PATH ? basename(DRAW_FRAGMENT_PATH) : null
         }),
@@ -1424,6 +1472,29 @@ async function Main()
                 `covering ${result.preparedMatrix.coveredShaderOccurrences} emitted stage occurrences and ` +
                 `${result.preparedMatrix.coveredOccurrences} ready permutation/pass occurrences with 0 WGSL warnings.`
             );
+        }
+        if (result.preparedMatrix && MATRIX_PREPARE?.bodySet)
+        {
+            const bodySet = MATRIX_PREPARE.bodySet;
+            console.log(
+                `Body set: ${bodySet.permutationCount} permutations resolved to ${bodySet.uniqueBodies} unique ` +
+                `bodies (${bodySet.declaredBodies} declared) and ${MATRIX_PREPARE.uniquePipelines} translation ` +
+                `units (${bodySet.declaredUnits} declared), ${bodySet.unsupportedBodies.length} unsupported.`
+            );
+            // Log the observed sharing so a silent cap or a degenerate 1:1
+            // case is visible rather than hidden behind an aggregate.
+            for (const [ passKey, entry ] of Object.entries(bodySet.sharing))
+            {
+                console.log(
+                    `  ${passKey}: ${entry.bodyPasses} body-passes -> ${entry.units} units ` +
+                    `(${entry.bodyRatio}:1 stored, ${entry.permutationRatio}:1 over ` +
+                    `${entry.permutationPasses} permutation-passes)`
+                );
+            }
+            for (const body of bodySet.unsupportedBodies)
+            {
+                console.log(`  unsupported ${body.bodyKey} (${body.permutationCount} permutations): ${body.error}`);
+            }
         }
     }
     finally

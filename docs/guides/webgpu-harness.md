@@ -144,6 +144,37 @@ pass occurrences, and treats every WGSL warning or WebGPU validation error as a
 failure. Unsupported matrix entries are qualification results rather than live
 pipeline candidates and are not silently reclassified as prepared.
 
+To prepare every translated body of an all-body (`mode: "all"`) package in one
+browser/device session:
+
+```powershell
+npm.cmd run test:webgpu:required -- --prepare-bodyset .\artifacts\quadv5-allbody.cewgpu
+```
+
+The package is read with the raw emit, because the default JSON emit cannot
+carry the `WGSB` body set. Descriptors are built per translation unit directly
+from `unit.shaders` and `unit.layouts[0]`, never through the ANLS-driven stage
+list: that list names the selected body only, and its
+`(techniqueName, passIndex, stageName)` match carries no body discriminator, so
+in a real all-body package `Main.pass0.vertex` names 120 distinct units at once.
+Feeding one unit at a time through the existing canonical layout path sidesteps
+that structurally rather than by weakening the ambiguity guard.
+
+Pipelines are cached by `unit.sha256`. `unit.key` is a per-package ordinal
+(`unit0`, `unit1`, …) that collides across packages and is fit only for
+diagnostics. Both emit one `CJS_WEBGPU_PREPARE_MATRIX` document, so the browser
+prepares a body set with no browser-side code of its own.
+
+Sharing is reported per pass, not as one aggregate, because the aggregate hides
+the case that matters. The expensive `Main.pass0` shares far less than the cheap
+passes, so a whole-package preparation is a deliberate one-off cost rather than
+the runtime model: prefer lazy per-permutation realization.
+
+Render states are deliberately not realized. A translation unit is stage
+bytecode, semantic bindings and layouts; the body set carries no render states
+at all, so they must come from portable reflection and an engine reading them
+from a unit would be reading a value that does not exist.
+
 To perform the first actual QuadV5 draw, package the same explicitly selected
 PPT-on `Main.pass0` body from DX11 and DX12, then pass both CEWGPU files:
 
