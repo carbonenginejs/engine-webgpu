@@ -432,6 +432,251 @@ async function PublishPreparedSampler(webgpu, payload, name, samplerKey)
     return bundle;
 }
 
+const ARRAY_TEXTURE_SOURCE = `
+struct VertexOutput
+{
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+};
+
+@group(0) @binding(0) var arrayTexture: texture_2d_array<f32>;
+@group(0) @binding(1) var arraySampler: sampler;
+
+@vertex
+fn vertexMain(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOutput
+{
+    var output: VertexOutput;
+    output.position = vec4f(position, 0.0, 1.0);
+    output.uv = uv;
+    return output;
+}
+
+@fragment
+fn fragmentMain(input: VertexOutput) -> @location(0) vec4f
+{
+    // The left half samples layer 0 and the right half layer 1, so one draw
+    // proves both layers are addressable and distinct.
+    let layer = select(0, 1, input.uv.x >= 0.5);
+    return textureSampleLevel(arrayTexture, arraySampler, input.uv, layer, 0.0);
+}
+`;
+
+const ARRAY_TEXTURE_WIDTH = 4;
+const ARRAY_TEXTURE_HEIGHT = 2;
+const ARRAY_TEXTURE_LAYER_0 = Object.freeze([ 255, 0, 0, 255 ]);
+const ARRAY_TEXTURE_LAYER_1 = Object.freeze([ 0, 0, 255, 255 ]);
+
+/**
+ * Draw through an engine-created 2d-array texture and assert each layer's
+ * pixels exactly.
+ *
+ * This is a synthetic gate on purpose: it proves array-texture creation, the
+ * array view, and the binding adapter's array branch without depending on any
+ * shader package. Nothing else in the harness could distinguish "the array
+ * binding works" from "the shader happens not to read that layer".
+ *
+ * @param {object} webgpu Engine device.
+ * @returns {Promise<object>} Draw record plus the expected per-layer pixels.
+ */
+async function CreateArrayTextureDraw(webgpu)
+{
+    const device = webgpu.GetDevice();
+    const bundle = await PublishPreparedResourceBundle(webgpu, {
+        label: "engine-webgpu array-texture resources",
+        geometries: {
+            main: {
+                label: "engine-webgpu array-texture geometry",
+                vertexBuffers: [ {
+                    slot: 0,
+                    data: new Float32Array([
+                        -1, -1, 0, 1,
+                         3, -1, 2, 1,
+                        -1,  3, 0, -1
+                    ]),
+                    layout: {
+                        arrayStride: 16,
+                        attributes: [
+                            { shaderLocation: 0, offset: 0, format: "float32x2" },
+                            { shaderLocation: 1, offset: 8, format: "float32x2" }
+                        ]
+                    }
+                } ]
+            }
+        },
+        textures: {
+            "sampled-resource:0:0": {
+                label: "engine-webgpu two-layer array texture",
+                width: 1,
+                height: 1,
+                layers: 2,
+                format: "rgba8unorm",
+                bytesPerRow: 4,
+                data: new Uint8Array([ ...ARRAY_TEXTURE_LAYER_0, ...ARRAY_TEXTURE_LAYER_1 ])
+            }
+        },
+        samplers: {
+            "sampler:0:0": {
+                label: "engine-webgpu array-texture sampler",
+                minFilter: "nearest",
+                magFilter: "nearest",
+                mipmapFilter: "nearest",
+                addressModeU: "clamp-to-edge",
+                addressModeV: "clamp-to-edge"
+            }
+        }
+    }, "array-texture-resources");
+
+    let target = null;
+    let readback = null;
+    try
+    {
+        const geometry = bundle.geometries.main;
+        const arrayTexture = bundle.textures["sampled-resource:0:0"];
+        Assert(arrayTexture, "array-texture fixture is missing its array texture");
+        Assert(
+            arrayTexture.viewDimension === "2d-array",
+            `array-texture fixture created a ${arrayTexture.viewDimension} view`
+        );
+        Assert(arrayTexture.depthOrArrayLayers === 2, "array-texture fixture must carry exactly two layers");
+
+        const pipeline = {
+            key: "arrayTexture.pass0",
+            techniqueName: "arrayTexture",
+            passIndex: 0,
+            renderStates: 0,
+            states: [],
+            shaderModules: [
+                {
+                    key: "arrayTexture.pass0.vertex",
+                    stageName: "vertex",
+                    entryPoint: "vertexMain",
+                    wgsl: ARRAY_TEXTURE_SOURCE
+                },
+                {
+                    key: "arrayTexture.pass0.pixel",
+                    stageName: "pixel",
+                    entryPoint: "fragmentMain",
+                    wgsl: ARRAY_TEXTURE_SOURCE
+                }
+            ],
+            bindGroups: [ {
+                group: 0,
+                bindings: [
+                    {
+                        sourceTruth: "wgsl-layout",
+                        resourceKind: "sampled-resource",
+                        registerSpace: 0,
+                        registerIndex: 0,
+                        group: 0,
+                        binding: 0,
+                        visibility: [ "fragment" ],
+                        dynamic: false,
+                        layout: { texture: { sampleType: "float", viewDimension: "2d-array", multisampled: false } }
+                    },
+                    {
+                        sourceTruth: "wgsl-layout",
+                        resourceKind: "sampler",
+                        registerSpace: 0,
+                        registerIndex: 0,
+                        group: 0,
+                        binding: 1,
+                        visibility: [ "fragment" ],
+                        dynamic: false,
+                        layout: { sampler: { type: "filtering" } }
+                    }
+                ]
+            } ]
+        };
+        const prepared = await webgpu.PreparePipeline(pipeline, { warningsAsErrors: true });
+        const livePipeline = await webgpu.CreateRenderPipeline(prepared, {
+            label: "engine-webgpu array-texture pipeline",
+            vertex: { buffers: geometry.vertexBufferLayouts },
+            fragment: { targets: [ { format: "rgba8unorm" } ] },
+            primitive: { topology: "triangle-list" }
+        });
+        const draw = webgpu.CreateDraw(livePipeline, {
+            geometry,
+            resources: new Map([
+                [ "sampled-resource:0:0", arrayTexture ],
+                [ "sampler:0:0", bundle.samplers["sampler:0:0"] ]
+            ]),
+            draw: { vertexCount: 3 }
+        });
+
+        const bytesPerRow = 256;
+        target = device.createTexture({
+            label: "engine-webgpu array-texture target",
+            size: { width: ARRAY_TEXTURE_WIDTH, height: ARRAY_TEXTURE_HEIGHT, depthOrArrayLayers: 1 },
+            format: "rgba8unorm",
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
+        });
+        readback = device.createBuffer({
+            label: "engine-webgpu array-texture readback",
+            size: bytesPerRow * ARRAY_TEXTURE_HEIGHT,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+        });
+        const encoder = device.createCommandEncoder({ label: "engine-webgpu array-texture encoder" });
+        const pass = encoder.beginRenderPass({
+            label: "engine-webgpu array-texture render pass",
+            colorAttachments: [ {
+                view: target.createView(),
+                clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                loadOp: "clear",
+                storeOp: "store"
+            } ]
+        });
+        webgpu.EncodeDraw(pass, draw);
+        pass.end();
+        encoder.copyTextureToBuffer(
+            { texture: target },
+            { buffer: readback, bytesPerRow, rowsPerImage: ARRAY_TEXTURE_HEIGHT },
+            { width: ARRAY_TEXTURE_WIDTH, height: ARRAY_TEXTURE_HEIGHT, depthOrArrayLayers: 1 }
+        );
+        webgpu.Submit([ encoder.finish() ]);
+        await device.queue.onSubmittedWorkDone();
+
+        await readback.mapAsync(GPUMapMode.READ);
+        const pixels = new Uint8Array(readback.getMappedRange()).slice();
+        readback.unmap();
+
+        let layer0Pixels = 0;
+        let layer1Pixels = 0;
+        for (let y = 0; y < ARRAY_TEXTURE_HEIGHT; y += 1)
+        {
+            for (let x = 0; x < ARRAY_TEXTURE_WIDTH; x += 1)
+            {
+                const offset = (y * bytesPerRow) + (x * 4);
+                const actual = Array.from(pixels.subarray(offset, offset + 4));
+                // uv.x is x/width across the full-screen triangle, so the left
+                // half must read layer 0 and the right half layer 1 exactly.
+                const expected = ((x + 0.5) / ARRAY_TEXTURE_WIDTH) < 0.5
+                    ? ARRAY_TEXTURE_LAYER_0
+                    : ARRAY_TEXTURE_LAYER_1;
+                Assert(
+                    actual.every((value, index) => value === expected[index]),
+                    `array-texture pixel (${x},${y}) is ${actual.join(",")}, expected ${expected.join(",")}`
+                );
+                if (expected === ARRAY_TEXTURE_LAYER_0) layer0Pixels += 1;
+                else layer1Pixels += 1;
+            }
+        }
+        Assert(layer0Pixels > 0 && layer1Pixels > 0, "array-texture gate must sample both layers");
+
+        return {
+            layers: 2,
+            layerPixels: [ layer0Pixels, layer1Pixels ],
+            pixelCount: ARRAY_TEXTURE_WIDTH * ARRAY_TEXTURE_HEIGHT,
+            warningCount: prepared.diagnostics.filter((entry) => entry.type === "warning").length
+        };
+    }
+    finally
+    {
+        readback?.destroy();
+        target?.destroy();
+        bundle.Destroy();
+    }
+}
+
 async function CreatePhaseZeroDraw(webgpu)
 {
     const bundle = await PublishPreparedResourceBundle(webgpu, {
@@ -6075,6 +6320,7 @@ async function RunHarness()
         const compiledCandidate = await CompileCandidate(device);
         const preparedPackage = await PreparePackage(webgpu);
         const preparedMatrix = await PrepareMatrix(webgpu);
+        const arrayTextureDraw = await CreateArrayTextureDraw(webgpu);
         generatedDraw = await CreateGeneratedDraw(webgpu);
         phaseZeroDraw = generatedDraw ? null : await CreatePhaseZeroDraw(webgpu);
         quadV5Comparison = await RunQuadV5Comparison(webgpu);
@@ -6166,6 +6412,7 @@ async function RunHarness()
             preparedPackage,
             preparedMatrix,
             generatedDraw: generatedDraw?.result || null,
+            arrayTextureDraw,
             geometryAdapter: "device-owned",
             textureAdapter: "device-owned uncompressed 2D",
             samplerAdapter: "device-owned",

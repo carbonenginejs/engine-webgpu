@@ -1244,6 +1244,15 @@ async function Main()
         {
             console.log(`Uploaded, bound, and sampled ${result.textureAdapter} texture resources.`);
         }
+        if (result.arrayTextureDraw)
+        {
+            const arrayDraw = result.arrayTextureDraw;
+            console.log(
+                `Created, bound, and sampled a device-owned ${arrayDraw.layers}-layer 2d-array texture; ` +
+                `${arrayDraw.pixelCount} pixels matched exactly per layer ` +
+                `(${arrayDraw.layerPixels.join(" + ")}) with 0 WGSL warnings.`
+            );
+        }
         if (result.samplerAdapter)
         {
             console.log(`Normalized, cached, and bound ${result.samplerAdapter} sampler resources.`);

@@ -366,7 +366,11 @@ function validateGeometryLimits(plan, device)
 function normalizeTexture(options)
 {
   if (!options || typeof options !== "object" || Array.isArray(options)) fail("texture options must be an object");
-  assertKeys(options, new Set([ "label", "width", "height", "format", "bytesPerRow", "data" ]), "texture");
+  assertKeys(
+    options,
+    new Set([ "label", "width", "height", "layers", "viewDimension", "format", "bytesPerRow", "data" ]),
+    "texture"
+  );
   if (options.label !== undefined && (typeof options.label !== "string" || !options.label))
   {
     fail("texture label must be a non-empty string");
@@ -391,7 +395,27 @@ function normalizeTexture(options)
   {
     fail(`texture bytesPerRow must contain ${activeRowBytes} active bytes and align to the texel size`);
   }
-  const expectedBytes = options.bytesPerRow * options.height;
+  const layers = own(options, "layers") && options.layers !== undefined ? options.layers : 1;
+  if (!Number.isSafeInteger(layers) || layers < 1 || layers > MAX_GPU_SIZE_32)
+  {
+    fail("texture layers must be a positive GPUSize32 value");
+  }
+  // A 1-layer array view is legal and distinct from a plain 2D view: a shader
+  // declaring texture_2d_array<f32> needs the array view whatever the layer
+  // count, so the view dimension is explicit rather than inferred from it.
+  const viewDimension = own(options, "viewDimension") && options.viewDimension !== undefined
+    ? options.viewDimension
+    : (layers > 1 ? "2d-array" : "2d");
+  if (viewDimension !== "2d" && viewDimension !== "2d-array")
+  {
+    fail(`texture viewDimension ${String(options.viewDimension || "<empty>")} is not supported;`
+      + " supported dimensions are 2d and 2d-array");
+  }
+  if (viewDimension === "2d" && layers > 1)
+  {
+    fail("texture viewDimension 2d cannot cover multiple layers");
+  }
+  const expectedBytes = options.bytesPerRow * options.height * layers;
   if (!Number.isSafeInteger(expectedBytes)) fail("texture byte length exceeds the supported JavaScript range");
   const data = binaryView(options.data, "texture");
   if (data.byteLength !== expectedBytes)
@@ -402,6 +426,8 @@ function normalizeTexture(options)
     label: options.label || "texture",
     width: options.width,
     height: options.height,
+    layers,
+    viewDimension,
     formatName: options.format,
     format,
     bytesPerRow: options.bytesPerRow,
@@ -415,6 +441,11 @@ function validateTextureLimits(plan, device)
   if (Number.isFinite(limit) && (plan.width > limit || plan.height > limit))
   {
     fail(`texture dimensions exceed device maxTextureDimension2D ${limit}`);
+  }
+  const layerLimit = device?.limits?.maxTextureArrayLayers;
+  if (Number.isFinite(layerLimit) && plan.layers > layerLimit)
+  {
+    fail(`texture layers exceed device maxTextureArrayLayers ${layerLimit}`);
   }
 }
 
@@ -912,9 +943,16 @@ function resolveBindingResource(owner, entry, resource)
     const viewDimension = layout.viewDimension ?? "2d";
     const multisampled = layout.multisampled ?? false;
     const sampleType = layout.sampleType ?? "float";
-    if (viewDimension !== "2d" || multisampled || sampleType !== "float")
+    if ((viewDimension !== "2d" && viewDimension !== "2d-array") || multisampled || sampleType !== "float")
     {
       fail(`${entry.identity} is incompatible with the uncompressed 2D texture adapter`);
+    }
+    // The view's dimension is fixed at creation, so a layout asking for the
+    // other one cannot be satisfied by reinterpreting it.
+    if ((textureRecord.viewDimension ?? "2d") !== viewDimension)
+    {
+      fail(`${entry.identity} requires a ${viewDimension} texture view,`
+        + ` but the bound texture provides ${textureRecord.viewDimension ?? "2d"}`);
     }
     return { resource: textureRecord.view, adapterRecord: textureRecord };
   }
@@ -1389,21 +1427,25 @@ export class CjsWebGPUDevice
       {
         gpuTexture = device.createTexture({
           label: plan.label,
-          size: { width: plan.width, height: plan.height, depthOrArrayLayers: 1 },
+          size: { width: plan.width, height: plan.height, depthOrArrayLayers: plan.layers },
           mipLevelCount: 1,
           sampleCount: 1,
+          // A WebGPU array texture is a 2d texture with more layers, not a 3d
+          // one; only the view dimension changes.
           dimension: "2d",
           format: plan.formatName,
           usage: usage.TEXTURE_BINDING | usage.COPY_DST
         });
+        // Layers are contiguous slabs of `bytesPerRow * height`, so one write
+        // covers every layer.
         device.queue.writeTexture(
           { texture: gpuTexture },
           plan.data,
           { offset: 0, bytesPerRow: plan.bytesPerRow, rowsPerImage: plan.height },
-          { width: plan.width, height: plan.height, depthOrArrayLayers: 1 }
+          { width: plan.width, height: plan.height, depthOrArrayLayers: plan.layers }
         );
         if (typeof gpuTexture?.createView !== "function") fail("created texture cannot create a view");
-        const view = gpuTexture.createView({ label: `${plan.label}.view`, dimension: "2d" });
+        const view = gpuTexture.createView({ label: `${plan.label}.view`, dimension: plan.viewDimension });
         const validationPromise = popScope("validation");
         const memoryPromise = popScope("memory");
         const [ validationError, memoryError ] = await Promise.all([ validationPromise, memoryPromise ]);
@@ -1422,10 +1464,11 @@ export class CjsWebGPUDevice
           generation,
           width: plan.width,
           height: plan.height,
-          depthOrArrayLayers: 1,
+          depthOrArrayLayers: plan.layers,
           mipLevelCount: 1,
           sampleCount: 1,
           dimension: "2d",
+          viewDimension: plan.viewDimension,
           format: plan.formatName,
           isSRGB: plan.format.isSRGB,
           Destroy: () => this.DestroyTexture(texture)
@@ -1436,6 +1479,7 @@ export class CjsWebGPUDevice
           generation,
           texture: gpuTexture,
           view,
+          viewDimension: plan.viewDimension,
           destroyed: false
         });
         return texture;

@@ -214,6 +214,24 @@ PPT-on `Main.pass0` body from DX11 and DX12, then pass both CEWGPU files:
 npm.cmd run test:webgpu:required -- --draw-quadv5 .\artifacts\quadv5-ppt-on-dx11.cewgpu .\artifacts\quadv5-ppt-on-dx12.cewgpu
 ```
 
+### Array textures
+
+Every harness run creates a device-owned two-layer `2d-array` texture, binds it,
+samples both layers in one draw, and asserts each layer's pixels exactly. The
+gate is synthetic on purpose: it distinguishes "the array binding works" from
+"the shader happens not to read that layer", which no package-driven gate can.
+
+`CreateTexture` takes `layers` and an explicit `viewDimension`. A single-layer
+array view is legal and distinct from a plain 2D view, because a shader
+declaring `texture_2d_array<f32>` needs the array view whatever its layer count.
+Layers are contiguous slabs of `bytesPerRow * height`, so one upload covers all
+of them, and a layout asking for the dimension the view was not created with
+fails closed — a view's dimension is fixed at creation.
+
+This is a prerequisite for the High `.sm_depth` tier, not only for resource
+transforms: the High Quad V5 `Main` pass binds `LightProfileArray` as a plain
+`texture_2d_array<f32>` with no transform.
+
 ### Draw-fixture identity, and why no `.cewgpu` is committed
 
 A `.cewgpu` is a derived artifact, fully determined by the source bytes at a

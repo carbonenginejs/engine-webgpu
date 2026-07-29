@@ -1020,6 +1020,108 @@ test("CjsWebGPUDevice preserves linear and sRGB QuadV5 texture bytes", async () 
   assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 3);
 });
 
+test("CjsWebGPUDevice creates 2d-array textures as layered 2d textures with an array view", async () =>
+{
+  const fake = fakeDevice("texture-array");
+  const webgpu = new CjsWebGPUDevice({
+    device: fake.device,
+    shaderStage: SHADER_STAGE,
+    textureUsage: TEXTURE_USAGE
+  });
+
+  const layer0 = [ 255, 0, 0, 255 ];
+  const layer1 = [ 0, 0, 255, 255 ];
+  const texture = await webgpu.CreateTexture({
+    label: "array texture",
+    width: 1,
+    height: 1,
+    layers: 2,
+    format: "rgba8unorm",
+    bytesPerRow: 4,
+    data: new Uint8Array([ ...layer0, ...layer1 ])
+  });
+
+  assert.equal(texture.depthOrArrayLayers, 2);
+  // An array texture is a 2d texture with more layers; only the view differs.
+  assert.equal(texture.dimension, "2d");
+  assert.equal(texture.viewDimension, "2d-array");
+
+  const [ , descriptor ] = fake.device.calls.find(([ kind ]) => kind === "createTexture");
+  assert.equal(descriptor.dimension, "2d");
+  assert.equal(descriptor.size.depthOrArrayLayers, 2);
+  const [ , view ] = fake.device.calls.find(([ kind ]) => kind === "createTextureView");
+  assert.equal(view.dimension, "2d-array");
+
+  // Layers are contiguous slabs, so one write covers all of them.
+  const uploads = fake.device.calls.filter(([ kind ]) => kind === "writeTexture");
+  assert.equal(uploads.length, 1);
+  assert.deepEqual(Array.from(uploads[0][2]), [ ...layer0, ...layer1 ]);
+  assert.equal(uploads[0][4].depthOrArrayLayers, 2);
+  assert.equal(uploads[0][3].rowsPerImage, 1);
+
+  // A single-layer array view is legal and distinct from a plain 2d view.
+  const singleLayerArray = await webgpu.CreateTexture({
+    label: "single layer array",
+    width: 1,
+    height: 1,
+    viewDimension: "2d-array",
+    format: "rgba8unorm",
+    bytesPerRow: 4,
+    data: new Uint8Array(layer0)
+  });
+  assert.equal(singleLayerArray.depthOrArrayLayers, 1);
+  assert.equal(singleLayerArray.viewDimension, "2d-array");
+
+  const plain = await webgpu.CreateTexture(textureInputs());
+  assert.equal(plain.viewDimension, "2d");
+});
+
+test("CjsWebGPUDevice array-texture creation and binding fail closed on a mismatch", async () =>
+{
+  const fake = fakeDevice("texture-array-errors");
+  const webgpu = new CjsWebGPUDevice({
+    device: fake.device,
+    shaderStage: SHADER_STAGE,
+    textureUsage: TEXTURE_USAGE
+  });
+
+  const arrayInputs = (overrides = {}) => ({
+    label: "array texture",
+    width: 1,
+    height: 1,
+    layers: 2,
+    format: "rgba8unorm",
+    bytesPerRow: 4,
+    data: new Uint8Array(8),
+    ...overrides
+  });
+
+  await assert.rejects(
+    webgpu.CreateTexture(arrayInputs({ layers: 0 })),
+    /layers must be a positive GPUSize32/iu
+  );
+  // Layer count multiplies the expected byte length; a 2D-sized payload is short.
+  await assert.rejects(
+    webgpu.CreateTexture(arrayInputs({ data: new Uint8Array(4) })),
+    /must be exactly 8 bytes/iu
+  );
+  await assert.rejects(
+    webgpu.CreateTexture(arrayInputs({ viewDimension: "2d" })),
+    /viewDimension 2d cannot cover multiple layers/iu
+  );
+  await assert.rejects(
+    webgpu.CreateTexture(arrayInputs({ viewDimension: "cube" })),
+    /viewDimension cube is not supported/iu
+  );
+
+  fake.device.limits = { maxTextureArrayLayers: 1 };
+  await assert.rejects(
+    webgpu.CreateTexture(arrayInputs()),
+    /layers exceed device maxTextureArrayLayers 1/iu
+  );
+  fake.device.limits = {};
+});
+
 test("CjsWebGPUDevice texture validation and native error scopes fail closed", async () =>
 {
   const fake = fakeDevice("texture-errors");
