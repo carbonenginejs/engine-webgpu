@@ -175,6 +175,38 @@ bytecode, semantic bindings and layouts; the body set carries no render states
 at all, so they must come from portable reflection and an engine reading them
 from a unit would be reading a value that does not exist.
 
+### Proving the WGSB path equals the legacy path
+
+`test/wgsb-equivalence.test.js` compares, for the selected body, the
+WGSB-derived `pipeline.ToJSON()` against the legacy WGSL-chunk-derived one. It
+is stronger than a pixel comparison and costs seconds rather than a device:
+both paths converge on a JSON blob consumed by byte-identical browser code, so
+equality of the GPU-determining fields deterministically implies pixel equality,
+and a JSON diff names the discrepant field.
+
+It asserts three things rather than one:
+
+- **body identity** — the permutation index is resolved from the selected
+  package's own recorded selections through the PGRF axes and must equal the
+  index that package baked in. Without this a green comparison could be luck,
+  since any body compares equal to itself;
+- **GPU-determining equality** — WGSL payload and entry point per stage, and
+  every canonical binding's group, binding, identity, scope identity,
+  visibility, layout descriptor and structure stride;
+- **bounded divergence** — everything that differs must be an enumerated
+  analysis-only field. A WGSB unit is stage bytecode, semantic bindings and
+  layouts; Carbon reflection and render states live in ANLS and portable
+  reflection. Enumerating them means a future drift into a GPU-determining
+  field cannot hide inside "they always differed".
+
+It needs real packages, which are derived artifacts and deliberately not
+committed, so it skips with instructions unless `CJS_WEBGPU_FIXTURE_DIR` points
+at a directory holding both the selected and all-body packages:
+
+```powershell
+$env:CJS_WEBGPU_FIXTURE_DIR = "<dir>"; npm.cmd test
+```
+
 To perform the first actual QuadV5 draw, package the same explicitly selected
 PPT-on `Main.pass0` body from DX11 and DX12, then pass both CEWGPU files:
 
