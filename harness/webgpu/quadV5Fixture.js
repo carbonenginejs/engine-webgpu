@@ -526,6 +526,20 @@ function hasExactSamplerState(state, isDynamic)
     && state.isDynamic === isDynamic;
 }
 
+// A DX12 immutable root-signature sampler is a D3D12_STATIC_SAMPLER_DESC: the
+// same filter/address/LOD state, an enum borderColor rather than a float4, and
+// no dynamic flag at all. Absence of `isDynamic` is part of the contract, so it
+// is asserted rather than defaulted.
+function hasStaticSamplerState(state)
+{
+  return state?.comparison === false
+    && state.minFilter === 3 && state.magFilter === 2 && state.mipFilter === 2
+    && state.addressU === 1 && state.addressV === 1 && state.addressW === 3
+    && state.mipLODBias === 0 && state.maxAnisotropy === 16
+    && state.borderColor === 0
+    && state.isDynamic === undefined;
+}
+
 function assertAnalysisResources(record, resources, samplers, skinned, strictHeat)
 {
   const pixel = record.analysis?.stages?.filter((entry) =>
@@ -587,8 +601,7 @@ function assertAnalysisResources(record, resources, samplers, skinned, strictHea
     }
   }
   const reflectedSamplers = bindings.filter((entry) => entry?.kind === "sampler");
-  const expectedSamplerCount = record.backend === "dx12" ? samplers.length - 1 : samplers.length;
-  if (strictHeat && reflectedSamplers.length !== expectedSamplerCount)
+  if (strictHeat && reflectedSamplers.length !== samplers.length)
   {
     fail("pixel samplers must match the exact skinned-heat inventory");
   }
@@ -598,7 +611,20 @@ function assertAnalysisResources(record, resources, samplers, skinned, strictHea
       && entry.registerSpace === 0 && entry.registerIndex === expected.registerIndex);
     if (expected.registerIndex === 0 && record.backend === "dx12")
     {
-      if (matches.length !== 0) fail(`${expected.identity} has unexpected DX12 sampler reflection`);
+      // DX12 declares the unnamed s0 as an immutable root-signature sampler,
+      // so it reflects through the signature rather than a stage register and
+      // carries the D3D12 enum borderColor instead of a float4. That is a real
+      // backend difference, not missing reflection - assert its exact shape.
+      const signature = matches[0];
+      const state = signature?.carbon?.sampler;
+      if (matches.length !== 1
+        || (signature.carbon?.name ?? null) !== null
+        || signature.dynamic !== false
+        || signature.sourceTruth !== "carbon-signature-sampler"
+        || !hasStaticSamplerState(state))
+      {
+        fail(`${expected.identity} has unexpected DX12 signature-sampler reflection`);
+      }
       continue;
     }
     const reflectedName = matches[0]?.carbon?.name ?? null;

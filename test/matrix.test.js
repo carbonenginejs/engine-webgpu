@@ -241,9 +241,13 @@ test("effect matrix conversion prepares each ready variant once while preserving
   legacy.backends.dx11.passVariants[0].wgsl.formatVersion = 1;
   assert.equal(buildMatrixPipelines(legacy).uniquePipelines, 1);
 
+  const current = qualifiedMatrix();
+  current.backends.dx11.passVariants[0].wgsl.formatVersion = 3;
+  assert.equal(buildMatrixPipelines(current).uniquePipelines, 1);
+
   const unsupported = qualifiedMatrix();
-  unsupported.backends.dx11.passVariants[0].wgsl.formatVersion = 3;
-  assert.throws(() => buildMatrixPipelines(unsupported), /version 1 or 2 CJS_WGSL_SET/u);
+  unsupported.backends.dx11.passVariants[0].wgsl.formatVersion = 4;
+  assert.throws(() => buildMatrixPipelines(unsupported), /version 1, 2 or 3 CJS_WGSL_SET/u);
 });
 
 test("effect matrix conversion validates and skips unsupported geometry pass variants", () =>

@@ -483,9 +483,9 @@ test("render packages normalize only the inactive zero thread-group sentinel", (
   );
 });
 
-test("structured WGSL package input accepts only set versions 1 and 2", () =>
+test("structured WGSL package input accepts only set versions 1, 2 and 3", () =>
 {
-  for (const formatVersion of [ 1, 2 ])
+  for (const formatVersion of [ 1, 2, 3 ])
   {
     const pkg = CjsWebGPUPackage.from({
       wgsl: { format: "CJS_WGSL_SET", formatVersion, shaders: [], layouts: [] }
@@ -493,8 +493,8 @@ test("structured WGSL package input accepts only set versions 1 and 2", () =>
     assert.equal(pkg.wgsl.formatVersion, formatVersion);
   }
   assert.throws(() => CjsWebGPUPackage.from({
-    wgsl: { format: "CJS_WGSL_SET", formatVersion: 3, shaders: [], layouts: [] }
-  }), /CJS_WGSL_SET version 1 or 2/u);
+    wgsl: { format: "CJS_WGSL_SET", formatVersion: 4, shaders: [], layouts: [] }
+  }), /CJS_WGSL_SET version 1, 2 or 3/u);
   const version2Binding = {
     identity: "sampler:0:0",
     scopeIdentity: "sampler:0:0@fragment",
@@ -575,6 +575,105 @@ test("structured WGSL package input accepts only set versions 1 and 2", () =>
   const legacy = version2Package(legacyBinding);
   legacy.wgsl.formatVersion = 1;
   assert.equal(CjsWebGPUPackage.from(legacy).pipelines[0].bindGroups[0].bindings[0].scopeIdentity, "sampler:0:0");
+});
+
+test("version 3 WGSL sets keep version 2 identity strictness and reject resource transforms", () =>
+{
+  const binding = {
+    identity: "sampler:0:0",
+    scopeIdentity: "sampler:0:0@fragment",
+    resourceKind: "sampler",
+    generatedSymbol: "s0",
+    registerSpace: 0,
+    registerIndex: 0,
+    group: 0,
+    binding: 0,
+    visibility: [ "fragment" ],
+    type: "sampler",
+    sampler: { type: "filtering" }
+  };
+  const version3Package = (entry, wgslExtras = {}) => ({
+    wgsl: {
+      format: "CJS_WGSL_SET",
+      formatVersion: 3,
+      shaders: [],
+      layouts: [ { key: "Main.pass0", bindGroups: [ { group: 0, bindings: [ entry ] } ] } ],
+      ...wgslExtras
+    },
+    stages: [ {
+      key: "Main.pass0.pixel",
+      techniqueName: "Main",
+      passIndex: 0,
+      stageName: "pixel",
+      stageType: 1,
+      bindings: []
+    } ]
+  });
+
+  assert.equal(
+    CjsWebGPUPackage.from(version3Package(binding)).pipelines[0].bindGroups[0].bindings[0].scopeIdentity,
+    "sampler:0:0@fragment"
+  );
+
+  const missingIdentity = { ...binding };
+  delete missingIdentity.identity;
+  assert.throws(
+    () => CjsWebGPUPackage.from(version3Package(missingIdentity)),
+    /version 3 binding sampler:0:0 requires an explicit D3D identity/u
+  );
+
+  const missingScope = { ...binding };
+  delete missingScope.scopeIdentity;
+  assert.throws(
+    () => CjsWebGPUPackage.from(version3Package(missingScope)),
+    /version 3 binding sampler:0:0 requires an explicit scope identity/u
+  );
+
+  assert.throws(
+    () => CjsWebGPUPackage.from(version3Package({ ...binding, scopeIdentity: "sampler:0:0" })),
+    /does not cover multiple stages/u
+  );
+
+  // Fail closed on the feature, never the version: a source-declared
+  // texture_2d_array carries no transform metadata and stays realizable.
+  const arrayBinding = {
+    ...binding,
+    identity: "sampled-resource:0:13",
+    scopeIdentity: "sampled-resource:0:13@fragment",
+    resourceKind: "sampled-resource",
+    generatedSymbol: "t13",
+    registerIndex: 13,
+    binding: 1,
+    type: "texture_2d_array<f32>",
+    texture: { sampleType: "float", viewDimension: "2d-array" }
+  };
+  delete arrayBinding.sampler;
+  assert.equal(
+    CjsWebGPUPackage.from(version3Package(arrayBinding)).pipelines[0].bindGroups[0].bindings[0].identity,
+    "sampled-resource:0:13"
+  );
+
+  assert.throws(
+    () => CjsWebGPUPackage.from(version3Package({ ...arrayBinding, transformId: "detail-0" })),
+    /transformed binding 0:1 is not supported by this engine/u
+  );
+  assert.throws(
+    () => CjsWebGPUPackage.from(version3Package({ ...arrayBinding, arrayLayerCount: 2 })),
+    /transformed binding 0:1 is not supported by this engine/u
+  );
+  assert.throws(
+    () => CjsWebGPUPackage.from(version3Package(binding, {
+      resourceTransforms: [ { id: "detail-0", kind: "texture-2d-array" } ]
+    })),
+    /wgsl resource transforms are not supported by this engine/u
+  );
+
+  // A null placeholder is absence, not a transform.
+  assert.equal(
+    CjsWebGPUPackage.from(version3Package({ ...arrayBinding, transformId: null, arrayLayerCount: null }))
+      .pipelines[0].bindGroups[0].bindings[0].identity,
+    "sampled-resource:0:13"
+  );
 });
 
 test("canonical WGSL layouts own numeric bind groups and survive missing ANLS metadata", () =>

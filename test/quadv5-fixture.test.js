@@ -135,6 +135,24 @@ function samplerState(isDynamic)
   };
 }
 
+// DX12 declares s0 as an immutable root-signature sampler: an enum borderColor
+// instead of a float4, and no dynamic flag at all.
+function staticSamplerState()
+{
+  return {
+    comparison: false,
+    minFilter: 3,
+    magFilter: 2,
+    mipFilter: 2,
+    addressU: 1,
+    addressV: 1,
+    addressW: 3,
+    mipLODBias: 0,
+    maxAnisotropy: 16,
+    borderColor: 0
+  };
+}
+
 function heatDetailVertexWgsl()
 {
   return `struct VertexInput {
@@ -269,7 +287,7 @@ function analysisPixelBindings(backend, heat = false, heatDetail = false)
     }
   }));
   const samplers = [
-    ...(backend === "dx11" ? [ {
+    backend === "dx11" ? {
       kind: "sampler",
       registerSpace: 0,
       registerIndex: 0,
@@ -277,7 +295,17 @@ function analysisPixelBindings(backend, heat = false, heatDetail = false)
         name: null,
         sampler: samplerState(false)
       }
-    } ] : []),
+    } : {
+      kind: "sampler",
+      registerSpace: 0,
+      registerIndex: 0,
+      dynamic: false,
+      sourceTruth: "carbon-signature-sampler",
+      carbon: {
+        name: null,
+        sampler: staticSamplerState()
+      }
+    },
     {
       kind: "sampler",
       registerSpace: 0,
@@ -974,6 +1002,63 @@ test("QuadV5 fixture maps backend-local registers through reflected semantic nam
     .find((entry) => entry.kind === "sampler" && entry.registerIndex === 0)
     .carbon.sampler.maxAnisotropy = 1;
   assert.throws(() => validateQuadV5PackageRecord(wrongStaticSampler), /unexpected static sampler state/u);
+});
+
+test("QuadV5 fixture requires the exact DX12 immutable signature sampler", () =>
+{
+  const signatureSampler = (record) => record.analysis.stages[1].bindings
+    .find((entry) => entry.kind === "sampler" && entry.registerIndex === 0);
+
+  const missing = structuredClone(validRecord("dx12"));
+  missing.analysis.stages[1].bindings = missing.analysis.stages[1].bindings
+    .filter((entry) => !(entry.kind === "sampler" && entry.registerIndex === 0));
+  assert.throws(
+    () => validateQuadV5PackageRecord(missing),
+    /unexpected DX12 signature-sampler reflection/u
+  );
+
+  const wrongTruth = structuredClone(validRecord("dx12"));
+  signatureSampler(wrongTruth).sourceTruth = "carbon-stage-register";
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongTruth),
+    /unexpected DX12 signature-sampler reflection/u
+  );
+
+  const wrongDynamic = structuredClone(validRecord("dx12"));
+  signatureSampler(wrongDynamic).dynamic = true;
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongDynamic),
+    /unexpected DX12 signature-sampler reflection/u
+  );
+
+  const wrongBorderColor = structuredClone(validRecord("dx12"));
+  signatureSampler(wrongBorderColor).carbon.sampler.borderColor = [ 0, 0, 0, 0 ];
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongBorderColor),
+    /unexpected DX12 signature-sampler reflection/u
+  );
+
+  // A dynamic flag on an immutable sampler is a contradiction, not a default.
+  const dynamicFlagged = structuredClone(validRecord("dx12"));
+  signatureSampler(dynamicFlagged).carbon.sampler.isDynamic = false;
+  assert.throws(
+    () => validateQuadV5PackageRecord(dynamicFlagged),
+    /unexpected DX12 signature-sampler reflection/u
+  );
+
+  const named = structuredClone(validRecord("dx12"));
+  signatureSampler(named).carbon.name = "Sampler0";
+  assert.throws(
+    () => validateQuadV5PackageRecord(named),
+    /unexpected DX12 signature-sampler reflection/u
+  );
+
+  const wrongFilter = structuredClone(validRecord("dx12"));
+  signatureSampler(wrongFilter).carbon.sampler.maxAnisotropy = 1;
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongFilter),
+    /unexpected DX12 signature-sampler reflection/u
+  );
 });
 
 test("QuadV5 fixture rejects binding and MRT drift", () =>

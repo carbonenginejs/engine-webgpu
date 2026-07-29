@@ -1,0 +1,69 @@
+{
+  "manifest": "CJS_ENGINE_WEBGPU_DRAW_FIXTURES",
+  "manifestVersion": 1,
+  "gate": "npm run test:webgpu:required -- --draw-quadv5 <dx11.cewgpu> <dx12.cewgpu>",
+  "rationale": "A .cewgpu is a derived artifact, fully determined by (source bytes at a pinned build id + compiler version). Storing the package duplicates a guarantee the compiler already gives and rots silently when the compiler moves. This manifest pins the identity instead: rebuild, compare packageSha256, and a compiler change announces itself as a reviewable manifest diff. The rendered target bytes are pinned because they are the only part that needs a GPU to reproduce.",
+  "sourcePolicy": "Source .sm_lo/.sm_hi/.sm_depth bytes are CCP game files. Never commit, fixture, or publish them. Fetch through tools-core at the pinned build id.",
+  "goldenTargets": {
+    "path": "unpacked_quadv5.sm_hi-ppt-main.golden.png",
+    "capture": "--capture-quadv5 <path>",
+    "targetWidth": 64,
+    "targetHeight": 64,
+    "renderTargets": 2,
+    "device": "Chrome (channel: chrome) + Dawn/SwiftShader"
+  },
+  "compiler": {
+    "package": "@carbonenginejs/runtime-resource",
+    "installedVersion": "0.12.0",
+    "backendPackage": "@carbonenginejs/runtime-resource/formats/webgpu",
+    "backendPackageVersion": "0.11.1",
+    "translator": "dxbc-js-wgsl",
+    "translatorVersion": "0.11.1"
+  },
+  "fixtures": [
+    {
+      "id": "quadv5-ppt-main",
+      "family": "Quad V5",
+      "variant": "static",
+      "packing": "unpacked",
+      "tier": "medium",
+      "tierSuffix": "sm_hi",
+      "buildId": "3444265",
+      "bodyIndex": 4,
+      "bodyMode": "selected",
+      "technique": "Main",
+      "passIndex": 0,
+      "stages": [ "vertex", "pixel" ],
+      "infoVersion": 3,
+      "wgslSetVersion": 3,
+      "layoutBindings": 19,
+      "resourceTransforms": 0,
+      "permutation": {
+        "BINDLESS_RENDERING": "BINDLESS_RENDERING_DISABLED",
+        "SPACE_OBJECT_CLIPPING": "SOC_DISABLED",
+        "SPACE_OBJECT_PPT_ENABLED": "SOPPT_ENABLED",
+        "SPACE_OBJECT_TRANSPARENCY": "SOT_OPAQUE",
+        "V5_DEBUG": "OFF",
+        "SPACE_OBJECT_INSTANCED_ATTACHMENT": "SOIA_DISABLED",
+        "BLEND_MODE": "BLEND_MODE_OVERLAY"
+      },
+      "backends": [
+        {
+          "backend": "dx11",
+          "sourceLogicalPath": "res:/graphics/effect.dx11/managed/space/spaceobject/v5/quad/unpacked_quadv5.sm_hi",
+          "sourceByteLength": 1217577,
+          "sourceSha256": "29d9410db0f207d6b6bbf3abb0e0b1c5cbe3bce938901406e1a7d84af2b47b72",
+          "packageSha256": "d232bf23f34a6589aa6f962e31fa8c6cb94a1ffaefb296021ae63b69306511bd",
+          "packageByteLength": 5445111
+        },
+        {
+          "backend": "dx12",
+          "sourceLogicalPath": "res:/graphics/effect.dx12/managed/space/spaceobject/v5/quad/unpacked_quadv5.sm_hi",
+          "sourceSha256": "02d41e5ab2c7e06f400af65ea2368084912efa210c1594c8cde925c194d48607",
+          "packageSha256": "4527faeeeef49a0ed3aa5b02366e2ef3c5e62f81efd7e1522d402f9ab25e41f3",
+          "packageByteLength": 12320201
+        }
+      ]
+    }
+  ]
+}

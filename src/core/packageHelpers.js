@@ -16,6 +16,8 @@ const TEXTURE_RESOURCE_TYPES = new Map([
   [ 10, "storageTexture" ]
 ]);
 
+const WGSL_SET_VERSIONS = new Set([ 1, 2, 3 ]);
+
 const BUFFER_RESOURCE_TYPES = new Map([
   [ 6, "buffer" ],
   [ 7, "structuredBuffer" ],
@@ -44,16 +46,16 @@ export function normalizePackageShape(value)
 
   const analysis = value.analysis && typeof value.analysis === "object" ? cloneJson(value.analysis) : null;
   const wgsl = value.wgsl && typeof value.wgsl === "object" ? cloneJson(value.wgsl) : null;
-  if (wgsl && (wgsl.format !== "CJS_WGSL_SET"
-    || (wgsl.formatVersion !== 1 && wgsl.formatVersion !== 2)))
+  if (wgsl && (wgsl.format !== "CJS_WGSL_SET" || !WGSL_SET_VERSIONS.has(wgsl.formatVersion)))
   {
-    throw new Error("CjsWebGPUPackage.from: wgsl must be a CJS_WGSL_SET version 1 or 2 document");
+    throw new Error("CjsWebGPUPackage.from: wgsl must be a CJS_WGSL_SET version 1, 2 or 3 document");
   }
   if (wgsl && ((wgsl.shaders !== undefined && !Array.isArray(wgsl.shaders))
     || (wgsl.layouts !== undefined && !Array.isArray(wgsl.layouts))))
   {
     throw new Error("CjsWebGPUPackage.from: structured wgsl shaders and layouts must be arrays when provided");
   }
+  if (wgsl) assertRealizableWgslSet(wgsl);
   const stages = Array.isArray(value.stages)
     ? cloneJson(value.stages)
     : Array.isArray(analysis?.stages)
@@ -83,6 +85,46 @@ export function normalizePackageShape(value)
     shaders,
     layouts
   };
+}
+
+/**
+ * Reject a CJS_WGSL_SET document that declares resource transforms.
+ *
+ * The engine cannot realize a resource transform: the producer removes a
+ * transform's non-zero-layer inputs from the physical layout, so the array
+ * binding cannot be fed binding-by-binding. The discriminator is the feature,
+ * never the document version - transforms are an optional payload, not a
+ * schema version - and never `viewDimension`, because a source-declared
+ * `texture_2d_array` keeps all of its bindings and needs no new machinery.
+ *
+ * @param {object} wgsl Cloned CJS_WGSL_SET document.
+ * @returns {void}
+ */
+function assertRealizableWgslSet(wgsl)
+{
+  if (Array.isArray(wgsl.resourceTransforms) && wgsl.resourceTransforms.length)
+  {
+    throw new Error("CjsWebGPUPackage.from: wgsl resource transforms are not supported by this engine");
+  }
+  for (const layout of Array.isArray(wgsl.layouts) ? wgsl.layouts : [])
+  {
+    for (const groupRecord of Array.isArray(layout?.bindGroups) ? layout.bindGroups : [])
+    {
+      for (const binding of Array.isArray(groupRecord?.bindings) ? groupRecord.bindings : [])
+      {
+        if (binding && (binding.transformId !== undefined && binding.transformId !== null))
+        {
+          throw new Error(`CjsWebGPUPackage.from: transformed binding ${binding.group}:${binding.binding}`
+            + " is not supported by this engine");
+        }
+        if (binding && (binding.arrayLayerCount !== undefined && binding.arrayLayerCount !== null))
+        {
+          throw new Error(`CjsWebGPUPackage.from: transformed binding ${binding.group}:${binding.binding}`
+            + " is not supported by this engine");
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -323,7 +365,7 @@ function buildCanonicalBindGroups(pass, layout, formatVersion)
       const identity = canonicalIdentity(binding, formatVersion);
       const scopeIdentity = canonicalScopeIdentity(binding, formatVersion);
       const visibility = canonicalVisibility(binding.visibility);
-      if (formatVersion === 2 && scopeIdentity === identity && visibility.length < 2)
+      if (formatVersion >= 2 && scopeIdentity === identity && visibility.length < 2)
       {
         throw new Error(`Canonical layout ${layout.key} shared identity ${identity} does not cover multiple stages`);
       }
@@ -371,9 +413,9 @@ function canonicalIdentity(binding, formatVersion = null)
     throw new Error("Canonical layout binding has an invalid D3D identity");
   }
   const identity = `${binding.resourceKind}:${binding.registerSpace}:${binding.registerIndex}`;
-  if (formatVersion === 2 && binding.identity === undefined)
+  if (formatVersion >= 2 && binding.identity === undefined)
   {
-    throw new Error(`Canonical layout version 2 binding ${identity} requires an explicit D3D identity`);
+    throw new Error(`Canonical layout version ${formatVersion} binding ${identity} requires an explicit D3D identity`);
   }
   if (binding.identity !== undefined && binding.identity !== identity)
   {
@@ -385,9 +427,9 @@ function canonicalIdentity(binding, formatVersion = null)
 function canonicalScopeIdentity(binding, formatVersion = null)
 {
   const identity = canonicalIdentity(binding, formatVersion);
-  if (formatVersion === 2 && binding.scopeIdentity === undefined)
+  if (formatVersion >= 2 && binding.scopeIdentity === undefined)
   {
-    throw new Error(`Canonical layout version 2 binding ${identity} requires an explicit scope identity`);
+    throw new Error(`Canonical layout version ${formatVersion} binding ${identity} requires an explicit scope identity`);
   }
   if (binding.scopeIdentity !== undefined
     && (typeof binding.scopeIdentity !== "string" || !binding.scopeIdentity))

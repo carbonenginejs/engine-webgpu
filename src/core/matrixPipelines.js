@@ -6,6 +6,7 @@ function fail(message)
 }
 
 const BACKEND_NAMES = Object.freeze([ "dx11", "dx12" ]);
+const WGSL_SET_VERSIONS = new Set([ 1, 2, 3 ]);
 const WGSL_STAGE_METADATA = Object.freeze({
   vertex: Object.freeze({ stage: "vertex", stageType: 0 }),
   pixel: Object.freeze({ stage: "fragment", stageType: 1 }),
@@ -51,9 +52,9 @@ function validateReadyWgsl(variant, pipelineKind = null)
   const passKey = `${variant.techniqueName}.pass${variant.passIndex}`;
   if (variant.passKey !== passKey) fail(`${variant.id} pass key does not match its technique/pass`);
   const wgsl = variant.wgsl;
-  if (wgsl?.format !== "CJS_WGSL_SET" || (wgsl.formatVersion !== 1 && wgsl.formatVersion !== 2))
+  if (wgsl?.format !== "CJS_WGSL_SET" || !WGSL_SET_VERSIONS.has(wgsl.formatVersion))
   {
-    fail(`${passKey} ready variant is not a version 1 or 2 CJS_WGSL_SET`);
+    fail(`${passKey} ready variant is not a version 1, 2 or 3 CJS_WGSL_SET`);
   }
   const shaders = Array.isArray(wgsl.shaders) ? wgsl.shaders : [];
   const kind = pipelineKind || readyPipelineKind(

@@ -151,6 +151,38 @@ PPT-on `Main.pass0` body from DX11 and DX12, then pass both CEWGPU files:
 npm.cmd run test:webgpu:required -- --draw-quadv5 .\artifacts\quadv5-ppt-on-dx11.cewgpu .\artifacts\quadv5-ppt-on-dx12.cewgpu
 ```
 
+### Draw-fixture identity, and why no `.cewgpu` is committed
+
+A `.cewgpu` is a derived artifact, fully determined by the source bytes at a
+pinned EVE build id plus the compiler version. Committing one duplicates a
+guarantee the compiler already gives, costs megabytes that git history cannot
+reclaim without a rewrite, and rots silently: a stored package keeps passing a
+gate long after it stops representing what the compiler produces, which reads as
+green while proving nothing.
+
+`test/fixtures/quadv5/manifest.json` pins the identity instead — per fixture and
+backend: source logical path, pinned build id, compiler version, source sha256,
+and package sha256 — alongside the rendered golden target bytes, which are the
+only part that needs a GPU to reproduce. Rebuild, compare `packageSha256`, and a
+compiler change announces itself as a reviewable manifest diff rather than a
+silent behavior change. The build is deterministic: two independent builds of
+the same source at the same compiler version produce byte-identical packages.
+
+Source `.sm_lo`/`.sm_hi`/`.sm_depth` bytes are CCP game files. Never commit,
+fixture, or publish them; fetch them through tools-core at the pinned build id.
+
+`--draw-quadv5` currently encodes the **medium** `.sm_hi` (or `.sm_lo`) body-4
+contract: five uniform buffers, 11 fragment textures and three fragment
+samplers, 19 canonical bindings. The corresponding High `.sm_depth` body has 25
+canonical bindings, so gating it needs a second inventory and its own semantic
+fixture values, not a tier-string change. Do not report this medium gate as
+High-tier evidence.
+
+DX12 declares the unnamed `s0` as an immutable root-signature sampler, so it
+reflects through the effect signature (`sourceTruth: carbon-signature-sampler`,
+D3D12 enum `borderColor`, no dynamic flag) rather than through a stage register
+as DX11 does. Both shapes are asserted exactly; neither is optional.
+
 Use the skinned family gate with the corresponding pair:
 
 ```powershell
