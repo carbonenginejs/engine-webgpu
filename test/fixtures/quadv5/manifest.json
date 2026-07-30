@@ -4,17 +4,32 @@
   "gate": "npm run test:webgpu:required -- --draw-quadv5 <dx11.cewgpu> <dx12.cewgpu>",
   "rationale": "A .cewgpu is a derived artifact, fully determined by (source bytes at a pinned build id + compiler version). Storing the package duplicates a guarantee the compiler already gives and rots silently when the compiler moves. This manifest pins the identity instead: rebuild, compare packageSha256, and a compiler change announces itself as a reviewable manifest diff. The rendered target bytes are pinned because they are the only part that needs a GPU to reproduce.",
   "sourcePolicy": "Source .sm_lo/.sm_hi/.sm_depth bytes are CCP game files. Never commit, fixture, or publish them. Fetch through tools-core at the pinned build id.",
-  "transformBlockedGates": [
+  "resourceTransformGates": [
     {
       "gate": "--draw-skinned-quadheatdetailv5",
       "stem": "unpackedskinned_quadheatdetailv5",
       "tier": "medium",
       "resourceTransforms": 1,
+      "transformLayers": 2,
       "layoutBindings": 22,
-      "status": "blocked",
-      "detail": "At the current compiler this body emits one wgsl resource transform, so CjsWebGPUPackage.from rejects it fail-closed. It was drawn under an earlier compiler whose packages predate INFO v3 and can no longer be read, so the two cannot be compared directly. This is the smallest available resource-transform case and is therefore the nearest target for realizing transforms - smaller than the Avatar's three-map Detail family."
+      "reflectedFragmentResources": 14,
+      "status": "drawn",
+      "detail": "Merges Detail1Map and Detail2Map into one 2d-array binding in Detail1Map's slot. 22 logical bindings over 22 physical, 4096 pixels exact across 3 cases, both MRTs, both backends, 0 WGSL warnings; the detail control changed 570/635 covered pixels, so the assembled array is genuinely sampled."
+    },
+    {
+      "gate": "--draw-quaddetailv5 and --draw-skinned-quaddetailv5",
+      "stem": "unpacked_quaddetailv5 and unpackedskinned_quaddetailv5",
+      "tier": "medium",
+      "resourceTransforms": 1,
+      "transformLayers": 3,
+      "layoutBindings": 20,
+      "reflectedFragmentResources": 14,
+      "status": "drawn",
+      "detail": "The Avatar's family: merges Detail1/2/3Map into one three-layer 2d-array binding, so the layout is two bindings shorter than the reflection. Static changed 1116/1116 covered pixels for both detail controls; skinned changed 634/635 and 635/635 with indexed non-identity BoneTransforms observed. The Detail1 and Detail2 delta maps were distinct in both, which is what shows the layers are assembled in declared order and sampled independently rather than collapsed.",
+      "note": "The static body keeps SPACE_OBJECT_INSTANCED_ATTACHMENT in its permutation; the skinned body drops it. Building either with the wrong axis set fails the fixture's provenance check rather than producing a wrong package."
     }
   ],
+  "resourceTransformContract": "Only kind texture-2d-array, version 1, representation native-or-rgba8, and missingLayer reject are realized. The transform record and the layout it claims to have rewritten are both validated, so a package cannot describe a merge the layout did not perform. The analysis is pre-transform and the layout is post-transform: a consumer that conflates them either over-binds or fails to fill the array.",
   "goldenTargets": {
     "path": "unpacked_quadv5.sm_hi-ppt-main.golden.png",
     "capture": "--capture-quadv5 <path>",
