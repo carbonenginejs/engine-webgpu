@@ -7,16 +7,25 @@
 // pipeline resolves to exactly what the harness resolves directly. It does not
 // pretend the loader exists, and it never touches a GPU.
 //
-// Two payload shapes appear here, and the difference matters:
+// What the env-gated test below pins is the CURRENT mechanism, not a contract
+// anyone should build on.
 //
-//   - Tr2EffectRes (runtime-resource) takes a real CewgpuPackage - the raw-emit
-//     reader object, which implements GetPortableEffectReflection - and resolves
-//     a real Tr2Shader from it. That needs package bytes, so it is env-gated.
-//   - The engine's own CjsWebGPUPackage is NOT a valid Tr2EffectRes payload:
-//     normalizePackageShape drops permutationGraph and reflection, which is
-//     exactly what validateEffectPayload requires. A loader must therefore hand
-//     Tr2EffectRes the reader package, not the engine package. Asserted below so
-//     the constraint is pinned rather than rediscovered.
+// A .cewgpu is one self-contained portable file - INFO/META/PGRF/RFLX/RBLB/ANLS/
+// WGSL - and one read of it yields one CewgpuPackage that answers every question
+// about it. Today Tr2EffectRes consumes that reader object and duck-types
+// GetPortableEffectReflection off it, so a class crosses the boundary. The
+// intended direction is the opposite: the shader reads the packaged form itself
+// from bytes, the way ccpwgl's Tw2Shader.fromCCPBinary(reader, context) does,
+// with the engine supplying only binding. Nothing but bytes should cross.
+//
+// The engine's own CjsWebGPUPackage is not a valid Tr2EffectRes payload, because
+// normalizePackageShape deep-clones to plain JSON and drops permutationGraph and
+// reflection. That is an engine-side projection choice, NOT a property of the
+// format and NOT evidence that two objects are inherent - an earlier version of
+// this file claimed otherwise and was wrong. It is asserted below only because
+// the rejection is currently load-bearing: preserving those fields without also
+// preserving the method would flip a loud rejection into a silently shaderless
+// effect.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
@@ -292,6 +301,9 @@ test("the engine dispatcher reaches the package pipeline through a real batch ma
   dispatcher.DestroyBatchMap(handle);
 });
 
+// Pins today's mechanism so a change to it is visible. It is not an endorsement:
+// see the header - the direction of travel is bytes-in, which would retire the
+// GetPortableEffectReflection assertion entirely.
 test("a real Tr2EffectRes resolves a shader from a real CewgpuPackage", async (t) =>
 {
   if (!FIXTURE_DIR)
@@ -325,9 +337,9 @@ test("a real Tr2EffectRes resolves a shader from a real CewgpuPackage", async (t
   assert.equal(effect.shader.constructor.name, "Tr2Shader");
   assert.equal(resource.GetShader([]).constructor.name, "Tr2Shader");
 
-  // The engine package built from the same bytes carries the pipeline the
-  // dispatcher consumes; the reader package carries the shader reflection. A
-  // loader has to produce both, from one read.
+  // One file, one read. The engine builds its own view from the same bytes for
+  // binding; that view is a lossy derived projection, not a second artifact the
+  // format requires and not something a loader has to "also produce".
   const enginePackage = CjsWebGPUPackage.fromBytes(bytes, {
     source: path,
     read: CjsWebgpuFormat.read
@@ -335,9 +347,10 @@ test("a real Tr2EffectRes resolves a shader from a real CewgpuPackage", async (t
   const pipeline = enginePackage.GetPipeline("Main", 0);
   assert.ok(pipeline, "the engine package must expose Main.pass0");
 
-  // Pins why the two cannot be collapsed: the engine package drops exactly the
-  // fields Tr2EffectRes validates, so handing it over fails closed rather than
-  // resolving a shaderless effect.
+  // The projection cannot double as a payload today, and the rejection is the
+  // safe outcome: normalizePackageShape deep-clones to plain JSON, so the method
+  // Tr2EffectRes reads cannot survive it. Restoring the dropped fields without
+  // restoring that capability would turn this loud failure into a silent one.
   assert.equal(enginePackage.permutationGraph, undefined);
   assert.throws(
     () => new Tr2EffectRes().SetPayload(enginePackage),
