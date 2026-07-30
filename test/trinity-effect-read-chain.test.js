@@ -6,8 +6,21 @@
 // that once something does write it, effect -> GetEffectRes() -> package ->
 // pipeline resolves to exactly what the harness resolves directly. It does not
 // pretend the loader exists, and it never touches a GPU.
+//
+// Two payload shapes appear here, and the difference matters:
+//
+//   - Tr2EffectRes (runtime-resource) takes a real CewgpuPackage - the raw-emit
+//     reader object, which implements GetPortableEffectReflection - and resolves
+//     a real Tr2Shader from it. That needs package bytes, so it is env-gated.
+//   - The engine's own CjsWebGPUPackage is NOT a valid Tr2EffectRes payload:
+//     normalizePackageShape drops permutationGraph and reflection, which is
+//     exactly what validateEffectPayload requires. A loader must therefore hand
+//     Tr2EffectRes the reader package, not the engine package. Asserted below so
+//     the constraint is pinned rather than rediscovered.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { Tr2Effect } from "@carbonenginejs/runtime-trinity/shader";
 import {
@@ -21,6 +34,18 @@ import { CjsWebGPUPackage } from "../src/index.js";
 import { CjsWebGPUTrinityBatchDispatcher } from "../src/core/trinityBatchDispatcher.js";
 
 const TRIANGLE_LIST = 4;
+
+const FIXTURE_DIR = process.env.CJS_WEBGPU_FIXTURE_DIR || null;
+const FIXTURE_STEM = process.env.CJS_WEBGPU_FIXTURE_STEM || "unpacked_quadv5.sm_hi";
+
+async function readerModules()
+{
+  const [ shader, webgpu ] = await Promise.all([
+    import("@carbonenginejs/runtime-resource/resource/shader"),
+    import("@carbonenginejs/runtime-resource/formats/webgpu")
+  ]);
+  return { Tr2EffectRes: shader.Tr2EffectRes, CjsWebgpuFormat: webgpu.CjsWebgpuFormat };
+}
 
 function canonicalPackage()
 {
@@ -265,4 +290,58 @@ test("the engine dispatcher reaches the package pipeline through a real batch ma
   );
 
   dispatcher.DestroyBatchMap(handle);
+});
+
+test("a real Tr2EffectRes resolves a shader from a real CewgpuPackage", async (t) =>
+{
+  if (!FIXTURE_DIR)
+  {
+    t.skip("set CJS_WEBGPU_FIXTURE_DIR to a directory holding the built "
+      + `${FIXTURE_STEM}-ppt-main.<backend>.cewgpu packages `
+      + "(build them per test/fixtures/quadv5/manifest.json)");
+    return;
+  }
+
+  const { Tr2EffectRes, CjsWebgpuFormat } = await readerModules();
+  const path = join(FIXTURE_DIR, `${FIXTURE_STEM}-ppt-main.dx11.cewgpu`);
+  const bytes = new Uint8Array(await readFile(path));
+
+  // The raw emit is the CewgpuPackage itself. The default emit is a plain JSON
+  // projection without GetPortableEffectReflection, so it would be accepted as a
+  // payload and then silently resolve no shader at all - the failure a loader is
+  // most likely to ship by accident.
+  const reader = CjsWebgpuFormat.read(bytes, { source: path, emit: CjsWebgpuFormat.OUTPUT_RAW });
+  assert.equal(typeof reader.GetPortableEffectReflection, "function");
+
+  const resource = new Tr2EffectRes();
+  resource.SetPayload(reader);
+
+  const effect = new Tr2Effect();
+  effect.effectResource = resource;
+  effect.RebuildCachedData();
+
+  assert.equal(effect.GetEffectRes(), resource);
+  assert.ok(effect.shader, "the effect must resolve a shader through Tr2EffectRes");
+  assert.equal(effect.shader.constructor.name, "Tr2Shader");
+  assert.equal(resource.GetShader([]).constructor.name, "Tr2Shader");
+
+  // The engine package built from the same bytes carries the pipeline the
+  // dispatcher consumes; the reader package carries the shader reflection. A
+  // loader has to produce both, from one read.
+  const enginePackage = CjsWebGPUPackage.fromBytes(bytes, {
+    source: path,
+    read: CjsWebgpuFormat.read
+  });
+  const pipeline = enginePackage.GetPipeline("Main", 0);
+  assert.ok(pipeline, "the engine package must expose Main.pass0");
+
+  // Pins why the two cannot be collapsed: the engine package drops exactly the
+  // fields Tr2EffectRes validates, so handing it over fails closed rather than
+  // resolving a shaderless effect.
+  assert.equal(enginePackage.permutationGraph, undefined);
+  assert.throws(
+    () => new Tr2EffectRes().SetPayload(enginePackage),
+    /permutation graph, permutations array, or one portable reflection/u,
+    "the engine package must not be accepted as a Tr2EffectRes payload"
+  );
 });
