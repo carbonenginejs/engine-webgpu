@@ -194,9 +194,25 @@
           "permutations": 480,
           "uniqueBodies": 144,
           "translationUnits": 168,
-          "unsupportedBodies": 0
+          "unsupportedBodies": 0,
+          "uniqueEmittedModules": 100,
+          "preparedPipelines": 168
+        },
+        {
+          "backend": "dx12",
+          "mode": "all",
+          "packageSha256": "d6a68ae3c6b4d8de308229d636bbead427f5c586c12aaa52add3213f55fd5b30",
+          "packageByteLength": 33562548,
+          "permutations": 480,
+          "uniqueBodies": 288,
+          "translationUnits": 168,
+          "unsupportedBodies": 144,
+          "uniqueEmittedModules": 100,
+          "preparedPipelines": 168,
+          "note": "DX12 exposes bindless bodies that do not lower, matching the Medium pattern. They are retained as explicitly unsupported records with their reason; DX12 is comparison-only evidence."
         }
-      ]
+      ],
+      "equivalence": "test/wgsb-equivalence.test.js passes at High for both backends: CJS_WEBGPU_FIXTURE_DIR=<dir> CJS_WEBGPU_FIXTURE_STEM=unpacked_quadv5.sm_depth"
     }
   ]
 }
