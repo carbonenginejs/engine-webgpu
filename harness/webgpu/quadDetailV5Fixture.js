@@ -155,22 +155,81 @@ const RESOURCE_REGISTERS = Object.freeze({
   dx12: Object.freeze([ 0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13, 14, 15 ])
 });
 
-const RESOURCE_SRGB = Object.freeze([
-  true,
-  false,
-  false,
-  false,
-  false,
-  true,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false
+// High (.sm_depth) adds the same six bindings the Quad V5 High tier adds -
+// DustNoiseMap and DirtMap mid-sequence, the two forward-light storage buffers,
+// LightProfileArray, and a fourth sampler - on top of the detail merge. It is
+// therefore the only body that carries both a transform and the light set, which
+// is why Stage 5b's gate names it rather than the Medium tier.
+const HIGH_RESOURCE_NAMES = Object.freeze([
+  "EveSpaceSceneEnvMap",
+  "SSAOMap",
+  "EveSpaceSceneShadowMap",
+  "NormalMap",
+  "GlowMap",
+  "DustNoiseMap",
+  "AlbedoMap",
+  "RoughnessMap",
+  "DirtMap",
+  "MaterialMap",
+  "PaintMaskMap",
+  "PatternMask1Map",
+  "PatternMask2Map",
+  "Detail1Map",
+  "Detail2Map",
+  "Detail3Map"
 ]);
+
+// dx11 runs 0..18 contiguously. dx12 fills the holes Medium leaves at 5 and 8,
+// then skips 13 before the light set, so the two backends diverge only after the
+// textures.
+const HIGH_RESOURCE_REGISTERS = Object.freeze({
+  dx11: Object.freeze([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18 ]),
+  dx12: Object.freeze([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 17, 18, 19 ])
+});
+
+const HIGH_STORAGE_RESOURCES = Object.freeze([
+  Object.freeze({
+    name: "LightIndexBuffer",
+    structureStride: 4,
+    minBindingSize: 4,
+    registers: Object.freeze({ dx11: 13, dx12: 14 })
+  }),
+  Object.freeze({
+    name: "LightBuffer",
+    structureStride: 48,
+    minBindingSize: 48,
+    registers: Object.freeze({ dx11: 14, dx12: 15 })
+  })
+]);
+
+// A source-declared array texture: it keeps its binding and carries no transform,
+// so it needs no assembly even though it sits beside one that does.
+const HIGH_ARRAY_RESOURCES = Object.freeze([
+  Object.freeze({
+    name: "LightProfileArray",
+    viewDimension: "2d-array",
+    registers: Object.freeze({ dx11: 15, dx12: 16 })
+  })
+]);
+
+const TIER_BY_SUFFIX = Object.freeze({
+  sm_depth: "high",
+  sm_hi: "medium",
+  sm_lo: "low"
+});
+
+// The tier is a property of the compiled source, so it is read from the path the
+// package carries rather than passed in beside it.
+function tierFromSource(analysisSource, stem)
+{
+  const match = new RegExp(`/${stem}\\.([a-z_0-9]+)$`, "u").exec(analysisSource ?? "");
+  const tier = match ? TIER_BY_SUFFIX[match[1]] : undefined;
+  if (!tier)
+  {
+    fail(`package source must name a known quality tier, not ${String(analysisSource)}`);
+  }
+  return tier;
+}
 
 const BASE_SAMPLERS = Object.freeze([
   Object.freeze({
@@ -199,10 +258,27 @@ const BASE_SAMPLERS = Object.freeze([
   })
 ]);
 
+// s3 samples the light profile array: linear, no mip filter, clamped on every
+// axis. It is not a copy of s0, so its state is carried per sampler.
+const HIGH_LIGHT_SAMPLER = Object.freeze({
+  name: "Sampler3",
+  identity: "sampler:0:3",
+  scopeIdentity: "sampler:0:3@fragment",
+  registerIndex: 3,
+  reflectedName: null,
+  isDynamic: false,
+  filters: Object.freeze({
+    minFilter: 2, magFilter: 2, mipFilter: 0,
+    addressU: 3, addressV: 3, addressW: 3
+  })
+});
+
+const HIGH_SAMPLERS = Object.freeze([ ...BASE_SAMPLERS, HIGH_LIGHT_SAMPLER ]);
+
 const PROFILES = Object.freeze({
   static: Object.freeze({
     variant: "static",
-    sourceFile: "unpacked_quaddetailv5.sm_hi",
+    sourceStem: "unpacked_quaddetailv5",
     selection: STATIC_SELECTION,
     uniforms: Object.freeze(uniformsFor(416)),
     bone: null,
@@ -210,7 +286,7 @@ const PROFILES = Object.freeze({
   }),
   skinned: Object.freeze({
     variant: "skinned",
-    sourceFile: "unpackedskinned_quaddetailv5.sm_hi",
+    sourceStem: "unpackedskinned_quaddetailv5",
     selection: SKINNED_SELECTION,
     uniforms: Object.freeze(uniformsFor(432)),
     bone: BONE_TRANSFORMS,
@@ -245,6 +321,19 @@ const MATERIAL_CONSTANTS = Object.freeze([
   Object.freeze({ name: "DetailAlbedoColor", offset: 496 }),
   Object.freeze({ name: "DetailFresnelColor", offset: 512 }),
   Object.freeze({ name: "DetailSelector", offset: 592 })
+]);
+
+// High keeps the same sparse 608-byte footprint and fills the 64-byte hole at 224
+// with the four dust colors. Those four are body-gated rather than tier-gated -
+// Medium reaches them at V5_DEBUG=ON - but this fixture pins body 4 at
+// V5_DEBUG=OFF, where the tier does decide.
+const HIGH_MATERIAL_CONSTANTS = Object.freeze([
+  ...MATERIAL_CONSTANTS.slice(0, 14),
+  Object.freeze({ name: "Mtl1DustDiffuseColor", offset: 224 }),
+  Object.freeze({ name: "Mtl2DustDiffuseColor", offset: 240 }),
+  Object.freeze({ name: "Mtl3DustDiffuseColor", offset: 256 }),
+  Object.freeze({ name: "Mtl4DustDiffuseColor", offset: 272 }),
+  ...MATERIAL_CONSTANTS.slice(14)
 ]);
 
 const VERTEX_INPUTS = Object.freeze([
@@ -387,6 +476,20 @@ const PIXEL_INPUTS = Object.freeze([
   })
 ]);
 
+// High carries one extra interpolant. The vertex interface is unchanged, so this
+// is the only interface difference between the tiers.
+const HIGH_PIXEL_INPUTS = Object.freeze([
+  ...PIXEL_INPUTS,
+  Object.freeze({
+    usageName: "TEXCOORD",
+    usageIndex: 11,
+    registerIndex: 10,
+    usedMask: 7,
+    type: 0,
+    dimension: 3
+  })
+]);
+
 const WGSL_STRUCTS = Object.freeze({
   VertexInput: Object.freeze([
     Object.freeze({
@@ -502,6 +605,34 @@ const SKINNED_WGSL_STRUCTS = Object.freeze({
   ])
 });
 
+// High carries the extra interpolant through to WGSL as location 10 on both sides
+// of the vertex/fragment boundary. The vertex input and fragment output are
+// unchanged, so this is applied as a delta rather than a second full table.
+function highWgslStructs(structs)
+{
+  return Object.freeze({
+    ...structs,
+    VertexOutput: Object.freeze([
+      ...structs.VertexOutput,
+      Object.freeze({
+        attribute: "location",
+        value: "10",
+        name: "output10",
+        type: "vec3<f32>"
+      })
+    ]),
+    FragmentInput: Object.freeze([
+      ...structs.FragmentInput,
+      Object.freeze({
+        attribute: "location",
+        value: "10",
+        name: "input10",
+        type: "vec3<f32>"
+      })
+    ])
+  });
+}
+
 const CASE_NAMES = Object.freeze([ "pptNeutral", "surface", "detail1", "detail2" ]);
 
 function fail(message)
@@ -611,16 +742,17 @@ function assertSelections(options, owner, profile)
   }
 }
 
-function assertAnalysisInterface(record, profile)
+function assertAnalysisInterface(record, profile, tier)
 {
   const vertex = mainStage(record, "vertex").pipelineInputs?.map(interfaceInput);
   const pixel = mainStage(record, "pixel").pipelineInputs?.map(interfaceInput);
   const expectedVertex = profile.bone ? SKINNED_VERTEX_INPUTS : VERTEX_INPUTS;
+  const expectedPixel = tier === "high" ? HIGH_PIXEL_INPUTS : PIXEL_INPUTS;
   if (JSON.stringify(vertex) !== JSON.stringify(expectedVertex))
   {
     fail("Main.pass0.vertex has an unexpected exact input contract");
   }
-  if (JSON.stringify(pixel) !== JSON.stringify(PIXEL_INPUTS))
+  if (JSON.stringify(pixel) !== JSON.stringify(expectedPixel))
   {
     fail("Main.pass0.pixel has an unexpected exact input contract");
   }
@@ -646,7 +778,7 @@ function wgslStructFields(wgsl, name)
   return fields;
 }
 
-function assertShaderModules(pipeline, profile)
+function assertShaderModules(pipeline, profile, tier)
 {
   if (!Array.isArray(pipeline.shaderModules) || pipeline.shaderModules.length !== 2)
   {
@@ -656,7 +788,8 @@ function assertShaderModules(pipeline, profile)
     [ "vertex", 0, [ "VertexInput", "VertexOutput" ] ],
     [ "pixel", 1, [ "FragmentInput", "FragmentOutput" ] ]
   ];
-  const expectedStructs = profile.bone ? SKINNED_WGSL_STRUCTS : WGSL_STRUCTS;
+  const baseStructs = profile.bone ? SKINNED_WGSL_STRUCTS : WGSL_STRUCTS;
+  const expectedStructs = tier === "high" ? highWgslStructs(baseStructs) : baseStructs;
   for (const [ stageName, stageType, structNames ] of expectations)
   {
     const matches = pipeline.shaderModules.filter((entry) => entry?.stageName === stageName);
@@ -695,65 +828,142 @@ const DETAIL_MERGE = Object.freeze({
   version: 1
 });
 
+// Derived from the name rather than the list position: High inserts DustNoiseMap
+// and DirtMap mid-sequence, so any index-keyed table silently misattributes sRGB
+// and the cube to whichever resource happens to land in the old slot.
+const CUBE_RESOURCE_NAME = "EveSpaceSceneEnvMap";
+const SRGB_RESOURCE_NAMES = new Set([ CUBE_RESOURCE_NAME, "AlbedoMap" ]);
+
 function detailResource(name, registerIndex, binding, index, extra = {})
 {
+  const cube = name === CUBE_RESOURCE_NAME;
   return Object.freeze({
     name,
     identity: `sampled-resource:0:${registerIndex}`,
     scopeIdentity: `sampled-resource:0:${registerIndex}@fragment`,
     registerIndex,
     binding,
-    viewDimension: index === 0 ? "cube" : "2d",
-    registerType: index === 0 ? 41 : 36,
-    carbonType: index === 0 ? 4 : 2,
-    isSRGB: RESOURCE_SRGB[index],
+    viewDimension: cube ? "cube" : "2d",
+    registerType: cube ? 41 : 36,
+    carbonType: cube ? 4 : 2,
+    isSRGB: SRGB_RESOURCE_NAMES.has(name),
     isAutoregister: name === "EveSpaceSceneShadowMap",
     ...extra
   });
 }
 
-// Reflection order, before the merge: every declared fragment resource.
-function expectedAnalysisResources(backend)
+function tierNames(tier)
 {
-  const registers = RESOURCE_REGISTERS[backend];
-  if (!registers) fail(`unsupported package backend ${String(backend)}`);
-  return RESOURCE_NAMES.map((name, index) =>
-    detailResource(name, registers[index], null, index));
+  return tier === "high" ? HIGH_RESOURCE_NAMES : RESOURCE_NAMES;
 }
 
-function expectedResources(backend, profile)
+function tierRegisters(backend, tier)
 {
-  const registers = RESOURCE_REGISTERS[backend];
+  const registers = (tier === "high" ? HIGH_RESOURCE_REGISTERS : RESOURCE_REGISTERS)[backend];
   if (!registers) fail(`unsupported package backend ${String(backend)}`);
-  const textures = [];
-  let slot = profile.textureBindingBase;
-  for (let index = 0; index < RESOURCE_NAMES.length; index += 1)
+  return registers;
+}
+
+function tierSamplers(tier)
+{
+  return tier === "high" ? HIGH_SAMPLERS : BASE_SAMPLERS;
+}
+
+// Reflection order, before the merge: every declared fragment resource. At High
+// the forward-light set sits between the surface textures and the detail maps.
+function expectedAnalysisResources(backend, tier)
+{
+  const names = tierNames(tier);
+  const registers = tierRegisters(backend, tier);
+  const surfaceCount = names.length - DETAIL_MERGE.inputParameters.length;
+  const resources = names.slice(0, surfaceCount).map((name, index) =>
+    detailResource(name, registers[index], null, index));
+  if (tier === "high")
   {
-    const name = RESOURCE_NAMES[index];
-    const layer = DETAIL_MERGE.inputParameters.indexOf(name);
-    if (layer > 0) continue;
-    if (layer === 0)
+    for (const entry of HIGH_STORAGE_RESOURCES)
     {
-      textures.push(detailResource(DETAIL_MERGE.outputName, registers[index], slot, index, {
-        viewDimension: DETAIL_MERGE.viewDimension,
+      resources.push(detailResource(entry.name, entry.registers[backend], null, 1, {
+        registerType: 33,
+        carbonType: 7,
         isSRGB: false,
-        arrayLayerCount: DETAIL_MERGE.layerCount
+        isAutoregister: true,
+        minBindingSize: entry.minBindingSize,
+        structureStride: entry.structureStride
       }));
     }
-    else
+    for (const entry of HIGH_ARRAY_RESOURCES)
     {
-      textures.push(detailResource(name, registers[index], slot, index));
+      resources.push(detailResource(entry.name, entry.registers[backend], null, 1, {
+        viewDimension: entry.viewDimension,
+        registerType: 37,
+        carbonType: 5,
+        isSRGB: false,
+        isAutoregister: true
+      }));
     }
-    slot += 1;
   }
-  return textures;
+  for (let offset = 0; offset < DETAIL_MERGE.inputParameters.length; offset += 1)
+  {
+    const index = surfaceCount + offset;
+    resources.push(detailResource(names[index], registers[index], null, index));
+  }
+  return resources;
 }
 
-function expectedTransforms(backend, profile)
+function expectedResources(backend, profile, tier)
 {
-  const registers = RESOURCE_REGISTERS[backend];
-  if (!registers) fail(`unsupported package backend ${String(backend)}`);
-  const output = expectedResources(backend, profile)
+  const names = tierNames(tier);
+  const registers = tierRegisters(backend, tier);
+  const surfaceCount = names.length - DETAIL_MERGE.inputParameters.length;
+  const textures = [];
+  let slot = profile.textureBindingBase;
+  for (let index = 0; index < surfaceCount; index += 1)
+  {
+    textures.push(detailResource(names[index], registers[index], slot, index));
+    slot += 1;
+  }
+  const storage = [];
+  if (tier === "high")
+  {
+    for (const entry of HIGH_STORAGE_RESOURCES)
+    {
+      storage.push(detailResource(entry.name, entry.registers[backend], slot, 1, {
+        registerType: 33,
+        carbonType: 7,
+        isSRGB: false,
+        isAutoregister: true,
+        minBindingSize: entry.minBindingSize,
+        structureStride: entry.structureStride
+      }));
+      slot += 1;
+    }
+    for (const entry of HIGH_ARRAY_RESOURCES)
+    {
+      textures.push(detailResource(entry.name, entry.registers[backend], slot, 1, {
+        viewDimension: entry.viewDimension,
+        registerType: 37,
+        carbonType: 5,
+        isSRGB: false,
+        isAutoregister: true
+      }));
+      slot += 1;
+    }
+  }
+  // The merge collapses the detail maps into one array binding in layer 0's slot.
+  textures.push(detailResource(DETAIL_MERGE.outputName, registers[surfaceCount], slot, 1, {
+    viewDimension: DETAIL_MERGE.viewDimension,
+    isSRGB: false,
+    arrayLayerCount: DETAIL_MERGE.layerCount
+  }));
+  slot += 1;
+  return { textures, storage, samplerBase: slot };
+}
+
+function expectedTransforms(backend, profile, tier)
+{
+  const names = tierNames(tier);
+  const registers = tierRegisters(backend, tier);
+  const output = expectedResources(backend, profile, tier).textures
     .find((entry) => entry.name === DETAIL_MERGE.outputName);
   if (!output) fail("the QuadDetailV5 layout must expose the merged detail array");
   return [ Object.freeze({
@@ -775,7 +985,7 @@ function expectedTransforms(backend, profile)
     }),
     inputs: Object.freeze(DETAIL_MERGE.inputParameters.map((parameter, layer) =>
     {
-      const registerIndex = registers[RESOURCE_NAMES.indexOf(parameter)];
+      const registerIndex = registers[names.indexOf(parameter)];
       return Object.freeze({
         parameter,
         layer,
@@ -786,10 +996,12 @@ function expectedTransforms(backend, profile)
   }) ];
 }
 
-function expectedSamplers(backend, profile)
+// Derived from the post-transform inventory rather than tabulated, so a tier that
+// adds bindings cannot leave the sampler slots stale.
+function expectedSamplers(backend, profile, tier)
 {
-  const base = profile.textureBindingBase + expectedResources(backend, profile).length;
-  return BASE_SAMPLERS.map((entry) => Object.freeze({
+  const base = expectedResources(backend, profile, tier).samplerBase;
+  return tierSamplers(tier).map((entry) => Object.freeze({
     ...entry,
     binding: base + entry.registerIndex
   }));
@@ -819,43 +1031,44 @@ function assertBindingSlot(binding, expected, kind, visibility)
   }
 }
 
-function hasExactSamplerState(state, isDynamic)
+const ANISOTROPIC_REPEAT_FILTERS = Object.freeze({
+  minFilter: 3, magFilter: 2, mipFilter: 2,
+  addressU: 1, addressV: 1, addressW: 3
+});
+
+function hasFilterState(state, filters)
 {
   return Boolean(state)
     && state.comparison === false
-    && state.minFilter === 3
-    && state.magFilter === 2
-    && state.mipFilter === 2
-    && state.addressU === 1
-    && state.addressV === 1
-    && state.addressW === 3
+    && state.minFilter === filters.minFilter
+    && state.magFilter === filters.magFilter
+    && state.mipFilter === filters.mipFilter
+    && state.addressU === filters.addressU
+    && state.addressV === filters.addressV
+    && state.addressW === filters.addressW
     && state.mipLODBias === 0
-    && state.maxAnisotropy === 16
-    && state.isDynamic === isDynamic;
+    && state.maxAnisotropy === 16;
+}
+
+function hasExactSamplerState(state, isDynamic, filters = ANISOTROPIC_REPEAT_FILTERS)
+{
+  return hasFilterState(state, filters) && state.isDynamic === isDynamic;
 }
 
 // A DX12 immutable root-signature sampler is a D3D12_STATIC_SAMPLER_DESC: the
 // same filter and address state, an enum borderColor rather than a float4, and
 // no dynamic flag at all. The absence of `isDynamic` is part of the contract, so
 // it is asserted rather than defaulted.
-function hasStaticSamplerState(state)
+function hasStaticSamplerState(state, filters = ANISOTROPIC_REPEAT_FILTERS)
 {
-  return Boolean(state)
-    && state.comparison === false
-    && state.minFilter === 3
-    && state.magFilter === 2
-    && state.mipFilter === 2
-    && state.addressU === 1
-    && state.addressV === 1
-    && state.addressW === 3
-    && state.mipLODBias === 0
-    && state.maxAnisotropy === 16
+  return hasFilterState(state, filters)
     && state.borderColor === 0
     && state.isDynamic === undefined;
 }
 
-function assertMaterialReflection(record)
+function assertMaterialReflection(record, tier)
 {
+  const expectedConstants = tier === "high" ? HIGH_MATERIAL_CONSTANTS : MATERIAL_CONSTANTS;
   const material = mainStage(record, "pixel").bindings?.filter((entry) =>
     entry?.kind === "constantBuffer"
       && entry.registerSpace === 0
@@ -868,14 +1081,14 @@ function assertMaterialReflection(record)
     fail("pixel cb0 must expose the exact sparse 608-byte local material layout");
   }
   const constants = material[0].carbon.constants;
-  if (!Array.isArray(constants) || constants.length !== MATERIAL_CONSTANTS.length)
+  if (!Array.isArray(constants) || constants.length !== expectedConstants.length)
   {
-    fail("pixel cb0 has an unexpected sparse material constant count");
+    fail(`pixel cb0 must expose exactly ${expectedConstants.length} ${tier} constants`);
   }
-  for (let index = 0; index < MATERIAL_CONSTANTS.length; index += 1)
+  for (let index = 0; index < expectedConstants.length; index += 1)
   {
     const constant = constants[index];
-    const expected = MATERIAL_CONSTANTS[index];
+    const expected = expectedConstants[index];
     if (constant?.name !== expected.name || constant.offset !== expected.offset
       || constant.size !== 16 || constant.dimension !== 4
       || constant.type !== 0 || constant.elements !== 0)
@@ -1035,7 +1248,7 @@ function assertAnalysisResources(record, resources, samplers, profile)
       if ((signature.carbon?.name ?? null) !== null
         || signature.dynamic !== false
         || signature.sourceTruth !== "carbon-signature-sampler"
-        || !hasStaticSamplerState(state))
+        || !hasStaticSamplerState(state, expected.filters))
       {
         fail(`${expected.identity} has unexpected DX12 signature-sampler reflection`);
       }
@@ -1043,14 +1256,14 @@ function assertAnalysisResources(record, resources, samplers, profile)
     }
     if (matches[0].registerType !== 1
       || (matches[0].carbon?.name ?? null) !== expected.reflectedName
-      || !hasExactSamplerState(matches[0].carbon?.sampler, expected.isDynamic))
+      || !hasExactSamplerState(matches[0].carbon?.sampler, expected.isDynamic, expected.filters))
     {
       fail(`${expected.identity} has unexpected reflected sampler state`);
     }
   }
 }
 
-function assertBindings(record, profile)
+function assertBindings(record, profile, tier)
 {
   const groups = record.pipeline?.bindGroups;
   if (!Array.isArray(groups) || groups.length !== 1 || groups[0]?.group !== 0)
@@ -1058,10 +1271,12 @@ function assertBindings(record, profile)
     fail("Main.pass0 requires exactly canonical bind group 0");
   }
   const bindings = groups[0].bindings;
-  const resources = expectedResources(record.backend, profile);
-  const samplers = expectedSamplers(record.backend, profile);
+  const plan = expectedResources(record.backend, profile, tier);
+  const resources = plan.textures;
+  const storage = plan.storage;
+  const samplers = expectedSamplers(record.backend, profile, tier);
   const expectedCount = profile.uniforms.length
-    + (profile.bone ? 1 : 0) + resources.length + samplers.length;
+    + (profile.bone ? 1 : 0) + resources.length + storage.length + samplers.length;
   if (!Array.isArray(bindings) || bindings.length !== expectedCount)
   {
     fail(`Main.pass0 requires exactly ${expectedCount} canonical bindings`);
@@ -1120,6 +1335,19 @@ function assertBindings(record, profile)
       fail(`${expected.identity} has an unexpected texture layout`);
     }
   }
+  for (const expected of storage)
+  {
+    const binding = byScope.get(expected.scopeIdentity);
+    assertBindingSlot(binding, expected, "buffer", "fragment");
+    if (binding.resourceKind !== "sampled-resource"
+      || binding.layout.buffer.type !== "read-only-storage"
+      || binding.layout.buffer.hasDynamicOffset !== false
+      || binding.layout.buffer.minBindingSize !== expected.minBindingSize
+      || binding.structureStride !== expected.structureStride)
+    {
+      fail(`${expected.name} has an unexpected read-only storage layout`);
+    }
+  }
   for (const expected of samplers)
   {
     const binding = byScope.get(expected.scopeIdentity);
@@ -1129,11 +1357,13 @@ function assertBindings(record, profile)
       fail(`${expected.identity} has an unexpected sampler layout`);
     }
   }
-  assertMaterialReflection(record);
-  assertResourceTransforms(record, expectedTransforms(record.backend, profile), bindings);
+  assertMaterialReflection(record, tier);
+  assertResourceTransforms(record, expectedTransforms(record.backend, profile, tier), bindings);
   // The reflection is pre-transform, so it is checked against the unmerged list:
   // comparing it to the post-transform layout would read the merge as drift.
-  assertAnalysisResources(record, expectedAnalysisResources(record.backend), samplers, profile);
+  assertAnalysisResources(
+    record, expectedAnalysisResources(record.backend, tier), samplers, profile
+  );
 }
 
 /**
@@ -1155,14 +1385,19 @@ export function validateQuadDetailV5PackageRecord(record)
   const metadataSource = normalizedPath(record.metadata?.sourcePath);
   if (!analysisSource || analysisSource !== metadataSource
     || !analysisSource.includes(`/effect.${record.backend}/`)
-    || !analysisSource.endsWith(
-      `/managed/space/spaceobject/v5/quad/${profile.sourceFile}`
+    || !analysisSource.includes(
+      `/managed/space/spaceobject/v5/quad/${profile.sourceStem}.`
     ))
   {
     fail(
-      `package source must be the ${record.backend} medium-quality ` +
+      `package source must be the ${record.backend} ` +
         `${profile.variant} QuadDetailV5 shader`
     );
+  }
+  const tier = tierFromSource(analysisSource, profile.sourceStem);
+  if (tier !== "high" && tier !== "medium")
+  {
+    fail(`the ${tier} tier is not encoded for the ${profile.variant} QuadDetailV5 variant`);
   }
   if (record.analysis?.bodyIndex !== TARGET_BODY_INDEX
     || record.metadata?.bodyIndex !== TARGET_BODY_INDEX)
@@ -1196,9 +1431,9 @@ export function validateQuadDetailV5PackageRecord(record)
     fail("pipeline must retain the exact state-free Main.pass0 render state set");
   }
   assertMainStageInventory(record);
-  assertAnalysisInterface(record, profile);
-  assertShaderModules(pipeline, profile);
-  assertBindings(record, profile);
+  assertAnalysisInterface(record, profile, tier);
+  assertShaderModules(pipeline, profile, tier);
+  assertBindings(record, profile, tier);
   return record;
 }
 
@@ -1255,12 +1490,16 @@ export function getQuadDetailV5ResourcePlan(record)
 {
   validateQuadDetailV5PackageRecord(record);
   const profile = profileForVariant(record.variant);
+  const tier = tierFromSource(normalizedPath(record.analysis?.source), profile.sourceStem);
+  const plan = expectedResources(record.backend, profile, tier);
   return Object.freeze({
     bone: profile.bone,
-    textures: Object.freeze(expectedResources(record.backend, profile)),
-    samplers: Object.freeze(expectedSamplers(record.backend, profile)),
-    analysisResources: Object.freeze(expectedAnalysisResources(record.backend)),
-    transforms: Object.freeze(expectedTransforms(record.backend, profile))
+    tier,
+    textures: Object.freeze(plan.textures),
+    storage: Object.freeze(plan.storage),
+    samplers: Object.freeze(expectedSamplers(record.backend, profile, tier)),
+    analysisResources: Object.freeze(expectedAnalysisResources(record.backend, tier)),
+    transforms: Object.freeze(expectedTransforms(record.backend, profile, tier))
   });
 }
 
@@ -1286,6 +1525,19 @@ function detailMaterial(base, patternMaterial, detail1Data, detail2Data)
     Mtl2Gloss: base.Mtl2Gloss,
     Mtl3Gloss: base.Mtl3Gloss,
     Mtl4Gloss: base.Mtl4Gloss,
+    // Present only when the shared authored ABI carries them, which happens at
+    // High. packMaterial is reflection-driven and ignores values the body does not
+    // declare, so forwarding them unconditionally would be harmless but silent;
+    // forwarding what `base` actually has keeps the tiers honest in both
+    // directions - a missing value at High fails closed rather than packing zero.
+    ...(base.Mtl1DustDiffuseColor
+      ? {
+        Mtl1DustDiffuseColor: base.Mtl1DustDiffuseColor,
+        Mtl2DustDiffuseColor: base.Mtl2DustDiffuseColor,
+        Mtl3DustDiffuseColor: base.Mtl3DustDiffuseColor,
+        Mtl4DustDiffuseColor: base.Mtl4DustDiffuseColor
+      }
+      : {}),
     PMtl1DiffuseColor: patternMaterial.PMtl1DiffuseColor,
     PMtl1FresnelColor: patternMaterial.PMtl1FresnelColor,
     PMtl1Gloss: patternMaterial.PMtl1Gloss,
@@ -1315,9 +1567,11 @@ function bindingCase(base, material)
  * @returns {{caseNames: readonly string[], bindingValuesByCase: Readonly<Record<string, object>>}}
  * Frozen case names and binding values.
  */
-export function createQuadDetailV5BindingCases(width, height)
+export function createQuadDetailV5BindingCases(width, height, tier = "medium")
 {
-  const shared = createQuadV5MainBindingValues(width, height);
+  // packMaterial requires a value for every reflected constant, so the tier must
+  // reach the shared authored ABI or a High draw fails closed on the dust colors.
+  const shared = createQuadV5MainBindingValues(width, height, tier);
   const base = Object.freeze({
     ...shared,
     perObjectPS: Object.freeze({
@@ -1327,8 +1581,8 @@ export function createQuadDetailV5BindingCases(width, height)
     })
   });
   const neutralData = frozenVector([ 1, 0, 0, 0 ]);
-  const detail1Data = frozenVector([ 1, 0.75, 0, 0 ]);
-  const detail2Data = frozenVector([ 1, 0.75, 0, 0 ]);
+  const detail1Data = frozenVector([ 1, 1, 0, 0 ]);
+  const detail2Data = frozenVector([ 1, 1, 0, 0 ]);
   const neutralPattern = Object.freeze({
     PMtl1DiffuseColor: base.material.Mtl1DiffuseColor,
     PMtl1FresnelColor: base.material.Mtl1FresnelColor,
@@ -1337,7 +1591,20 @@ export function createQuadDetailV5BindingCases(width, height)
     PMtl2FresnelColor: base.material.Mtl2FresnelColor,
     PMtl2Gloss: base.material.Mtl2Gloss
   });
-  const surfacePattern = base.material;
+  // Deliberately far from the base surface materials. The PPT control measures
+  // |Mtl - PMtl| after the body's own shading, and High's response to the shared
+  // authored contrast peaks at 3/255 - one LSB under the oracle's absolute
+  // threshold - even though 82% of covered pixels respond and the response is
+  // spatially varied. Strengthening the authored contrast keeps the oracle's
+  // sensitivity intact rather than relaxing it to accommodate a dimmer body.
+  const surfacePattern = Object.freeze({
+    PMtl1DiffuseColor: frozenVector([ 0.95, 0.2, 0.05, 1 ]),
+    PMtl1FresnelColor: frozenVector([ 0.9, 0.25, 0.08, 1 ]),
+    PMtl1Gloss: frozenVector([ 0.85, 0.1, 0, 0 ]),
+    PMtl2DiffuseColor: frozenVector([ 0.05, 0.85, 0.95, 1 ]),
+    PMtl2FresnelColor: frozenVector([ 0.08, 0.8, 0.9, 1 ]),
+    PMtl2Gloss: frozenVector([ 0.12, 0.9, 0, 0 ])
+  });
   const pptNeutralMaterial = detailMaterial(
     base.material,
     neutralPattern,
@@ -1397,6 +1664,21 @@ function rgbaTexture(name, pixel)
 
 function sampler(name)
 {
+  // s3 reflects linear filtering with no mip filter and clamped addressing, so it
+  // is created that way rather than sharing the repeat-sampling descriptor.
+  if (name === HIGH_LIGHT_SAMPLER.name)
+  {
+    return Object.freeze({
+      name,
+      minFilter: "linear",
+      magFilter: "linear",
+      mipmapFilter: "nearest",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+      addressModeW: "clamp-to-edge",
+      maxAnisotropy: 1
+    });
+  }
   return Object.freeze({
     name,
     minFilter: "linear",
@@ -1418,37 +1700,61 @@ function sampler(name)
  * @param {"static"|"skinned"} [variant="static"] Exact geometry variant.
  * @returns {object} Typed-array fixture values.
  */
-export function createQuadDetailV5FixtureValues(width, height, variant = "static")
+export function createQuadDetailV5FixtureValues(width, height, variant = "static", tier = "medium")
 {
   const profile = profileForVariant(variant);
+  if (tier !== "high" && tier !== "medium")
+  {
+    fail(`QuadDetailV5 fixture values are not authored for the ${tier} tier`);
+  }
+  // The High light set, its extra surface maps, and the fourth sampler are the
+  // same ones the shared QuadV5 fixture authors, so they are composed rather than
+  // duplicated here. High values are only authored for the static QuadV5 variant,
+  // and the light bindings do not depend on skinning, so they are read from the
+  // static build and the geometry from this profile's own variant.
   const surface = createQuadV5FixtureValues(width, height, profile.variant);
-  const requiredSurfaceNames = new Set(RESOURCE_NAMES.slice(0, 11));
-  const textures = surface.textures.filter((entry) =>
-    requiredSurfaceNames.has(entry.name));
+  const highSource = tier === "high"
+    ? createQuadV5FixtureValues(width, height, "static", "high")
+    : null;
+  const names = tierNames(tier);
+  const surfaceCount = names.length - DETAIL_MERGE.inputParameters.length;
+  const requiredSurfaceNames = new Set(names.slice(0, surfaceCount));
+  const available = tier === "high" ? highSource.textures : surface.textures;
+  const textures = available.filter((entry) => requiredSurfaceNames.has(entry.name));
   if (textures.length !== requiredSurfaceNames.size)
   {
     fail("shared QuadV5 fixture does not expose every required surface texture");
   }
+  // Saturated and full-range, and distinct from each other on opposite axes. Flat
+  // mid-grey layers with only an alpha ramp leave the detail response peaking at
+  // 3/255 on the skinned High body, one LSB under the control oracle: the colour
+  // contributed nothing and only the mask varied. The axis split is what keeps the
+  // Detail1 and Detail2 delta maps distinguishable.
   const detail1 = rgbaTexture("Detail1Map", (_x, y) => [
-    128,
-    128,
-    128,
-    y < 4 ? 48 : 208
+    230,
+    90,
+    40,
+    y < 4 ? 0 : 255
   ]);
   const detail2 = rgbaTexture("Detail2Map", (x) => [
-    128,
-    128,
-    128,
-    x < 4 ? 32 : 176
+    40,
+    120,
+    230,
+    x < 4 ? 0 : 255
   ]);
   const detail3 = rgbaTexture("Detail3Map", () => [ 128, 128, 128, 0 ]);
-  const cases = createQuadDetailV5BindingCases(width, height);
+  const cases = createQuadDetailV5BindingCases(width, height, tier);
+  const lightArray = tier === "high"
+    ? highSource.textures.filter((entry) => entry.dimension === "2d-array")
+    : [];
   return Object.freeze({
     vertices: surface.vertices,
     ...(profile.bone ? { boneIndices: surface.boneIndices } : {}),
     indices: surface.indices,
-    textures: Object.freeze([ ...textures, detail1, detail2, detail3 ]),
-    samplers: Object.freeze(BASE_SAMPLERS.map((entry) => sampler(entry.name))),
+    tier,
+    textures: Object.freeze([ ...textures, ...lightArray, detail1, detail2, detail3 ]),
+    storageBuffers: Object.freeze(tier === "high" ? highSource.storageBuffers : []),
+    samplers: Object.freeze(tierSamplers(tier).map((entry) => sampler(entry.name))),
     caseNames: cases.caseNames,
     bindingValuesByCase: cases.bindingValuesByCase
   });

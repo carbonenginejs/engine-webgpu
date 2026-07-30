@@ -29,6 +29,25 @@
       "note": "The static body keeps SPACE_OBJECT_INSTANCED_ATTACHMENT in its permutation; the skinned body drops it. Building either with the wrong axis set fails the fixture's provenance check rather than producing a wrong package."
     }
   ],
+  "gatingAxes": {
+    "summary": "Two independent gates decide the Quad V5 Main binding inventory, and conflating them misattributes a body difference to the tier. Measured on dx11 at build 3444265, PPT-on, Main.pass0.",
+    "bodyGated": {
+      "bindings": [ "DustNoiseMap", "DirtMap" ],
+      "constants": [ "Mtl1DustDiffuseColor", "Mtl2DustDiffuseColor", "Mtl3DustDiffuseColor", "Mtl4DustDiffuseColor" ],
+      "detail": "Reached by V5_DEBUG=ON at Medium, which resolves body 28 rather than body 4. So these are NOT tier-exclusive."
+    },
+    "tierGated": {
+      "bindings": [ "LightIndexBuffer", "LightBuffer", "LightProfileArray", "s3" ],
+      "detail": "Only .sm_depth binds the forward-light set. Medium never does, at any V5_DEBUG value."
+    },
+    "measured": [
+      { "tier": "sm_hi", "V5_DEBUG": "OFF", "body": 4, "resources": 11, "samplers": 3, "cb0": "384/20", "dustMaps": false, "lightSet": false },
+      { "tier": "sm_hi", "V5_DEBUG": "ON", "body": 28, "resources": 13, "samplers": 3, "cb0": "452/29", "dustMaps": true, "lightSet": false },
+      { "tier": "sm_depth", "V5_DEBUG": "OFF", "body": 4, "resources": 16, "samplers": 4, "cb0": "384/24", "dustMaps": true, "lightSet": true },
+      { "tier": "sm_depth", "V5_DEBUG": "ON", "body": 28, "resources": 16, "samplers": 4, "cb0": "452/29", "dustMaps": true, "lightSet": true }
+    ],
+    "fixtureScope": "Every fixture here pins body 4 at V5_DEBUG=OFF, so within that pin the tier alone determines the inventory and deriving expectations from the source-path suffix is sound. It would not be sound across V5_DEBUG values. Note the debug body is not merely 'body 4 plus dust': it carries 29 constants in 452 bytes against body 4 High's 24 in 384."
+  },
   "resourceTransformContract": "Only kind texture-2d-array, version 1, representation native-or-rgba8, and missingLayer reject are realized. The transform record and the layout it claims to have rewritten are both validated, so a package cannot describe a merge the layout did not perform. The analysis is pre-transform and the layout is post-transform: a consumer that conflates them either over-binds or fails to fill the array.",
   "goldenTargets": {
     "path": "unpacked_quadv5.sm_hi-ppt-main.golden.png",
@@ -143,7 +162,7 @@
         "arrayTextures": 1,
         "samplers": 4,
         "renderTargets": 2,
-        "note": "Uniform buffer sizes and the vertex layout are identical to Medium. cb0 keeps the same 384-byte footprint and adds Mtl1..4DustDiffuseColor at offsets 224-287, which Medium leaves as a hole; packMaterial is reflection-driven and requires a value for every reflected constant, so a tier mismatch fails closed. The pixel interface adds TEXCOORD11 at register 10 (vec3) and the vertex output adds output10.",
+        "note": "Uniform buffer sizes and the vertex layout are identical to Medium body 4. cb0 keeps the same 384-byte footprint and adds Mtl1..4DustDiffuseColor at offsets 224-287, which Medium body 4 leaves as a hole; packMaterial is reflection-driven and requires a value for every reflected constant, so a mismatch fails closed. The pixel interface adds TEXCOORD11 at register 10 (vec3) and the vertex output adds output10.",
         "materialConstants": 24,
         "materialConstantValueSize": 384,
         "textureNames": [
@@ -172,7 +191,7 @@
         "textureRegisters": {
           "dx11": [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ],
           "dx12": [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ],
-          "note": "Contiguous on both backends. Medium's DX12 run has holes at 5 and 8 because DustNoiseMap and DirtMap are declared but unused there; High fills them."
+          "note": "Contiguous on both backends for body 4. The holes at DX12 5 and 8 in the Medium record are a property of body 4, not of the Medium tier - see gatingAxes."
         },
         "storageRegisters": { "dx11": [ 13, 14 ], "dx12": [ 14, 15 ] },
         "arrayTextureRegister": { "dx11": 15, "dx12": 16 }

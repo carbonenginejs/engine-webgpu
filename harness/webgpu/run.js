@@ -1224,21 +1224,26 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
             && QUAD_DETAIL_V5_TARGET_HEIGHT === HEIGHT,
         "QuadDetailV5 and harness target dimensions must match"
     );
-    const values = createQuadDetailV5FixtureValues(WIDTH, HEIGHT, variant);
-    const cases = createQuadDetailV5BindingCases(WIDTH, HEIGHT);
+    const detailPlan = getQuadDetailV5ResourcePlan(records[0]);
+    const detailTier = detailPlan.tier;
+    const values = createQuadDetailV5FixtureValues(WIDTH, HEIGHT, variant, detailTier);
+    const cases = createQuadDetailV5BindingCases(WIDTH, HEIGHT, detailTier);
+    // High adds two surface maps, the light profile array and a fourth sampler;
+    // the three detail maps are present as transform inputs at both tiers.
     Assert(
-        values.textures.length === 14 && values.samplers.length === 3,
-        "QuadDetailV5 fixture requires exactly 14 textures and three samplers"
+        values.textures.length === (detailTier === "high" ? 17 : 14)
+            && values.samplers.length === (detailTier === "high" ? 4 : 3),
+        `QuadDetailV5 ${detailTier} fixture has an unexpected texture or sampler count`
     );
     const geometrySource = Object.freeze({
         kind: "synthetic-quaddetailv5",
         variant
     });
-    const detailTransforms = getQuadDetailV5ResourcePlan(records[0]).transforms;
+    const detailTransforms = detailPlan.transforms;
     const detailMergedInputs = new Set(detailTransforms
         .flatMap((entry) => entry.inputs.map((input) => input.parameter)));
     const texturePayloads = Object.fromEntries(values.textures
-        .filter((entry) => entry.dimension === "2d")
+        .filter((entry) => entry.dimension === "2d" || entry.dimension === "2d-array")
         // A merged input has no binding of its own, so it is assembled into the
         // array below rather than published as a texture nothing can bind.
         .filter((entry) => !detailMergedInputs.has(entry.name))
@@ -1249,8 +1254,11 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
                 width: entry.width,
                 height: entry.height,
                 format: entry.format,
-                bytesPerRow: entry.bytesPerRow,
-                data: entry.data
+                bytesPerRow: entry.bytesPerRow ?? entry.width * 4,
+                data: entry.data,
+                ...(entry.dimension === "2d-array"
+                    ? { layers: entry.depthOrArrayLayers, viewDimension: "2d-array" }
+                    : {})
             }
         ]));
     for (const transform of detailTransforms)
@@ -1295,6 +1303,7 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
     const cubeDefinition = values.textures.find((entry) => entry.dimension === "cube");
     let cubeTexture = null;
     let boneBuffer = null;
+    const storageBuffers = new Map();
     try
     {
         Assert(cubeDefinition, "QuadDetailV5 fixture requires an environment cube");
@@ -1354,6 +1363,16 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
             });
             device.queue.writeBuffer(boneBuffer, 0, boneTransform);
         }
+        for (const definition of values.storageBuffers)
+        {
+            const buffer = device.createBuffer({
+                label: `QuadDetailV5 ${definition.name}`,
+                size: definition.data.byteLength,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            });
+            device.queue.writeBuffer(buffer, 0, definition.data);
+            storageBuffers.set(definition.name, buffer);
+        }
         const resourcesByBackend = new Map();
         for (const record of records)
         {
@@ -1362,16 +1381,20 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
                 Boolean(plan.bone) === skinned,
                 `QuadDetailV5 ${record.backend} BoneTransforms plan must match ${variant}`
             );
-            // Twelve bindings, not fourteen resources: the three detail maps are
-            // merged into one 2d-array binding, so the layout is shorter than the
-            // reflection by exactly the merged-away layers.
+            // The layout is shorter than the reflection by exactly the merged-away
+            // layers: 12 texture bindings over 14 reflected resources at Medium,
+            // 15 over 19 at High. The High texture count includes LightProfileArray,
+            // which is a source-declared array and so needs no assembly.
+            const expectedTextures = detailTier === "high" ? 15 : 12;
+            const expectedReflected = detailTier === "high" ? 19 : 14;
             Assert(
-                plan.textures.length === 12
-                    && plan.analysisResources.length === 14
+                plan.textures.length === expectedTextures
+                    && plan.analysisResources.length === expectedReflected
                     && plan.transforms.length === 1
-                    && plan.samplers.length === 3,
-                `QuadDetailV5 ${record.backend} resource plan must contain 12 texture bindings` +
-                    " over 14 reflected resources, one transform, and three samplers"
+                    && plan.samplers.length === (detailTier === "high" ? 4 : 3),
+                `QuadDetailV5 ${record.backend} ${detailTier} resource plan must contain` +
+                    ` ${expectedTextures} texture bindings over ${expectedReflected}` +
+                    " reflected resources and one transform"
             );
             const resources = new Map();
             if (plan.bone)
@@ -1384,6 +1407,16 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
                     buffer: boneBuffer,
                     offset: 0,
                     size: boneBuffer.size
+                });
+            }
+            for (const entry of plan.storage)
+            {
+                const buffer = storageBuffers.get(entry.name);
+                Assert(buffer, `QuadDetailV5 fixture is missing storage ${entry.name}`);
+                resources.set(entry.scopeIdentity, {
+                    buffer,
+                    offset: 0,
+                    size: buffer.size
                 });
             }
             for (const texture of plan.textures)
@@ -1415,10 +1448,12 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
             geometry: bundle.geometries.main,
             geometrySource,
             variant,
+            tier: detailTier,
             bundle,
             destroy()
             {
                 boneBuffer?.destroy();
+                for (const buffer of storageBuffers.values()) buffer.destroy();
                 cubeTexture.destroy();
                 bundle.Destroy();
             }
@@ -1427,6 +1462,7 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
     catch (error)
     {
         boneBuffer?.destroy();
+        for (const buffer of storageBuffers.values()) buffer.destroy();
         cubeTexture?.destroy();
         bundle.Destroy();
         throw error;
@@ -3387,7 +3423,10 @@ function MeasureQuadV5ColorControl(control, active, motion, label)
     );
     Assert(
         maximumChannelDelta >= 4 && distinctDeltas.size >= 3,
-        `${label} lacks a spatially varied color response`
+        `${label} lacks a spatially varied color response:`
+            + ` maximum channel delta ${maximumChannelDelta} (needs 4),`
+            + ` ${distinctDeltas.size} distinct deltas (needs 3),`
+            + ` over ${changedPixels}/${coveredPixels} changed pixels`
     );
     return {
         coveredPixels,

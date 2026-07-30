@@ -70,10 +70,21 @@ const RESOURCE_REGISTERS = Object.freeze({
   dx12: Object.freeze([ 0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12 ])
 });
 
-// The High (.sm_depth) tier of the same static body. It is not a superset of
-// Medium by appending: DustNoiseMap and DirtMap land mid-sequence, which is why
-// Medium's DX12 register run has holes at 5 and 8 that High fills. Registers are
-// the producer's physical ones and are never reassigned here.
+// The High (.sm_depth) tier of the same static body. Not a superset of Medium by
+// appending: DustNoiseMap and DirtMap land mid-sequence.
+//
+// Two independent gates decide this inventory, and they are easy to conflate:
+//
+//   - DustNoiseMap, DirtMap and the four Mtl*DustDiffuseColor constants are
+//     gated by the BODY, not the tier. Medium reaches them too at
+//     V5_DEBUG=ON, which resolves body 28 instead of body 4.
+//   - The forward-light set - LightIndexBuffer, LightBuffer, LightProfileArray
+//     and s3 - is genuinely tier-gated. Medium never binds it at any V5_DEBUG.
+//
+// This fixture pins body 4 at V5_DEBUG=OFF, so within that pin the tier alone
+// determines the inventory. The register runs below are that body's, not a
+// property of the tier: body 28 is contiguous on DX12 at Medium as well.
+// Registers stay the producer's physical ones and are never reassigned.
 const HIGH_RESOURCE_NAMES = Object.freeze([
   "EveSpaceSceneEnvMap",
   "SSAOMap",
@@ -781,9 +792,13 @@ function assertHeatMaterial(record, heatDetail)
   }
 }
 
-// The High material block. It keeps Medium's 384-byte footprint and fills what
-// Medium leaves as a 64-byte hole at 224 with the four dust colors, so the size
-// alone cannot tell the tiers apart - the constant inventory can.
+// Body 4's High material block. It keeps the same 384-byte footprint body 4
+// carries at Medium and fills the 64-byte hole at 224 with the four dust colors,
+// so the size alone cannot tell the tiers apart - the constant inventory can.
+//
+// The dust colors are body-gated rather than tier-gated: Medium's body 28
+// (V5_DEBUG=ON) also carries them, at a different 452-byte footprint with 29
+// constants. This list is body 4 at High specifically.
 const HIGH_MATERIAL_CONSTANTS = Object.freeze([
   [ "GeneralData", 0 ],
   [ "GeneralGlowColor", 16 ],
@@ -1386,12 +1401,15 @@ export function createQuadV5MainBindingValues(width, height, tier = "medium")
   // requires a value for every entry, so the dust colors are authored only for
   // the tier that reflects them. A tier mismatch fails closed rather than
   // packing a hole.
+  // White, to pair with the zero DustNoiseMap: whether the shader lerps toward
+  // the dust color or scales by it, a zero mask over white leaves the surface
+  // untouched, so the PPT and detail controls keep measuring what they name.
   const dust = tier === "high"
     ? {
-      Mtl1DustDiffuseColor: [ 0.36, 0.32, 0.28, 1 ],
-      Mtl2DustDiffuseColor: [ 0.3, 0.27, 0.24, 1 ],
-      Mtl3DustDiffuseColor: [ 0.33, 0.29, 0.25, 1 ],
-      Mtl4DustDiffuseColor: [ 0.28, 0.25, 0.22, 1 ]
+      Mtl1DustDiffuseColor: [ 1, 1, 1, 1 ],
+      Mtl2DustDiffuseColor: [ 1, 1, 1, 1 ],
+      Mtl3DustDiffuseColor: [ 1, 1, 1, 1 ],
+      Mtl4DustDiffuseColor: [ 1, 1, 1, 1 ]
     }
     : {};
   const material = Object.freeze({
@@ -1715,16 +1733,14 @@ function fixtureTextures(variant, tier)
       return [ value, value, value, 255 ];
     }),
     ...(tier === "high" ? [
-      rgbaTexture("DustNoiseMap", "rgba8unorm", (x, y) => [
-        40 + ((x * 29 + y * 13) % 200),
-        40 + ((x * 17 + y * 31) % 200),
-        128,
-        255
-      ]),
-      rgbaTexture("DirtMap", "rgba8unorm", (x, y) => {
-        const dirt = 96 + ((x * 7 + y * 11) % 6) * 24;
-        return [ dirt, dirt, dirt, 255 ];
-      }),
+      // Neutral by construction. These two are bound so the High layout is
+      // complete, but an authored dust/dirt appearance multiplies the surface
+      // down far enough that the PPT and detail control deltas fall below one
+      // RGBA8 LSB - the controls then measure quantization instead of shading.
+      // Zero noise and clean dirt keep those oracles meaningful; what this proves
+      // is that the bindings realize, not that the dust path was exercised.
+      rgbaTexture("DustNoiseMap", "rgba8unorm", () => [ 0, 0, 0, 0 ]),
+      rgbaTexture("DirtMap", "rgba8unorm", () => [ 255, 255, 255, 255 ]),
       // A genuinely layered texture read through a 2d-array view. The two layers
       // differ so a draw that collapsed the view to layer 0 would change the
       // rendered target rather than pass quietly.

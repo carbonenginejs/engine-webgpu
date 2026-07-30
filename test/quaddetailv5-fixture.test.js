@@ -887,11 +887,11 @@ test("QuadDetailV5 cases isolate pattern surface and individual detail weights",
       [ 1, 1, 1, 1, 1, 1, 1, 1 ]
     );
   }
-  assert.deepEqual(detail1.material.Detail1Data, [ 1, 0.75, 0, 0 ]);
-  assert.deepEqual(detail2.material.Detail2Data, [ 1, 0.75, 0, 0 ]);
+  assert.deepEqual(detail1.material.Detail1Data, [ 1, 1, 0, 0 ]);
+  assert.deepEqual(detail2.material.Detail2Data, [ 1, 1, 0, 0 ]);
 });
 
-test("QuadDetailV5 fixture is static, complete, neutral-RGB, and alpha-distinct", () =>
+test("QuadDetailV5 fixture is static, complete, and per-layer distinct", () =>
 {
   assert.equal(QUAD_DETAIL_V5_TARGET_WIDTH, 64);
   assert.equal(QUAD_DETAIL_V5_TARGET_HEIGHT, 64);
@@ -911,18 +911,33 @@ test("QuadDetailV5 fixture is static, complete, neutral-RGB, and alpha-distinct"
   const detail1 = fixture.textures.find((entry) => entry.name === "Detail1Map");
   const detail2 = fixture.textures.find((entry) => entry.name === "Detail2Map");
   const detail3 = fixture.textures.find((entry) => entry.name === "Detail3Map");
-  for (const detail of [ detail1, detail2, detail3 ])
-  {
-    for (let offset = 0; offset < detail.data.length; offset += 4)
-    {
-      assert.deepEqual(Array.from(detail.data.slice(offset, offset + 3)), [ 128, 128, 128 ]);
-    }
-  }
-  assert.deepEqual([ ...new Set(Array.from(detail1.data).filter((_value, index) =>
-    index % 4 === 3)) ].sort((a, b) => a - b), [ 48, 208 ]);
-  assert.deepEqual([ ...new Set(Array.from(detail2.data).filter((_value, index) =>
-    index % 4 === 3)) ].sort((a, b) => a - b), [ 32, 176 ]);
+
+  // Layers 0 and 1 carry saturated, mutually distinct colour and a full-range
+  // mask on opposite axes. Flat mid-grey with only an alpha ramp left the detail
+  // control peaking at 3/255 on the skinned High body - the colour contributed
+  // nothing - so per-layer distinctness is the contract, not neutrality.
+  assert.deepEqual(Array.from(detail1.data.slice(0, 3)), [ 230, 90, 40 ]);
+  assert.deepEqual(Array.from(detail2.data.slice(0, 3)), [ 40, 120, 230 ]);
+  assert.notDeepEqual(
+    Array.from(detail1.data.slice(0, 3)),
+    Array.from(detail2.data.slice(0, 3))
+  );
+  const alphaOf = (texture) => [ ...new Set(Array.from(texture.data)
+    .filter((_value, index) => index % 4 === 3)) ].sort((a, b) => a - b);
+  assert.deepEqual(alphaOf(detail1), [ 0, 255 ]);
+  assert.deepEqual(alphaOf(detail2), [ 0, 255 ]);
+
+  // Layer 2 stays a no-op: the controls isolate layers 0 and 1, so a contributing
+  // third layer would make their deltas harder to attribute.
+  assert.deepEqual(Array.from(detail3.data.slice(0, 3)), [ 128, 128, 128 ]);
   assert.equal(Array.from(detail3.data).every((value, index) =>
     index % 4 !== 3 || value === 0), true);
+
+  // The masks must vary on different axes, or the two delta maps could coincide.
+  const rowMajorAlpha = (texture, x, y) => texture.data[(y * texture.width + x) * 4 + 3];
+  assert.notEqual(rowMajorAlpha(detail1, 0, 0), rowMajorAlpha(detail1, 0, 7));
+  assert.notEqual(rowMajorAlpha(detail2, 0, 0), rowMajorAlpha(detail2, 7, 0));
+  assert.equal(rowMajorAlpha(detail1, 0, 0), rowMajorAlpha(detail1, 7, 0));
+  assert.equal(rowMajorAlpha(detail2, 0, 0), rowMajorAlpha(detail2, 0, 7));
   assert.deepEqual(fixture.caseNames, [ "pptNeutral", "surface", "detail1", "detail2" ]);
 });
