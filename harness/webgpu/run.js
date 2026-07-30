@@ -935,6 +935,71 @@ async function CreateGeneratedDraw(webgpu)
     }
 }
 
+// Build the single layered texture a resource transform merges its inputs into.
+//
+// The producer removed every non-zero-layer input from the layout, so this is
+// the only way the array binding can be filled: layer i is written from the
+// input declared at layer i, in order. `missingLayer: "reject"` is honoured
+// literally - a missing input throws rather than being substituted, because any
+// stand-in layer would change the rendered result while still validating.
+function AssembleTransformLayers(values, transform, labelPrefix)
+{
+    const layers = transform.inputs.map((input) =>
+    {
+        const source = values.textures.find((entry) => entry.name === input.parameter);
+        Assert(
+            source,
+            `${labelPrefix} transform ${transform.id} is missing layer ${input.layer} input ${input.parameter}`
+        );
+        Assert(
+            source.dimension === "2d",
+            `${labelPrefix} transform ${transform.id} layer ${input.layer} input ${input.parameter}`
+                + ` must be a 2D texture, not ${source.dimension}`
+        );
+        return source;
+    });
+    Assert(
+        layers.length === transform.output.layerCount,
+        `${labelPrefix} transform ${transform.id} needs exactly ${transform.output.layerCount} layers`
+    );
+    const [ first ] = layers;
+    // One texture cannot hold layers of differing size or format, so a mismatch
+    // is the transform being unsatisfiable rather than something to coerce.
+    for (const layer of layers)
+    {
+        Assert(
+            layer.width === first.width
+                && layer.height === first.height
+                && layer.format === first.format
+                && layer.bytesPerRow === first.bytesPerRow,
+            `${labelPrefix} transform ${transform.id} layer ${layer.name} does not match layer 0`
+                + " in size or format"
+        );
+    }
+    const layerBytes = first.bytesPerRow * first.height;
+    const data = new Uint8Array(layerBytes * layers.length);
+    for (let index = 0; index < layers.length; index += 1)
+    {
+        Assert(
+            layers[index].data.byteLength === layerBytes,
+            `${labelPrefix} transform ${transform.id} layer ${layers[index].name} is not exactly`
+                + ` ${layerBytes} bytes`
+        );
+        data.set(layers[index].data, layerBytes * index);
+    }
+    return {
+        label: `${labelPrefix} ${transform.output.name}`
+            + ` (${layers.map((entry) => entry.name).join(" + ")})`,
+        width: first.width,
+        height: first.height,
+        format: first.format,
+        bytesPerRow: first.bytesPerRow,
+        layers: layers.length,
+        viewDimension: "2d-array",
+        data
+    };
+}
+
 async function CreateQuadV5GpuResources(webgpu, records)
 {
     const variant = records[0]?.variant ?? "static";
@@ -947,25 +1012,37 @@ async function CreateQuadV5GpuResources(webgpu, records)
         kind: "synthetic-quadv5",
         variant: skinned ? "skinned" : "static"
     });
+    // Transforms are backend-independent in content: only the registers differ,
+    // so the assembled layers are shared and each backend binds its own slot.
+    const transforms = getQuadV5ResourcePlan(records[0]).transforms;
+    const mergedInputNames = new Set(transforms
+        .flatMap((entry) => entry.inputs.map((input) => input.parameter)));
+    const texturePayload = (entry) => ({
+        label: `QuadV5 ${entry.name}`,
+        width: entry.width,
+        height: entry.height,
+        format: entry.format,
+        bytesPerRow: entry.bytesPerRow ?? entry.width * 4,
+        data: entry.data,
+        // A layered texture read through a 2d-array view goes through the same
+        // engine texture path as every 2d texture here, so the draw exercises
+        // the realizer rather than a harness-local shortcut.
+        ...(entry.dimension === "2d-array"
+            ? { layers: entry.depthOrArrayLayers, viewDimension: "2d-array" }
+            : {})
+    });
     const texturePayloads = Object.fromEntries(values.textures
         .filter((entry) => entry.dimension === "2d" || entry.dimension === "2d-array")
-        .map((entry) => [
-        entry.name,
-        {
-                label: `QuadV5 ${entry.name}`,
-                width: entry.width,
-                height: entry.height,
-                format: entry.format,
-                bytesPerRow: entry.bytesPerRow ?? entry.width * 4,
-                data: entry.data,
-                // A layered texture read through a 2d-array view goes through the
-                // same engine texture path as every 2d texture here, so the draw
-                // exercises the realizer rather than a harness-local shortcut.
-                ...(entry.dimension === "2d-array"
-                    ? { layers: entry.depthOrArrayLayers, viewDimension: "2d-array" }
-                    : {})
-            }
-        ]));
+        // A merged input has no binding of its own; publishing it would leave a
+        // texture nothing can bind, so the published set stays equal to the
+        // bound set and the layers are assembled from the fixture values below.
+        .filter((entry) => !mergedInputNames.has(entry.name))
+        .map((entry) => [ entry.name, texturePayload(entry) ]));
+    for (const transform of transforms)
+    {
+        texturePayloads[transform.output.name] =
+            AssembleTransformLayers(values, transform, "QuadV5");
+    }
     const samplers = Object.fromEntries(values.samplers.map((entry) => [
         entry.name,
         {
@@ -1157,8 +1234,14 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
         kind: "synthetic-quaddetailv5",
         variant
     });
+    const detailTransforms = getQuadDetailV5ResourcePlan(records[0]).transforms;
+    const detailMergedInputs = new Set(detailTransforms
+        .flatMap((entry) => entry.inputs.map((input) => input.parameter)));
     const texturePayloads = Object.fromEntries(values.textures
         .filter((entry) => entry.dimension === "2d")
+        // A merged input has no binding of its own, so it is assembled into the
+        // array below rather than published as a texture nothing can bind.
+        .filter((entry) => !detailMergedInputs.has(entry.name))
         .map((entry) => [
             entry.name,
             {
@@ -1170,6 +1253,11 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
                 data: entry.data
             }
         ]));
+    for (const transform of detailTransforms)
+    {
+        texturePayloads[transform.output.name] =
+            AssembleTransformLayers(values, transform, "QuadDetailV5");
+    }
     const samplerPayloads = Object.fromEntries(values.samplers.map(({ name, ...descriptor }) => [
         name,
         {
@@ -1274,10 +1362,16 @@ async function CreateQuadDetailV5GpuResources(webgpu, records)
                 Boolean(plan.bone) === skinned,
                 `QuadDetailV5 ${record.backend} BoneTransforms plan must match ${variant}`
             );
+            // Twelve bindings, not fourteen resources: the three detail maps are
+            // merged into one 2d-array binding, so the layout is shorter than the
+            // reflection by exactly the merged-away layers.
             Assert(
-                plan.textures.length === 14 && plan.samplers.length === 3,
-                `QuadDetailV5 ${record.backend} resource plan must contain ` +
-                    "14 textures and three samplers"
+                plan.textures.length === 12
+                    && plan.analysisResources.length === 14
+                    && plan.transforms.length === 1
+                    && plan.samplers.length === 3,
+                `QuadDetailV5 ${record.backend} resource plan must contain 12 texture bindings` +
+                    " over 14 reflected resources, one transform, and three samplers"
             );
             const resources = new Map();
             if (plan.bone)

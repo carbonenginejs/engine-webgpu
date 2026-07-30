@@ -577,7 +577,7 @@ test("structured WGSL package input accepts only set versions 1, 2 and 3", () =>
   assert.equal(CjsWebGPUPackage.from(legacy).pipelines[0].bindGroups[0].bindings[0].scopeIdentity, "sampler:0:0");
 });
 
-test("version 3 WGSL sets keep version 2 identity strictness and reject resource transforms", () =>
+test("version 3 WGSL sets keep version 2 identity strictness and bound transform metadata", () =>
 {
   const binding = {
     identity: "sampler:0:0",
@@ -653,19 +653,15 @@ test("version 3 WGSL sets keep version 2 identity strictness and reject resource
     "sampled-resource:0:13"
   );
 
+  // A binding cannot claim a transform the document never declared, and array
+  // layers are only meaningful as part of one.
   assert.throws(
     () => CjsWebGPUPackage.from(version3Package({ ...arrayBinding, transformId: "detail-0" })),
-    /transformed binding 0:1 is not supported by this engine/u
+    /claims undeclared resource transform detail-0/u
   );
   assert.throws(
     () => CjsWebGPUPackage.from(version3Package({ ...arrayBinding, arrayLayerCount: 2 })),
-    /transformed binding 0:1 is not supported by this engine/u
-  );
-  assert.throws(
-    () => CjsWebGPUPackage.from(version3Package(binding, {
-      resourceTransforms: [ { id: "detail-0", kind: "texture-2d-array" } ]
-    })),
-    /wgsl resource transforms are not supported by this engine/u
+    /declares 2 array layers without a resource transform/u
   );
 
   // A null placeholder is absence, not a transform.
@@ -673,6 +669,223 @@ test("version 3 WGSL sets keep version 2 identity strictness and reject resource
     CjsWebGPUPackage.from(version3Package({ ...arrayBinding, transformId: null, arrayLayerCount: null }))
       .pipelines[0].bindGroups[0].bindings[0].identity,
     "sampled-resource:0:13"
+  );
+});
+
+test("resource transforms realize only in the exact shape the engine can assemble", () =>
+{
+  const carrier = {
+    identity: "sampled-resource:0:12",
+    scopeIdentity: "sampled-resource:0:12@fragment",
+    resourceKind: "sampled-resource",
+    generatedSymbol: "t12",
+    registerSpace: 0,
+    registerIndex: 12,
+    group: 0,
+    binding: 18,
+    visibility: [ "fragment" ],
+    type: "texture_2d_array<f32>",
+    texture: { sampleType: "float", viewDimension: "2d-array", multisampled: false },
+    transformId: "Main.pass0:detail-map-array:sampled-resource:0:12",
+    arrayLayerCount: 2
+  };
+  const transform = () => ({
+    id: "Main.pass0:detail-map-array:sampled-resource:0:12",
+    version: 1,
+    kind: "texture-2d-array",
+    layoutKey: "Main.pass0",
+    stage: "fragment",
+    inputs: [
+      {
+        parameter: "Detail1Map",
+        layer: 0,
+        identity: "sampled-resource:0:12",
+        scopeIdentity: "sampled-resource:0:12@fragment"
+      },
+      {
+        parameter: "Detail2Map",
+        layer: 1,
+        identity: "sampled-resource:0:13",
+        scopeIdentity: "sampled-resource:0:13@fragment"
+      }
+    ],
+    output: {
+      name: "DetailMapArray",
+      identity: "sampled-resource:0:12",
+      scopeIdentity: "sampled-resource:0:12@fragment",
+      viewDimension: "2d-array",
+      layerCount: 2
+    },
+    representation: "native-or-rgba8",
+    missingLayer: "reject"
+  });
+  const build = (mutate = (value) => value, extraBindings = []) =>
+  {
+    const declared = mutate(transform());
+    return CjsWebGPUPackage.from({
+      wgsl: {
+        format: "CJS_WGSL_SET",
+        formatVersion: 3,
+        shaders: [],
+        layouts: [ {
+          key: "Main.pass0",
+          bindGroups: [ { group: 0, bindings: [ carrier, ...extraBindings ] } ]
+        } ],
+        resourceTransforms: declared === null ? [] : [ declared ]
+      },
+      stages: [ {
+        key: "Main.pass0.pixel",
+        techniqueName: "Main",
+        passIndex: 0,
+        stageName: "pixel",
+        stageType: 1,
+        bindings: []
+      } ]
+    });
+  };
+
+  const pipeline = build().pipelines[0];
+  assert.equal(pipeline.resourceTransforms.length, 1);
+  const realized = pipeline.resourceTransforms[0];
+  assert.equal(realized.output.scopeIdentity, "sampled-resource:0:12@fragment");
+  assert.equal(realized.output.layerCount, 2);
+  assert.equal(realized.group, 0);
+  assert.equal(realized.binding, 18);
+  assert.deepEqual(
+    realized.inputs.map((entry) => [ entry.layer, entry.parameter ]),
+    [ [ 0, "Detail1Map" ], [ 1, "Detail2Map" ] ]
+  );
+  // The pipeline answers which bindings need assembly and which do not.
+  assert.equal(
+    pipeline.GetResourceTransform("sampled-resource:0:12@fragment"),
+    realized
+  );
+  assert.equal(pipeline.GetResourceTransform("sampled-resource:0:1@fragment"), null);
+
+  // Anything outside the supported shape throws: guessing would emit WGSL the
+  // device accepts and pixels that are quietly wrong.
+  const rejects = [
+    [ (t) => ({ ...t, kind: "texture-3d" }), /kind texture-3d is not supported/u ],
+    [ (t) => ({ ...t, version: 2 }), /version 2 is not supported/u ],
+    [ (t) => ({ ...t, representation: "rgba8-only" }), /representation rgba8-only is not supported/u ],
+    [ (t) => ({ ...t, missingLayer: "black" }), /missingLayer policy black is not supported/u ],
+    [ (t) => ({ ...t, stage: "geometry" }), /stage geometry is not a known shader stage/u ],
+    [ (t) => ({ ...t, layoutKey: "Depth.pass0" }), /names layout Depth\.pass0, which the package does not contain/u ],
+    [
+      (t) => ({ ...t, output: { ...t.output, layerCount: 3 } }),
+      /output layerCount 3 does not match its 2 inputs/u
+    ],
+    [
+      (t) => ({ ...t, inputs: [ { ...t.inputs[0] }, { ...t.inputs[1], layer: 0 } ] }),
+      /declares layer 0 more than once/u
+    ],
+    [
+      (t) => ({
+        ...t,
+        inputs: [ { ...t.inputs[0], layer: 1 }, { ...t.inputs[1], layer: 1 } ]
+      }),
+      /declares layer 1 more than once/u
+    ],
+    [
+      (t) => ({
+        ...t,
+        output: { ...t.output, scopeIdentity: "sampled-resource:0:13@fragment" }
+      }),
+      /must occupy its layer 0 input slot/u
+    ]
+  ];
+  for (const [ mutate, pattern ] of rejects)
+  {
+    assert.throws(() => build(mutate), pattern);
+  }
+
+  // A layer index outside the range cannot be placed at all.
+  assert.throws(
+    () => build((t) => ({ ...t, inputs: [ { ...t.inputs[0] }, { ...t.inputs[1], layer: 5 } ] })),
+    /layer 5 is outside 0\.\.1/u
+  );
+
+  // A merged-away input that survived in the layout would still be bindable and
+  // would silently receive a texture the shader never reads.
+  const survivor = {
+    ...carrier,
+    identity: "sampled-resource:0:13",
+    scopeIdentity: "sampled-resource:0:13@fragment",
+    generatedSymbol: "t13",
+    registerIndex: 13,
+    binding: 19,
+    type: "texture_2d<f32>",
+    texture: { sampleType: "float", viewDimension: "2d", multisampled: false }
+  };
+  delete survivor.transformId;
+  delete survivor.arrayLayerCount;
+  assert.throws(
+    () => build(undefined, [ survivor ]),
+    /but sampled-resource:0:13@fragment is still bound in Main\.pass0/u
+  );
+
+  // The carrier and the transform must agree about the merge.
+  assert.throws(
+    () => build((t) => ({ ...t, output: { ...t.output, layerCount: 2 }, inputs: t.inputs.slice(0, 1) })),
+    /output layerCount 2 does not match its 1 inputs/u
+  );
+  assert.throws(
+    () => CjsWebGPUPackage.from({
+      wgsl: {
+        format: "CJS_WGSL_SET",
+        formatVersion: 3,
+        shaders: [],
+        layouts: [ {
+          key: "Main.pass0",
+          bindGroups: [ { group: 0, bindings: [ { ...carrier, arrayLayerCount: 3 } ] } ]
+        } ],
+        resourceTransforms: [ transform() ]
+      },
+      stages: []
+    }),
+    /carrier declares 3 layers but the transform merges 2/u
+  );
+
+  assert.throws(
+    () => CjsWebGPUPackage.from({
+      wgsl: {
+        format: "CJS_WGSL_SET",
+        formatVersion: 3,
+        shaders: [],
+        layouts: [ { key: "Main.pass0", bindGroups: [ { group: 0, bindings: [] } ] } ],
+        resourceTransforms: [ transform() ]
+      },
+      stages: []
+    }),
+    /must be carried by exactly one binding in Main\.pass0, found 0/u
+  );
+
+  assert.throws(
+    () => CjsWebGPUPackage.from({
+      wgsl: {
+        format: "CJS_WGSL_SET",
+        formatVersion: 3,
+        shaders: [],
+        layouts: [ { key: "Main.pass0", bindGroups: [ { group: 0, bindings: [ carrier ] } ] } ],
+        resourceTransforms: [ transform(), transform() ]
+      },
+      stages: []
+    }),
+    /is declared more than once/u
+  );
+
+  assert.throws(
+    () => CjsWebGPUPackage.from({
+      wgsl: {
+        format: "CJS_WGSL_SET",
+        formatVersion: 3,
+        shaders: [],
+        layouts: [],
+        resourceTransforms: {}
+      },
+      stages: []
+    }),
+    /resourceTransforms must be an array when present/u
   );
 });
 

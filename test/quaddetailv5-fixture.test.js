@@ -203,8 +203,23 @@ function analysisBone()
   };
 }
 
-function analysisSampler(registerIndex)
+function analysisSampler(registerIndex, backend = "dx11")
 {
+  if (registerIndex === 0 && backend === "dx12")
+  {
+    return {
+      kind: "sampler",
+      registerSpace: 0,
+      registerIndex,
+      registerType: 1,
+      dynamic: false,
+      sourceTruth: "carbon-signature-sampler",
+      carbon: {
+        name: null,
+        sampler: { ...samplerState(false), borderColor: 0, isDynamic: undefined }
+      }
+    };
+  }
   return {
     kind: "sampler",
     registerSpace: 0,
@@ -288,9 +303,89 @@ function boneBinding()
   };
 }
 
-function resourceBinding(name, registerIndex, bindingIndex, index)
+// The producer merges Detail1/2/3Map into one 2d-array binding in Detail1Map's
+// slot and removes the other two, so the layout is two bindings shorter than the
+// reflection.
+const DETAIL_MERGE_INPUTS = [ "Detail1Map", "Detail2Map", "Detail3Map" ];
+
+// The layout keeps Detail1Map's register but renames it to the merged output.
+const MERGED_RESOURCE_NAMES = RESOURCE_NAMES
+  .filter((name) => DETAIL_MERGE_INPUTS.indexOf(name) <= 0)
+  .map((name) => name === DETAIL_MERGE_INPUTS[0] ? "DetailMapArray" : name);
+
+function mergedRegisters(backend)
 {
-  const viewDimension = index === 0 ? "cube" : "2d";
+  return RESOURCE_REGISTERS[backend]
+    .filter((_register, index) => DETAIL_MERGE_INPUTS.indexOf(RESOURCE_NAMES[index]) <= 0);
+}
+
+function detailTransform(backend)
+{
+  const registers = RESOURCE_REGISTERS[backend];
+  const first = registers[RESOURCE_NAMES.indexOf(DETAIL_MERGE_INPUTS[0])];
+  return {
+    id: `Main.pass0:detail-map-array:sampled-resource:0:${first}`,
+    kind: "texture-2d-array",
+    version: 1,
+    layoutKey: "Main.pass0",
+    stage: "fragment",
+    representation: "native-or-rgba8",
+    missingLayer: "reject",
+    group: 0,
+    binding: null,
+    output: {
+      name: "DetailMapArray",
+      identity: `sampled-resource:0:${first}`,
+      scopeIdentity: `sampled-resource:0:${first}@fragment`,
+      viewDimension: "2d-array",
+      layerCount: 3
+    },
+    inputs: DETAIL_MERGE_INPUTS.map((parameter, layer) =>
+    {
+      const registerIndex = registers[RESOURCE_NAMES.indexOf(parameter)];
+      return {
+        parameter,
+        layer,
+        identity: `sampled-resource:0:${registerIndex}`,
+        scopeIdentity: `sampled-resource:0:${registerIndex}@fragment`
+      };
+    })
+  };
+}
+
+// Post-transform layout bindings: every resource except the merged-away inputs,
+// with Detail1Map's slot carrying the array instead.
+function layoutResourceBindings(backend, skinned)
+{
+  const registers = RESOURCE_REGISTERS[backend];
+  const bindings = [];
+  let slot = skinned ? 6 : 5;
+  for (let index = 0; index < RESOURCE_NAMES.length; index += 1)
+  {
+    const name = RESOURCE_NAMES[index];
+    const layer = DETAIL_MERGE_INPUTS.indexOf(name);
+    if (layer > 0) continue;
+    if (layer === 0)
+    {
+      bindings.push({
+        ...resourceBinding("DetailMapArray", registers[index], slot, index, "2d-array"),
+        transformId: detailTransform(backend).id,
+        arrayLayerCount: 3,
+        isSRGB: false
+      });
+    }
+    else
+    {
+      bindings.push(resourceBinding(name, registers[index], slot, index));
+    }
+    slot += 1;
+  }
+  return { bindings, samplerBase: slot };
+}
+
+function resourceBinding(name, registerIndex, bindingIndex, index, override = null)
+{
+  const viewDimension = override ?? (index === 0 ? "cube" : "2d");
   return {
     ...binding(
       `sampled-resource:0:${registerIndex}`,
@@ -298,7 +393,7 @@ function resourceBinding(name, registerIndex, bindingIndex, index)
       "fragment",
       "texture",
       {
-        type: `texture_${viewDimension}<f32>`,
+        type: `texture_${viewDimension.replace("-", "_")}<f32>`,
         value: {
           sampleType: "float",
           viewDimension,
@@ -405,11 +500,10 @@ function packageRecord(backend, variant = "static")
     uniformBinding(3, 3, "vertex", skinned ? 432 : 416),
     uniformBinding(4, 4, "fragment", 432),
     ...(skinned ? [ boneBinding() ] : []),
-    ...RESOURCE_NAMES.map((name, index) =>
-      resourceBinding(name, registers[index], (skinned ? 6 : 5) + index, index)),
-    samplerBinding(0, skinned ? 20 : 19),
-    samplerBinding(1, skinned ? 21 : 20),
-    samplerBinding(2, skinned ? 22 : 21)
+    ...layoutResourceBindings(backend, skinned).bindings,
+    samplerBinding(0, layoutResourceBindings(backend, skinned).samplerBase),
+    samplerBinding(1, layoutResourceBindings(backend, skinned).samplerBase + 1),
+    samplerBinding(2, layoutResourceBindings(backend, skinned).samplerBase + 2)
   ];
   const selectedOptions = selections(variant);
   return {
@@ -452,7 +546,9 @@ function packageRecord(backend, variant = "static")
           stageType: 1,
           pipelineInputs: PIXEL_INPUTS.map(pipelineInput),
           bindings: [
-            ...(backend === "dx11" ? [ analysisSampler(0) ] : []),
+            // Both backends reflect s0; DX12 lowers it to a signature sampler
+            // rather than omitting it.
+            analysisSampler(0, backend),
             analysisSampler(1),
             analysisSampler(2),
             ...RESOURCE_NAMES.map((name, index) =>
@@ -483,7 +579,11 @@ function packageRecord(backend, variant = "static")
       renderStates: 1,
       states: [],
       shaderModules,
-      bindGroups: [ { group: 0, bindings } ]
+      bindGroups: [ { group: 0, bindings } ],
+      resourceTransforms: [ {
+        ...detailTransform(backend),
+        binding: bindings.find((entry) => entry.transformId).binding
+      } ]
     }
   };
 }
@@ -509,11 +609,43 @@ test("QuadDetailV5 exact static body4 records and resource plans validate", () =
   const dx11Plan = getQuadDetailV5ResourcePlan(dx11);
   const dx12Plan = getQuadDetailV5ResourcePlan(dx12);
   assert.equal(dx11Plan.bone, null);
-  assert.deepEqual(dx11Plan.textures.map((entry) => entry.name), RESOURCE_NAMES);
-  assert.deepEqual(dx11Plan.textures.map((entry) => entry.registerIndex), RESOURCE_REGISTERS.dx11);
-  assert.deepEqual(dx12Plan.textures.map((entry) => entry.registerIndex), RESOURCE_REGISTERS.dx12);
-  assert.deepEqual(dx12Plan.samplers.map((entry) => entry.binding), [ 19, 20, 21 ]);
-  assert.equal(dx12Plan.textures.length + dx12Plan.samplers.length + 5, 22);
+  // Post-transform: the three detail maps are one array binding, so the layout
+  // is two shorter than the reflection and the samplers move down with it.
+  assert.deepEqual(dx11Plan.textures.map((entry) => entry.name), MERGED_RESOURCE_NAMES);
+  assert.deepEqual(dx11Plan.analysisResources.map((entry) => entry.name), RESOURCE_NAMES);
+  assert.deepEqual(dx11Plan.textures.map((entry) => entry.registerIndex),
+    mergedRegisters("dx11"));
+  assert.deepEqual(dx12Plan.textures.map((entry) => entry.registerIndex),
+    mergedRegisters("dx12"));
+  assert.deepEqual(dx12Plan.analysisResources.map((entry) => entry.registerIndex),
+    RESOURCE_REGISTERS.dx12);
+  assert.deepEqual(dx12Plan.samplers.map((entry) => entry.binding), [ 17, 18, 19 ]);
+  assert.equal(dx12Plan.textures.length + dx12Plan.samplers.length + 5, 20);
+
+  assert.equal(dx11Plan.transforms.length, 1);
+  const merge = dx11Plan.transforms[0];
+  assert.equal(merge.output.name, "DetailMapArray");
+  assert.equal(merge.output.layerCount, 3);
+  assert.equal(merge.output.scopeIdentity, "sampled-resource:0:11@fragment");
+  assert.deepEqual(
+    merge.inputs.map((entry) => [ entry.layer, entry.parameter, entry.scopeIdentity ]),
+    [
+      [ 0, "Detail1Map", "sampled-resource:0:11@fragment" ],
+      [ 1, "Detail2Map", "sampled-resource:0:12@fragment" ],
+      [ 2, "Detail3Map", "sampled-resource:0:13@fragment" ]
+    ]
+  );
+  assert.deepEqual(
+    dx12Plan.transforms[0].inputs.map((entry) => entry.scopeIdentity),
+    [
+      "sampled-resource:0:13@fragment",
+      "sampled-resource:0:14@fragment",
+      "sampled-resource:0:15@fragment"
+    ]
+  );
+  const arrayBinding = dx11Plan.textures.at(-1);
+  assert.equal(arrayBinding.viewDimension, "2d-array");
+  assert.equal(arrayBinding.arrayLayerCount, 3);
   assert.equal(Object.isFrozen(dx12Plan), true);
   assert.equal(QUAD_DETAIL_V5_SELECTION, QUAD_DETAIL_V5_SELECTIONS.static);
 });
@@ -563,14 +695,16 @@ test("QuadDetailV5 exact skinned body4 records, bone plan, and fixture validate"
     structureStride: 48
   });
   assert.deepEqual(dx11Plan.textures.map((entry) => entry.binding), [
-    6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
+    6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17
   ]);
   assert.deepEqual(dx11Plan.textures.map((entry) => entry.registerIndex),
-    RESOURCE_REGISTERS.dx11);
+    mergedRegisters("dx11"));
   assert.deepEqual(dx12Plan.textures.map((entry) => entry.registerIndex),
+    mergedRegisters("dx12"));
+  assert.deepEqual(dx12Plan.analysisResources.map((entry) => entry.registerIndex),
     RESOURCE_REGISTERS.dx12);
-  assert.deepEqual(dx12Plan.samplers.map((entry) => entry.binding), [ 20, 21, 22 ]);
-  assert.equal(5 + 1 + dx12Plan.textures.length + dx12Plan.samplers.length, 23);
+  assert.deepEqual(dx12Plan.samplers.map((entry) => entry.binding), [ 18, 19, 20 ]);
+  assert.equal(5 + 1 + dx12Plan.textures.length + dx12Plan.samplers.length, 21);
 
   const fixture = createQuadDetailV5FixtureValues(64, 64, "skinned");
   assert.ok(fixture.boneIndices instanceof Uint16Array);

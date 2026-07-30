@@ -206,8 +206,7 @@ const PROFILES = Object.freeze({
     selection: STATIC_SELECTION,
     uniforms: Object.freeze(uniformsFor(416)),
     bone: null,
-    textureBindingBase: 5,
-    samplerBindingBase: 19
+    textureBindingBase: 5
   }),
   skinned: Object.freeze({
     variant: "skinned",
@@ -215,8 +214,7 @@ const PROFILES = Object.freeze({
     selection: SKINNED_SELECTION,
     uniforms: Object.freeze(uniformsFor(432)),
     bone: BONE_TRANSFORMS,
-    textureBindingBase: 6,
-    samplerBindingBase: 20
+    textureBindingBase: 6
   })
 });
 
@@ -681,29 +679,119 @@ function assertShaderModules(pipeline, profile)
   }
 }
 
-function expectedResources(backend, profile)
+// The producer merges all three detail maps into one 2d-array binding in
+// Detail1Map's slot and removes the other two bindings, so the layout is two
+// bindings shorter than the reflection. Sampler slots are therefore derived from
+// the post-transform texture count rather than tabulated.
+const DETAIL_MERGE = Object.freeze({
+  outputName: "DetailMapArray",
+  inputParameters: Object.freeze([ "Detail1Map", "Detail2Map", "Detail3Map" ]),
+  viewDimension: "2d-array",
+  layerCount: 3,
+  representation: "native-or-rgba8",
+  missingLayer: "reject",
+  stage: "fragment",
+  kind: "texture-2d-array",
+  version: 1
+});
+
+function detailResource(name, registerIndex, binding, index, extra = {})
 {
-  const registers = RESOURCE_REGISTERS[backend];
-  if (!registers) fail(`unsupported package backend ${String(backend)}`);
-  return RESOURCE_NAMES.map((name, index) => Object.freeze({
+  return Object.freeze({
     name,
-    identity: `sampled-resource:0:${registers[index]}`,
-    scopeIdentity: `sampled-resource:0:${registers[index]}@fragment`,
-    registerIndex: registers[index],
-    binding: profile.textureBindingBase + index,
+    identity: `sampled-resource:0:${registerIndex}`,
+    scopeIdentity: `sampled-resource:0:${registerIndex}@fragment`,
+    registerIndex,
+    binding,
     viewDimension: index === 0 ? "cube" : "2d",
     registerType: index === 0 ? 41 : 36,
     carbonType: index === 0 ? 4 : 2,
     isSRGB: RESOURCE_SRGB[index],
-    isAutoregister: name === "EveSpaceSceneShadowMap"
-  }));
+    isAutoregister: name === "EveSpaceSceneShadowMap",
+    ...extra
+  });
 }
 
-function expectedSamplers(profile)
+// Reflection order, before the merge: every declared fragment resource.
+function expectedAnalysisResources(backend)
 {
+  const registers = RESOURCE_REGISTERS[backend];
+  if (!registers) fail(`unsupported package backend ${String(backend)}`);
+  return RESOURCE_NAMES.map((name, index) =>
+    detailResource(name, registers[index], null, index));
+}
+
+function expectedResources(backend, profile)
+{
+  const registers = RESOURCE_REGISTERS[backend];
+  if (!registers) fail(`unsupported package backend ${String(backend)}`);
+  const textures = [];
+  let slot = profile.textureBindingBase;
+  for (let index = 0; index < RESOURCE_NAMES.length; index += 1)
+  {
+    const name = RESOURCE_NAMES[index];
+    const layer = DETAIL_MERGE.inputParameters.indexOf(name);
+    if (layer > 0) continue;
+    if (layer === 0)
+    {
+      textures.push(detailResource(DETAIL_MERGE.outputName, registers[index], slot, index, {
+        viewDimension: DETAIL_MERGE.viewDimension,
+        isSRGB: false,
+        arrayLayerCount: DETAIL_MERGE.layerCount
+      }));
+    }
+    else
+    {
+      textures.push(detailResource(name, registers[index], slot, index));
+    }
+    slot += 1;
+  }
+  return textures;
+}
+
+function expectedTransforms(backend, profile)
+{
+  const registers = RESOURCE_REGISTERS[backend];
+  if (!registers) fail(`unsupported package backend ${String(backend)}`);
+  const output = expectedResources(backend, profile)
+    .find((entry) => entry.name === DETAIL_MERGE.outputName);
+  if (!output) fail("the QuadDetailV5 layout must expose the merged detail array");
+  return [ Object.freeze({
+    id: `Main.pass0:detail-map-array:${output.identity}`,
+    kind: DETAIL_MERGE.kind,
+    version: DETAIL_MERGE.version,
+    layoutKey: "Main.pass0",
+    stage: DETAIL_MERGE.stage,
+    representation: DETAIL_MERGE.representation,
+    missingLayer: DETAIL_MERGE.missingLayer,
+    group: 0,
+    binding: output.binding,
+    output: Object.freeze({
+      name: DETAIL_MERGE.outputName,
+      identity: output.identity,
+      scopeIdentity: output.scopeIdentity,
+      viewDimension: DETAIL_MERGE.viewDimension,
+      layerCount: DETAIL_MERGE.layerCount
+    }),
+    inputs: Object.freeze(DETAIL_MERGE.inputParameters.map((parameter, layer) =>
+    {
+      const registerIndex = registers[RESOURCE_NAMES.indexOf(parameter)];
+      return Object.freeze({
+        parameter,
+        layer,
+        identity: `sampled-resource:0:${registerIndex}`,
+        scopeIdentity: `sampled-resource:0:${registerIndex}@fragment`
+      });
+    }))
+  }) ];
+}
+
+function expectedSamplers(backend, profile)
+{
+  const base = profile.textureBindingBase + expectedResources(backend, profile).length;
   return BASE_SAMPLERS.map((entry) => Object.freeze({
     ...entry,
-    binding: profile.samplerBindingBase + entry.registerIndex
+    binding: base + entry.registerIndex
   }));
 }
 
@@ -746,6 +834,26 @@ function hasExactSamplerState(state, isDynamic)
     && state.isDynamic === isDynamic;
 }
 
+// A DX12 immutable root-signature sampler is a D3D12_STATIC_SAMPLER_DESC: the
+// same filter and address state, an enum borderColor rather than a float4, and
+// no dynamic flag at all. The absence of `isDynamic` is part of the contract, so
+// it is asserted rather than defaulted.
+function hasStaticSamplerState(state)
+{
+  return Boolean(state)
+    && state.comparison === false
+    && state.minFilter === 3
+    && state.magFilter === 2
+    && state.mipFilter === 2
+    && state.addressU === 1
+    && state.addressV === 1
+    && state.addressW === 3
+    && state.mipLODBias === 0
+    && state.maxAnisotropy === 16
+    && state.borderColor === 0
+    && state.isDynamic === undefined;
+}
+
 function assertMaterialReflection(record)
 {
   const material = mainStage(record, "pixel").bindings?.filter((entry) =>
@@ -773,6 +881,63 @@ function assertMaterialReflection(record)
       || constant.type !== 0 || constant.elements !== 0)
     {
       fail(`pixel cb0 has an unexpected ${expected.name} layout`);
+    }
+  }
+}
+
+// A merged binding cannot be filled from one source texture, so the requirement
+// reaches the consumer through the pipeline. Assert it exactly in both
+// directions, and assert that the merged-away inputs really are unbound.
+function assertResourceTransforms(record, expected, bindings)
+{
+  const declared = record.pipeline?.resourceTransforms ?? [];
+  if (!Array.isArray(declared) || declared.length !== expected.length)
+  {
+    fail(`Main.pass0 must declare exactly ${expected.length} resource transform`
+      + `${expected.length === 1 ? "" : "s"}`);
+  }
+  for (const want of expected)
+  {
+    const matches = declared.filter((entry) =>
+      entry?.output?.scopeIdentity === want.output.scopeIdentity);
+    if (matches.length !== 1)
+    {
+      fail(`Main.pass0 must declare one transform merging into ${want.output.scopeIdentity}`);
+    }
+    const got = matches[0];
+    if (got.id !== want.id || got.kind !== want.kind || got.version !== want.version
+      || got.layoutKey !== want.layoutKey || got.stage !== want.stage
+      || got.representation !== want.representation || got.missingLayer !== want.missingLayer
+      || got.group !== want.group || got.binding !== want.binding
+      || got.output.name !== want.output.name
+      || got.output.identity !== want.output.identity
+      || got.output.viewDimension !== want.output.viewDimension
+      || got.output.layerCount !== want.output.layerCount)
+    {
+      fail(`${want.id} has unexpected transform metadata`);
+    }
+    if (!Array.isArray(got.inputs) || got.inputs.length !== want.inputs.length)
+    {
+      fail(`${want.id} must merge exactly ${want.inputs.length} inputs`);
+    }
+    for (let index = 0; index < want.inputs.length; index += 1)
+    {
+      const wantInput = want.inputs[index];
+      const gotInput = got.inputs[index];
+      if (gotInput?.parameter !== wantInput.parameter || gotInput.layer !== wantInput.layer
+        || gotInput.identity !== wantInput.identity
+        || gotInput.scopeIdentity !== wantInput.scopeIdentity)
+      {
+        fail(`${want.id} layer ${wantInput.layer} must come from ${wantInput.parameter}`);
+      }
+    }
+    for (const input of want.inputs.slice(1))
+    {
+      if (bindings.some((entry) => entry.scopeIdentity === input.scopeIdentity))
+      {
+        fail(`${input.parameter} was merged into ${want.output.scopeIdentity}`
+          + ` but is still bound at ${input.scopeIdentity}`);
+      }
     }
   }
 }
@@ -820,13 +985,18 @@ function assertAnalysisResources(record, resources, samplers, profile)
     "constantBuffer:0:2",
     "constantBuffer:0:4",
     ...resources.map((entry) => `resource:0:${entry.registerIndex}`),
-    ...(record.backend === "dx11"
-      ? [ "sampler:0:0", "sampler:0:1", "sampler:0:2" ]
-      : [ "sampler:0:1", "sampler:0:2" ])
+    // Both backends reflect all three. DX12 lowers the unnamed s0 to an
+    // immutable root-signature sampler rather than omitting it, so its absence
+    // is drift, not a backend difference.
+    ...samplers.map((entry) => `sampler:0:${entry.registerIndex}`)
   ].sort();
   if (JSON.stringify(pixelInventory) !== JSON.stringify(expectedInventory))
   {
-    fail("pixel analysis has an unexpected active binding inventory");
+    const extra = pixelInventory.filter((entry) => !expectedInventory.includes(entry));
+    const missing = expectedInventory.filter((entry) => !pixelInventory.includes(entry));
+    fail("pixel analysis has an unexpected active binding inventory"
+      + `${extra.length ? `; unexpected ${extra.join(", ")}` : ""}`
+      + `${missing.length ? `; missing ${missing.join(", ")}` : ""}`);
   }
   for (const expected of resources)
   {
@@ -843,17 +1013,35 @@ function assertAnalysisResources(record, resources, samplers, profile)
     }
   }
   const reflectedSamplers = pixelBindings.filter((entry) => entry?.kind === "sampler");
-  const expectedReflectedSamplers =
-    record.backend === "dx11" ? samplers : samplers.slice(1);
-  if (reflectedSamplers.length !== expectedReflectedSamplers.length)
+  if (reflectedSamplers.length !== samplers.length)
   {
     fail(`${record.backend} analysis has an unexpected sampler count`);
   }
-  for (const expected of expectedReflectedSamplers)
+  for (const expected of samplers)
   {
     const matches = reflectedSamplers.filter((entry) =>
       entry.registerSpace === 0 && entry.registerIndex === expected.registerIndex);
-    if (matches.length !== 1 || matches[0].registerType !== 1
+    if (matches.length !== 1)
+    {
+      fail(`${expected.identity} has unexpected reflected sampler state`);
+    }
+    // An unnamed sampler is declared in the effect signature, which is why DX12
+    // lowers exactly those to immutable root-signature samplers: an enum
+    // borderColor instead of a float4, and no dynamic flag at all.
+    if (expected.reflectedName === null && record.backend === "dx12")
+    {
+      const signature = matches[0];
+      const state = signature.carbon?.sampler;
+      if ((signature.carbon?.name ?? null) !== null
+        || signature.dynamic !== false
+        || signature.sourceTruth !== "carbon-signature-sampler"
+        || !hasStaticSamplerState(state))
+      {
+        fail(`${expected.identity} has unexpected DX12 signature-sampler reflection`);
+      }
+      continue;
+    }
+    if (matches[0].registerType !== 1
       || (matches[0].carbon?.name ?? null) !== expected.reflectedName
       || !hasExactSamplerState(matches[0].carbon?.sampler, expected.isDynamic))
     {
@@ -871,7 +1059,7 @@ function assertBindings(record, profile)
   }
   const bindings = groups[0].bindings;
   const resources = expectedResources(record.backend, profile);
-  const samplers = expectedSamplers(profile);
+  const samplers = expectedSamplers(record.backend, profile);
   const expectedCount = profile.uniforms.length
     + (profile.bone ? 1 : 0) + resources.length + samplers.length;
   if (!Array.isArray(bindings) || bindings.length !== expectedCount)
@@ -923,10 +1111,11 @@ function assertBindings(record, profile)
     if (binding.layout.texture.sampleType !== "float"
       || binding.layout.texture.viewDimension !== expected.viewDimension
       || binding.layout.texture.multisampled !== false
-      || binding.layout.type !== `texture_${expected.viewDimension}<f32>`
+      || binding.layout.type !== `texture_${expected.viewDimension.replace("-", "_")}<f32>`
       || binding.textureKind !== expected.viewDimension
       || binding.arrayElements !== 1
-      || binding.isSRGB !== expected.isSRGB)
+      || binding.isSRGB !== expected.isSRGB
+      || (binding.arrayLayerCount ?? null) !== (expected.arrayLayerCount ?? null))
     {
       fail(`${expected.identity} has an unexpected texture layout`);
     }
@@ -941,7 +1130,10 @@ function assertBindings(record, profile)
     }
   }
   assertMaterialReflection(record);
-  assertAnalysisResources(record, resources, samplers, profile);
+  assertResourceTransforms(record, expectedTransforms(record.backend, profile), bindings);
+  // The reflection is pre-transform, so it is checked against the unmerged list:
+  // comparing it to the post-transform layout would read the merge as drift.
+  assertAnalysisResources(record, expectedAnalysisResources(record.backend), samplers, profile);
 }
 
 /**
@@ -1066,7 +1258,9 @@ export function getQuadDetailV5ResourcePlan(record)
   return Object.freeze({
     bone: profile.bone,
     textures: Object.freeze(expectedResources(record.backend, profile)),
-    samplers: Object.freeze(expectedSamplers(profile))
+    samplers: Object.freeze(expectedSamplers(record.backend, profile)),
+    analysisResources: Object.freeze(expectedAnalysisResources(record.backend)),
+    transforms: Object.freeze(expectedTransforms(record.backend, profile))
   });
 }
 

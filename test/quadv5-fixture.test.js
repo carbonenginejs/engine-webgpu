@@ -92,6 +92,48 @@ const HIGH_ARRAY_TEXTURE = {
   registers: { dx11: 15, dx12: 16 }
 };
 
+// The producer merges Detail1Map and Detail2Map into one 2d-array binding in
+// Detail1Map's slot and removes Detail2Map's binding, so the heat-detail layout
+// is one binding shorter than its reflection.
+const HEAT_DETAIL_MERGE_REGISTERS = { dx11: [ 12, 13 ], dx12: [ 14, 15 ] };
+
+function heatDetailTransform(backend)
+{
+  const [ first, second ] = HEAT_DETAIL_MERGE_REGISTERS[backend];
+  return {
+    id: `Main.pass0:detail-map-array:sampled-resource:0:${first}`,
+    kind: "texture-2d-array",
+    version: 1,
+    layoutKey: "Main.pass0",
+    stage: "fragment",
+    representation: "native-or-rgba8",
+    missingLayer: "reject",
+    group: 0,
+    binding: 18,
+    output: {
+      name: "DetailMapArray",
+      identity: `sampled-resource:0:${first}`,
+      scopeIdentity: `sampled-resource:0:${first}@fragment`,
+      viewDimension: "2d-array",
+      layerCount: 2
+    },
+    inputs: [
+      {
+        parameter: "Detail1Map",
+        layer: 0,
+        identity: `sampled-resource:0:${first}`,
+        scopeIdentity: `sampled-resource:0:${first}@fragment`
+      },
+      {
+        parameter: "Detail2Map",
+        layer: 1,
+        identity: `sampled-resource:0:${second}`,
+        scopeIdentity: `sampled-resource:0:${second}@fragment`
+      }
+    ]
+  };
+}
+
 const HIGH_MATERIAL_CONSTANTS = [
   [ "GeneralData", 0 ],
   [ "GeneralGlowColor", 16 ],
@@ -489,20 +531,33 @@ function pipelineBindings(backend, skinned = false, heat = false, heatDetail = f
       ? HEAT_DETAIL_RESOURCE_REGISTERS
       : (heat ? HEAT_RESOURCE_REGISTERS : RESOURCE_REGISTERS)))[backend];
   let slot = 5 + (skinned ? 1 : 0);
-  const textures = registers.map((registerIndex, index) => ({
-    ...binding("sampled-resource", registerIndex, slot + index, "fragment", {
-      type: `texture_${index === 0 ? "cube" : "2d"}<f32>`,
-      texture: {
-        sampleType: "float",
-        viewDimension: index === 0 ? "cube" : "2d",
-        multisampled: false
-      }
-    }),
-    textureKind: index === 0 ? "cube" : "2d",
-    arrayElements: 1,
-    isSRGB: index === 0 || names[index] === "AlbedoMap"
-  }));
-  slot += textures.length;
+  const merged = heatDetail ? HEAT_DETAIL_MERGE_REGISTERS[backend] : null;
+  const textures = [];
+  for (let index = 0; index < registers.length; index += 1)
+  {
+    const registerIndex = registers[index];
+    // Detail2Map's binding does not survive the merge.
+    if (merged && registerIndex === merged[1]) continue;
+    const isMergedOutput = Boolean(merged) && registerIndex === merged[0];
+    const viewDimension = index === 0 ? "cube" : (isMergedOutput ? "2d-array" : "2d");
+    textures.push({
+      ...binding("sampled-resource", registerIndex, slot, "fragment", {
+        type: `texture_${viewDimension.replace("-", "_")}<f32>`,
+        texture: {
+          sampleType: "float",
+          viewDimension,
+          multisampled: false
+        }
+      }),
+      textureKind: viewDimension,
+      arrayElements: 1,
+      isSRGB: index === 0 || names[index] === "AlbedoMap",
+      ...(isMergedOutput
+        ? { transformId: heatDetailTransform(backend).id, arrayLayerCount: 2 }
+        : {})
+    });
+    slot += 1;
+  }
   const lights = [];
   if (high)
   {
@@ -674,7 +729,8 @@ function validRecord(backend = "dx11", variant = "static", tier = "medium")
       bindGroups: [ {
         group: 0,
         bindings: pipelineBindings(backend, skinned, heat, heatDetail, tier)
-      } ]
+      } ],
+      resourceTransforms: heatDetail ? [ heatDetailTransform(backend) ] : []
     }
   };
 }
@@ -901,10 +957,35 @@ test("QuadV5 fixture validates the PPT-on skinned heat-detail contract", () =>
   ]);
   const plan = getQuadV5ResourcePlan(dx12);
   assert.equal(plan.storage.length, 1);
-  assert.equal(plan.textures.length, 14);
   assert.equal(plan.samplers.length, 3);
-  assert.equal(plan.textures.find((entry) => entry.name === "Detail2Map").registerIndex, 15);
-  assert.equal(plan.samplers[0].binding, 20);
+  // Post-transform: the two detail maps are one 2d-array binding, so the plan
+  // exposes thirteen textures where the reflection lists fourteen resources.
+  assert.equal(plan.textures.length, 13);
+  assert.equal(plan.analysisResources.length, 14);
+  assert.equal(plan.textures.some((entry) => entry.name === "Detail2Map"), false);
+  assert.equal(
+    plan.analysisResources.find((entry) => entry.name === "Detail2Map").registerIndex,
+    15
+  );
+
+  const merge = plan.transforms[0];
+  assert.equal(plan.transforms.length, 1);
+  assert.equal(merge.output.name, "DetailMapArray");
+  assert.equal(merge.output.scopeIdentity, "sampled-resource:0:14@fragment");
+  assert.equal(merge.output.layerCount, 2);
+  assert.deepEqual(
+    merge.inputs.map((entry) => [ entry.layer, entry.parameter, entry.registerIndex ?? null ]),
+    [ [ 0, "Detail1Map", null ], [ 1, "Detail2Map", null ] ]
+  );
+  assert.deepEqual(
+    merge.inputs.map((entry) => entry.scopeIdentity),
+    [ "sampled-resource:0:14@fragment", "sampled-resource:0:15@fragment" ]
+  );
+  const arrayBinding = plan.textures.find((entry) => entry.name === "DetailMapArray");
+  assert.equal(arrayBinding.viewDimension, "2d-array");
+  assert.equal(arrayBinding.arrayLayerCount, 2);
+  assert.equal(arrayBinding.registerIndex, 14);
+  assert.equal(plan.samplers[0].binding, 19);
 
   const wrongMaterial = structuredClone(dx11);
   wrongMaterial.analysis.stages[1].bindings

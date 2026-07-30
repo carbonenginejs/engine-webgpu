@@ -55,7 +55,7 @@ export function normalizePackageShape(value)
   {
     throw new Error("CjsWebGPUPackage.from: structured wgsl shaders and layouts must be arrays when provided");
   }
-  if (wgsl) assertRealizableWgslSet(wgsl);
+  const resourceTransforms = wgsl ? normalizeResourceTransforms(wgsl) : [];
   const stages = Array.isArray(value.stages)
     ? cloneJson(value.stages)
     : Array.isArray(analysis?.stages)
@@ -83,48 +83,265 @@ export function normalizePackageShape(value)
     chunks: Array.isArray(value.chunks) ? cloneJson(value.chunks) : [],
     stages,
     shaders,
-    layouts
+    layouts,
+    resourceTransforms
   };
 }
 
+// The only transform shape this engine realizes. Every field is part of the
+// contract: a different kind, version, representation, or missing-layer policy
+// changes what the consumer must build, so each is matched exactly rather than
+// defaulted. Widening this set is a deliberate act, not an accident of parsing.
+const TRANSFORM_KIND_TEXTURE_2D_ARRAY = "texture-2d-array";
+const SUPPORTED_TRANSFORM_VERSION = 1;
+const SUPPORTED_TRANSFORM_REPRESENTATIONS = new Set([ "native-or-rgba8" ]);
+const SUPPORTED_TRANSFORM_MISSING_LAYER = new Set([ "reject" ]);
+const TRANSFORM_STAGES = new Set([ "vertex", "fragment", "compute" ]);
+
+function transformFail(message)
+{
+  throw new Error(`CjsWebGPUPackage.from: ${message}`);
+}
+
+function nonEmptyString(value)
+{
+  return typeof value === "string" && value.length > 0;
+}
+
 /**
- * Reject a CJS_WGSL_SET document that declares resource transforms.
+ * Validate and project the resource transforms a CJS_WGSL_SET declares.
  *
- * The engine cannot realize a resource transform: the producer removes a
- * transform's non-zero-layer inputs from the physical layout, so the array
- * binding cannot be fed binding-by-binding. The discriminator is the feature,
- * never the document version - transforms are an optional payload, not a
- * schema version - and never `viewDimension`, because a source-declared
- * `texture_2d_array` keeps all of its bindings and needs no new machinery.
+ * A transform merges several single-layer textures into one array binding and
+ * the producer then removes every non-zero-layer input from the physical
+ * layout, so the array cannot be fed binding-by-binding: the consumer has to
+ * assemble the layers itself. This validates both halves of that claim - the
+ * transform record and the layout it says it rewrote - so a package can never
+ * describe a merge the layout did not actually perform, or leave a stale
+ * binding that would silently receive the wrong texture.
+ *
+ * Anything outside the supported shape throws rather than degrading, because
+ * the failure mode of guessing is WGSL the device accepts and pixels that are
+ * quietly wrong.
  *
  * @param {object} wgsl Cloned CJS_WGSL_SET document.
- * @returns {void}
+ * @returns {object[]} Frozen validated transform records, empty when none.
  */
-function assertRealizableWgslSet(wgsl)
+function normalizeResourceTransforms(wgsl)
 {
-  if (Array.isArray(wgsl.resourceTransforms) && wgsl.resourceTransforms.length)
+  // An absent list is an empty one. The layout is still scanned below, because a
+  // binding that claims a transform no document declared has to be caught
+  // whether or not the package declared any transforms at all.
+  const declared = wgsl.resourceTransforms ?? [];
+  if (!Array.isArray(declared))
   {
-    throw new Error("CjsWebGPUPackage.from: wgsl resource transforms are not supported by this engine");
+    transformFail("wgsl resourceTransforms must be an array when present");
   }
+
+  const layoutsByKey = new Map();
   for (const layout of Array.isArray(wgsl.layouts) ? wgsl.layouts : [])
   {
-    for (const groupRecord of Array.isArray(layout?.bindGroups) ? layout.bindGroups : [])
+    const bindings = (Array.isArray(layout?.bindGroups) ? layout.bindGroups : [])
+      .flatMap((group) => Array.isArray(group?.bindings) ? group.bindings : [])
+      .filter(Boolean);
+    layoutsByKey.set(layout?.key, bindings);
+  }
+
+  const transforms = [];
+  const seenIds = new Set();
+  for (const entry of declared)
+  {
+    if (!entry || typeof entry !== "object") transformFail("each wgsl resource transform must be an object");
+    const id = entry.id;
+    if (!nonEmptyString(id)) transformFail("each wgsl resource transform requires a non-empty id");
+    if (seenIds.has(id)) transformFail(`wgsl resource transform ${id} is declared more than once`);
+    seenIds.add(id);
+
+    if (entry.kind !== TRANSFORM_KIND_TEXTURE_2D_ARRAY)
     {
-      for (const binding of Array.isArray(groupRecord?.bindings) ? groupRecord.bindings : [])
+      transformFail(`wgsl resource transform ${id} kind ${String(entry.kind)} is not supported by this engine`);
+    }
+    if (entry.version !== SUPPORTED_TRANSFORM_VERSION)
+    {
+      transformFail(`wgsl resource transform ${id} version ${String(entry.version)} is not supported by this engine`);
+    }
+    if (!SUPPORTED_TRANSFORM_REPRESENTATIONS.has(entry.representation))
+    {
+      transformFail(`wgsl resource transform ${id} representation ${String(entry.representation)}`
+        + " is not supported by this engine");
+    }
+    // "reject" is the only policy the engine can honour: it has no way to
+    // synthesize a stand-in layer that would not change the rendered result.
+    if (!SUPPORTED_TRANSFORM_MISSING_LAYER.has(entry.missingLayer))
+    {
+      transformFail(`wgsl resource transform ${id} missingLayer policy ${String(entry.missingLayer)}`
+        + " is not supported by this engine");
+    }
+    if (!nonEmptyString(entry.layoutKey))
+    {
+      transformFail(`wgsl resource transform ${id} requires a non-empty layoutKey`);
+    }
+    if (!TRANSFORM_STAGES.has(entry.stage))
+    {
+      transformFail(`wgsl resource transform ${id} stage ${String(entry.stage)} is not a known shader stage`);
+    }
+
+    const inputs = entry.inputs;
+    if (!Array.isArray(inputs) || inputs.length < 1)
+    {
+      transformFail(`wgsl resource transform ${id} requires at least one input`);
+    }
+    const output = entry.output;
+    if (!output || typeof output !== "object")
+    {
+      transformFail(`wgsl resource transform ${id} requires an output`);
+    }
+    if (output.viewDimension !== "2d-array")
+    {
+      transformFail(`wgsl resource transform ${id} output viewDimension`
+        + ` ${String(output.viewDimension)} is not supported by this engine`);
+    }
+    if (!nonEmptyString(output.name) || !nonEmptyString(output.identity)
+      || !nonEmptyString(output.scopeIdentity))
+    {
+      transformFail(`wgsl resource transform ${id} output requires a name, identity, and scopeIdentity`);
+    }
+    if (output.layerCount !== inputs.length)
+    {
+      transformFail(`wgsl resource transform ${id} output layerCount ${String(output.layerCount)}`
+        + ` does not match its ${inputs.length} inputs`);
+    }
+
+    const byLayer = new Map();
+    for (const input of inputs)
+    {
+      if (!input || typeof input !== "object")
       {
-        if (binding && (binding.transformId !== undefined && binding.transformId !== null))
-        {
-          throw new Error(`CjsWebGPUPackage.from: transformed binding ${binding.group}:${binding.binding}`
-            + " is not supported by this engine");
-        }
-        if (binding && (binding.arrayLayerCount !== undefined && binding.arrayLayerCount !== null))
-        {
-          throw new Error(`CjsWebGPUPackage.from: transformed binding ${binding.group}:${binding.binding}`
-            + " is not supported by this engine");
-        }
+        transformFail(`wgsl resource transform ${id} inputs must be objects`);
+      }
+      if (!nonEmptyString(input.parameter) || !nonEmptyString(input.identity)
+        || !nonEmptyString(input.scopeIdentity))
+      {
+        transformFail(`wgsl resource transform ${id} inputs require a parameter, identity, and scopeIdentity`);
+      }
+      if (!Number.isInteger(input.layer) || input.layer < 0 || input.layer >= inputs.length)
+      {
+        transformFail(`wgsl resource transform ${id} input ${input.parameter} layer`
+          + ` ${String(input.layer)} is outside 0..${inputs.length - 1}`);
+      }
+      if (byLayer.has(input.layer))
+      {
+        transformFail(`wgsl resource transform ${id} declares layer ${input.layer} more than once`);
+      }
+      byLayer.set(input.layer, input);
+    }
+    // Contiguity matters: the consumer writes layer i from inputs[i], so a gap
+    // would leave an undefined layer that "reject" cannot express.
+    const ordered = [];
+    for (let layer = 0; layer < inputs.length; layer += 1)
+    {
+      const input = byLayer.get(layer);
+      if (!input) transformFail(`wgsl resource transform ${id} is missing layer ${layer}`);
+      ordered.push(input);
+    }
+    // The producer folds the array into the layer-0 input's slot. Requiring that
+    // keeps the binding a consumer must fill unambiguous.
+    if (output.scopeIdentity !== ordered[0].scopeIdentity)
+    {
+      transformFail(`wgsl resource transform ${id} output ${output.scopeIdentity} must occupy`
+        + ` its layer 0 input slot ${ordered[0].scopeIdentity}`);
+    }
+
+    const bindings = layoutsByKey.get(entry.layoutKey);
+    if (!bindings)
+    {
+      transformFail(`wgsl resource transform ${id} names layout ${entry.layoutKey}, which the package does not contain`);
+    }
+    const carriers = bindings.filter((binding) => binding.transformId === id);
+    if (carriers.length !== 1)
+    {
+      transformFail(`wgsl resource transform ${id} must be carried by exactly one binding in`
+        + ` ${entry.layoutKey}, found ${carriers.length}`);
+    }
+    const carrier = carriers[0];
+    if (carrier.scopeIdentity !== output.scopeIdentity || carrier.identity !== output.identity)
+    {
+      transformFail(`wgsl resource transform ${id} is carried by ${carrier.scopeIdentity},`
+        + ` which is not its declared output ${output.scopeIdentity}`);
+    }
+    if (carrier.arrayLayerCount !== output.layerCount)
+    {
+      transformFail(`wgsl resource transform ${id} carrier declares ${String(carrier.arrayLayerCount)}`
+        + ` layers but the transform merges ${output.layerCount}`);
+    }
+    if (carrier.type !== "texture_2d_array<f32>" || carrier.texture?.viewDimension !== "2d-array")
+    {
+      transformFail(`wgsl resource transform ${id} carrier ${carrier.scopeIdentity} is not a 2d-array texture`);
+    }
+    if (!Array.isArray(carrier.visibility) || !carrier.visibility.includes(entry.stage))
+    {
+      transformFail(`wgsl resource transform ${id} carrier ${carrier.scopeIdentity} is not visible`
+        + ` to the ${entry.stage} stage`);
+    }
+    // Every merged-away input must actually be gone. A survivor would still be
+    // bindable and would silently receive a texture the shader never reads.
+    for (const input of ordered.slice(1))
+    {
+      if (bindings.some((binding) => binding.scopeIdentity === input.scopeIdentity))
+      {
+        transformFail(`wgsl resource transform ${id} merged ${input.parameter} into`
+          + ` ${output.scopeIdentity}, but ${input.scopeIdentity} is still bound in ${entry.layoutKey}`);
+      }
+    }
+
+    transforms.push(deepFreeze({
+      id,
+      kind: entry.kind,
+      version: entry.version,
+      layoutKey: entry.layoutKey,
+      stage: entry.stage,
+      representation: entry.representation,
+      missingLayer: entry.missingLayer,
+      group: carrier.group,
+      binding: carrier.binding,
+      output: {
+        name: output.name,
+        identity: output.identity,
+        scopeIdentity: output.scopeIdentity,
+        viewDimension: output.viewDimension,
+        layerCount: output.layerCount
+      },
+      inputs: ordered.map((input) => ({
+        parameter: input.parameter,
+        layer: input.layer,
+        identity: input.identity,
+        scopeIdentity: input.scopeIdentity
+      }))
+    }));
+  }
+
+  // A binding cannot claim a transform the document never declared, and an
+  // array layer count is only meaningful as part of one. A source-declared
+  // texture_2d_array keeps all of its bindings and carries neither field.
+  for (const [ key, bindings ] of layoutsByKey)
+  {
+    for (const binding of bindings)
+    {
+      const claimed = binding.transformId;
+      if (claimed !== undefined && claimed !== null && !seenIds.has(claimed))
+      {
+        transformFail(`layout ${key} binding ${binding.scopeIdentity} claims undeclared`
+          + ` resource transform ${String(claimed)}`);
+      }
+      if (binding.arrayLayerCount !== undefined && binding.arrayLayerCount !== null
+        && (claimed === undefined || claimed === null))
+      {
+        transformFail(`layout ${key} binding ${binding.scopeIdentity} declares`
+          + ` ${String(binding.arrayLayerCount)} array layers without a resource transform`);
       }
     }
   }
+
+  return transforms;
 }
 
 /**
@@ -202,9 +419,14 @@ export function buildPipelines(normalized, shaderModules)
   const bindGroups = [];
   const pipelines = [];
 
+  const allTransforms = Array.isArray(normalized.resourceTransforms)
+    ? normalized.resourceTransforms
+    : [];
+
   for (const pass of passMap.values())
   {
-    const canonicalLayout = normalized.layouts.find((entry) => entry?.key === buildPassKey(pass)) || null;
+    const passKey = buildPassKey(pass);
+    const canonicalLayout = normalized.layouts.find((entry) => entry?.key === passKey) || null;
     const passBindGroups = canonicalLayout
       ? buildCanonicalBindGroups(pass, canonicalLayout, normalized.wgsl?.formatVersion ?? null)
       : [ new CjsWebGPUBindGroup({
@@ -216,13 +438,16 @@ export function buildPipelines(normalized, shaderModules)
 
     bindGroups.push(...passBindGroups);
     pipelines.push(new CjsWebGPUPipeline({
-      key: buildPassKey(pass),
+      key: passKey,
       techniqueName: pass.techniqueName,
       passIndex: pass.passIndex,
       renderStates: pass.renderStates,
       states: pass.states,
       shaderModules: pass.stages,
-      bindGroups: passBindGroups
+      bindGroups: passBindGroups,
+      // Transforms are keyed by the layout they rewrote, so a pass carries
+      // exactly the ones a consumer must satisfy to fill its bind group.
+      resourceTransforms: allTransforms.filter((entry) => entry.layoutKey === passKey)
     }));
   }
 
@@ -501,6 +726,11 @@ function createCanonicalDescriptor(pass, binding)
     binding: binding.binding,
     visibility,
     structureStride: Number.isInteger(binding.structureStride) ? binding.structureStride : null,
+    // Carried through so a binding is self-describing: a merged array binding is
+    // otherwise indistinguishable from a source-declared one, and only the
+    // former needs a consumer to assemble its layers.
+    transformId: binding.transformId ?? null,
+    arrayLayerCount: Number.isInteger(binding.arrayLayerCount) ? binding.arrayLayerCount : null,
     layout: {
       type: binding.type || null,
       buffer: cloneJson(binding.buffer || null),

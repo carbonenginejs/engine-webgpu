@@ -48,6 +48,11 @@ export class CjsWebGPUResource
     this.visibility = deepFreeze(cloneJson(values.visibility || []));
     this.layout = deepFreeze(cloneJson(values.layout || null));
     this.structureStride = Number.isInteger(values.structureStride) ? values.structureStride : null;
+    // Set only when the producer merged several source textures into this one
+    // array binding. A consumer must then assemble the layers rather than bind a
+    // single texture; null means the binding is fed directly.
+    this.transformId = values.transformId ? String(values.transformId) : null;
+    this.arrayLayerCount = Number.isInteger(values.arrayLayerCount) ? values.arrayLayerCount : null;
     if (new.target === CjsWebGPUResource)
     {
       Object.freeze(this);
@@ -87,7 +92,9 @@ export class CjsWebGPUResource
       binding: this.binding,
       visibility: this.visibility,
       layout: this.layout,
-      ...(this.structureStride !== null ? { structureStride: this.structureStride } : {})
+      ...(this.structureStride !== null ? { structureStride: this.structureStride } : {}),
+      ...(this.transformId !== null ? { transformId: this.transformId } : {}),
+      ...(this.arrayLayerCount !== null ? { arrayLayerCount: this.arrayLayerCount } : {})
     });
   }
 }

@@ -137,6 +137,23 @@ const HEAT_RESOURCE_NAMES = Object.freeze([
   "HeatGlowNoiseMap"
 ]);
 
+// The producer merges the two detail maps into one 2d-array binding that sits in
+// Detail1Map's slot, and removes Detail2Map's binding entirely. So the analysis
+// reflects fourteen fragment resources while the layout exposes thirteen: the
+// reflection is pre-transform and the layout is post-transform, and a consumer
+// that conflates them either over-binds or fails to fill the array.
+const HEAT_DETAIL_MERGE = Object.freeze({
+  outputName: "DetailMapArray",
+  inputParameters: Object.freeze([ "Detail1Map", "Detail2Map" ]),
+  viewDimension: "2d-array",
+  layerCount: 2,
+  representation: "native-or-rgba8",
+  missingLayer: "reject",
+  stage: "fragment",
+  kind: "texture-2d-array",
+  version: 1
+});
+
 const HEAT_DETAIL_RESOURCE_REGISTERS = Object.freeze({
   dx11: Object.freeze([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 ]),
   dx12: Object.freeze([ 0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13, 14, 15 ])
@@ -555,21 +572,72 @@ function expectedLayout(backend, variant, tier)
     }));
     slot += 1;
   }
-  const textures = names.map((name, index) => sampledResource(
-    name, registers[index], slot + index, "fragment", {
-      viewDimension: index === 0 ? "cube" : "2d",
-      registerType: index === 0 ? 41 : 36,
-      carbonType: index === 0 ? 4 : 2,
-      isSRGB: index === 0 || name === "AlbedoMap",
+  const fragmentResource = (name, registerIndex, binding) => sampledResource(
+    name, registerIndex, binding, "fragment", {
+      viewDimension: name === "EveSpaceSceneEnvMap" ? "cube" : "2d",
+      registerType: name === "EveSpaceSceneEnvMap" ? 41 : 36,
+      carbonType: name === "EveSpaceSceneEnvMap" ? 4 : 2,
+      isSRGB: name === "EveSpaceSceneEnvMap" || name === "AlbedoMap",
       isAutoregister: name === "EveSpaceSceneShadowMap"
     }
-  ));
-  slot += textures.length;
+  );
+  const merge = heatDetail ? HEAT_DETAIL_MERGE : null;
+  const transforms = [];
+  const textures = [];
+  for (let index = 0; index < names.length; index += 1)
+  {
+    const name = names[index];
+    const mergeLayer = merge ? merge.inputParameters.indexOf(name) : -1;
+    if (mergeLayer > 0) continue;
+    if (mergeLayer === 0)
+    {
+      const inputs = merge.inputParameters.map((parameter, layer) => Object.freeze({
+        parameter,
+        layer,
+        identity: `sampled-resource:0:${registers[names.indexOf(parameter)]}`,
+        scopeIdentity: `sampled-resource:0:${registers[names.indexOf(parameter)]}@fragment`
+      }));
+      const output = sampledResource(merge.outputName, registers[index], slot, "fragment", {
+        viewDimension: merge.viewDimension,
+        registerType: 36,
+        carbonType: 2,
+        isSRGB: false,
+        isAutoregister: false,
+        arrayLayerCount: merge.layerCount
+      });
+      textures.push(output);
+      transforms.push(Object.freeze({
+        id: `Main.pass0:detail-map-array:${output.identity}`,
+        kind: merge.kind,
+        version: merge.version,
+        layoutKey: "Main.pass0",
+        stage: merge.stage,
+        representation: merge.representation,
+        missingLayer: merge.missingLayer,
+        group: 0,
+        binding: slot,
+        output: Object.freeze({
+          name: merge.outputName,
+          identity: output.identity,
+          scopeIdentity: output.scopeIdentity,
+          viewDimension: merge.viewDimension,
+          layerCount: merge.layerCount
+        }),
+        inputs: Object.freeze(inputs)
+      }));
+      slot += 1;
+      continue;
+    }
+    textures.push(fragmentResource(name, registers[index], slot));
+    slot += 1;
+  }
+  const highStorage = [];
+  const highArrays = [];
   if (high)
   {
     for (const entry of HIGH_STORAGE_RESOURCES)
     {
-      storage.push(sampledResource(entry.name, entry.registers[backend], slot, "fragment", {
+      highStorage.push(sampledResource(entry.name, entry.registers[backend], slot, "fragment", {
         registerType: 33,
         carbonType: 7,
         isSRGB: false,
@@ -581,7 +649,7 @@ function expectedLayout(backend, variant, tier)
     }
     for (const entry of HIGH_ARRAY_RESOURCES)
     {
-      textures.push(sampledResource(entry.name, entry.registers[backend], slot, "fragment", {
+      highArrays.push(sampledResource(entry.name, entry.registers[backend], slot, "fragment", {
         viewDimension: entry.viewDimension,
         registerType: 37,
         carbonType: 5,
@@ -590,7 +658,18 @@ function expectedLayout(backend, variant, tier)
       }));
       slot += 1;
     }
+    storage.push(...highStorage);
+    textures.push(...highArrays);
   }
+  // The reflection is pre-transform: every declared fragment resource, including
+  // the inputs a transform merged away. The layout above is post-transform. For
+  // an untransformed pass the two sets are the same; for a transformed one the
+  // analysis is longer, which is exactly the asymmetry a consumer must respect.
+  const analysisResources = [
+    ...names.map((name, index) => fragmentResource(name, registers[index], null)),
+    ...highStorage,
+    ...highArrays
+  ];
   const samplers = (high ? HIGH_SAMPLER_DESCRIPTORS : SAMPLER_DESCRIPTORS)
     .map((descriptor, registerIndex) => Object.freeze({
       name: descriptor.name,
@@ -602,7 +681,7 @@ function expectedLayout(backend, variant, tier)
       registerIndex,
       binding: slot + registerIndex
     }));
-  return { uniforms, storage, textures, samplers };
+  return { uniforms, storage, textures, samplers, analysisResources, transforms };
 }
 
 const HEAT_DETAIL_MATERIAL_CONSTANTS = Object.freeze([
@@ -807,10 +886,10 @@ function assertAnalysisResources(record, layout, strict)
   }
   const samplers = layout.samplers;
   const vertexStorage = layout.storage.filter((entry) => entry.scope === "vertex");
-  const resources = [
-    ...layout.textures,
-    ...layout.storage.filter((entry) => entry.scope === "fragment")
-  ];
+  // Deliberately the pre-transform list: the analysis still reflects a merged
+  // input under its own register, so checking it against the post-transform
+  // layout would report drift that is really just the merge.
+  const resources = layout.analysisResources;
   const vertexBindings = Array.isArray(vertex[0].bindings) ? vertex[0].bindings : [];
   const vertexResources = vertexBindings.filter((entry) => entry?.kind === "resource");
   if (vertexResources.length !== vertexStorage.length)
@@ -1000,6 +1079,14 @@ function assertBindings(record, tier)
     {
       fail(`${expected.identity} has an unexpected texture layout`);
     }
+    // A merged binding must say so on the binding itself, and a direct one must
+    // not: that is the only local signal that layers need assembling.
+    const expectedLayers = expected.arrayLayerCount ?? null;
+    if ((binding.arrayLayerCount ?? null) !== expectedLayers)
+    {
+      fail(`${expected.identity} must declare ${expectedLayers === null ? "no" : expectedLayers}`
+        + " merged array layers");
+    }
   }
   for (const expected of samplers)
   {
@@ -1010,9 +1097,71 @@ function assertBindings(record, tier)
       fail(`${expected.identity} has an unexpected sampler layout`);
     }
   }
+  assertResourceTransforms(record, layout);
   assertAnalysisResources(record, layout, strict);
   if (strictHeat) assertHeatMaterial(record, heatDetail);
   if (tier === "high") assertHighMaterial(record);
+}
+
+// A transformed binding cannot be filled from one source texture, so the
+// requirement has to reach the consumer through the pipeline rather than being
+// inferred from the binding. Assert the projection exactly, both ways: a pass
+// that declares a merge the fixture does not expect is as wrong as the reverse.
+function assertResourceTransforms(record, layout)
+{
+  const declared = record.pipeline?.resourceTransforms ?? [];
+  const expected = layout.transforms;
+  if (!Array.isArray(declared) || declared.length !== expected.length)
+  {
+    fail(`Main.pass0 must declare exactly ${expected.length} resource transform`
+      + `${expected.length === 1 ? "" : "s"}`);
+  }
+  for (const want of expected)
+  {
+    const matches = declared.filter((entry) =>
+      entry?.output?.scopeIdentity === want.output.scopeIdentity);
+    if (matches.length !== 1)
+    {
+      fail(`Main.pass0 must declare one transform merging into ${want.output.scopeIdentity}`);
+    }
+    const got = matches[0];
+    if (got.id !== want.id || got.kind !== want.kind || got.version !== want.version
+      || got.layoutKey !== want.layoutKey || got.stage !== want.stage
+      || got.representation !== want.representation || got.missingLayer !== want.missingLayer
+      || got.group !== want.group || got.binding !== want.binding
+      || got.output.name !== want.output.name
+      || got.output.identity !== want.output.identity
+      || got.output.viewDimension !== want.output.viewDimension
+      || got.output.layerCount !== want.output.layerCount)
+    {
+      fail(`${want.id} has unexpected transform metadata`);
+    }
+    if (!Array.isArray(got.inputs) || got.inputs.length !== want.inputs.length)
+    {
+      fail(`${want.id} must merge exactly ${want.inputs.length} inputs`);
+    }
+    for (let index = 0; index < want.inputs.length; index += 1)
+    {
+      const wantInput = want.inputs[index];
+      const gotInput = got.inputs[index];
+      if (gotInput?.parameter !== wantInput.parameter || gotInput.layer !== wantInput.layer
+        || gotInput.identity !== wantInput.identity
+        || gotInput.scopeIdentity !== wantInput.scopeIdentity)
+      {
+        fail(`${want.id} layer ${wantInput.layer} must come from ${wantInput.parameter}`);
+      }
+    }
+    // The merged-away inputs must not also be bound directly.
+    const bindings = record.pipeline.bindGroups[0].bindings;
+    for (const input of want.inputs.slice(1))
+    {
+      if (bindings.some((entry) => entry.scopeIdentity === input.scopeIdentity))
+      {
+        fail(`${input.parameter} was merged into ${want.output.scopeIdentity}`
+          + ` but is still bound at ${input.scopeIdentity}`);
+      }
+    }
+  }
 }
 
 /**
@@ -1129,8 +1278,13 @@ export function getQuadV5ResourcePlan(record)
   return Object.freeze({
     tier,
     storage: Object.freeze(layout.storage),
+    // Post-transform: what the bind group actually has slots for.
     textures: Object.freeze(layout.textures),
-    samplers: Object.freeze(layout.samplers)
+    samplers: Object.freeze(layout.samplers),
+    // Pre-transform: what the reflection lists, including merged-away inputs.
+    analysisResources: Object.freeze(layout.analysisResources),
+    // The merges a caller must assemble before it can fill the bind group.
+    transforms: Object.freeze(layout.transforms)
   });
 }
 
