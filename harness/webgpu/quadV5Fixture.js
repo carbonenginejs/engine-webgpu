@@ -70,6 +70,61 @@ const RESOURCE_REGISTERS = Object.freeze({
   dx12: Object.freeze([ 0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12 ])
 });
 
+// The High (.sm_depth) tier of the same static body. It is not a superset of
+// Medium by appending: DustNoiseMap and DirtMap land mid-sequence, which is why
+// Medium's DX12 register run has holes at 5 and 8 that High fills. Registers are
+// the producer's physical ones and are never reassigned here.
+const HIGH_RESOURCE_NAMES = Object.freeze([
+  "EveSpaceSceneEnvMap",
+  "SSAOMap",
+  "EveSpaceSceneShadowMap",
+  "NormalMap",
+  "GlowMap",
+  "DustNoiseMap",
+  "AlbedoMap",
+  "RoughnessMap",
+  "DirtMap",
+  "MaterialMap",
+  "PaintMaskMap",
+  "PatternMask1Map",
+  "PatternMask2Map"
+]);
+
+const HIGH_RESOURCE_REGISTERS = Object.freeze({
+  dx11: Object.freeze([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ]),
+  dx12: Object.freeze([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ])
+});
+
+// High binds the forward-light set. These are read-only storage buffers rather
+// than textures, so they share the sampled-resource register file with the
+// textures above but need a buffer layout.
+const HIGH_STORAGE_RESOURCES = Object.freeze([
+  Object.freeze({
+    name: "LightIndexBuffer",
+    structureStride: 4,
+    minBindingSize: 4,
+    registers: Object.freeze({ dx11: 13, dx12: 14 })
+  }),
+  Object.freeze({
+    name: "LightBuffer",
+    structureStride: 48,
+    minBindingSize: 48,
+    registers: Object.freeze({ dx11: 14, dx12: 15 })
+  })
+]);
+
+// A plain layered texture with a 2d-array view and no resource transform, which
+// is why realizing 2d-array textures is a prerequisite for a High draw rather
+// than a follow-on to transform support.
+const HIGH_ARRAY_RESOURCES = Object.freeze([
+  Object.freeze({
+    name: "LightProfileArray",
+    viewDimension: "2d-array",
+    layers: 2,
+    registers: Object.freeze({ dx11: 15, dx12: 16 })
+  })
+]);
+
 const HEAT_DETAIL_RESOURCE_NAMES = Object.freeze([
   ...RESOURCE_NAMES,
   "HeatGlowNoiseMap",
@@ -152,11 +207,54 @@ const HEAT_DETAIL_WGSL_STRUCTS = Object.freeze({
   ])
 });
 
-const SAMPLER_NAMES = Object.freeze([
-  "Sampler0",
-  "PatternMask1MapSampler",
-  "PatternMask2MapSampler"
+// Carbon reflects s0 and s3 without a name. That absence is the contract: an
+// unnamed sampler is declared in the effect signature rather than as a named
+// stage register, which is also why DX12 lowers exactly those two to immutable
+// root-signature samplers. `named` therefore drives both expectations.
+const ANISOTROPIC_REPEAT_STATE = Object.freeze({
+  minFilter: 3, magFilter: 2, mipFilter: 2,
+  addressU: 1, addressV: 1, addressW: 3
+});
+
+// s3 is not a copy of s0: it samples the light profile array with linear
+// filtering, no mip filter, and clamped addressing on every axis.
+const LINEAR_CLAMP_STATE = Object.freeze({
+  minFilter: 2, magFilter: 2, mipFilter: 0,
+  addressU: 3, addressV: 3, addressW: 3
+});
+
+const FILTERING_REPEAT_SAMPLER = Object.freeze({
+  minFilter: "linear",
+  magFilter: "linear",
+  mipmapFilter: "linear",
+  addressModeU: "repeat",
+  addressModeV: "repeat",
+  addressModeW: "clamp-to-edge",
+  maxAnisotropy: 16
+});
+
+const FILTERING_CLAMP_SAMPLER = Object.freeze({
+  minFilter: "linear",
+  magFilter: "linear",
+  mipmapFilter: "nearest",
+  addressModeU: "clamp-to-edge",
+  addressModeV: "clamp-to-edge",
+  addressModeW: "clamp-to-edge",
+  maxAnisotropy: 1
+});
+
+const SAMPLER_DESCRIPTORS = Object.freeze([
+  Object.freeze({ name: "Sampler0", named: false, state: ANISOTROPIC_REPEAT_STATE, gpu: FILTERING_REPEAT_SAMPLER }),
+  Object.freeze({ name: "PatternMask1MapSampler", named: true, state: ANISOTROPIC_REPEAT_STATE, gpu: FILTERING_REPEAT_SAMPLER }),
+  Object.freeze({ name: "PatternMask2MapSampler", named: true, state: ANISOTROPIC_REPEAT_STATE, gpu: FILTERING_REPEAT_SAMPLER })
 ]);
+
+const HIGH_SAMPLER_DESCRIPTORS = Object.freeze([
+  ...SAMPLER_DESCRIPTORS,
+  Object.freeze({ name: "Sampler3", named: false, state: LINEAR_CLAMP_STATE, gpu: FILTERING_CLAMP_SAMPLER })
+]);
+
+const SAMPLER_NAMES = Object.freeze(SAMPLER_DESCRIPTORS.map((entry) => entry.name));
 
 export const QUADV5_VERTEX_BUFFER_LAYOUT = Object.freeze({
   arrayStride: 64,
@@ -373,51 +471,138 @@ function requiredUniforms(skinned, heat, heatDetail)
   }));
 }
 
-function expectedBoneBinding()
+const TIER_BY_SUFFIX = Object.freeze({
+  sm_depth: "high",
+  sm_hi: "medium",
+  sm_lo: "low"
+});
+
+// The tier is a property of the compiled source, so it is read from the source
+// path the package carries rather than passed in beside it. A caller cannot
+// declare a tier the bytes disagree with.
+function tierFromSource(analysisSource, expectedStem)
+{
+  const match = new RegExp(`/${expectedStem}\\.([a-z_0-9]+)$`, "u").exec(analysisSource ?? "");
+  const tier = match ? TIER_BY_SUFFIX[match[1]] : undefined;
+  if (!tier)
+  {
+    fail(`package source must name a known quality tier, not ${String(analysisSource)}`);
+  }
+  return tier;
+}
+
+function sampledResource(name, registerIndex, binding, scope, extra)
 {
   return Object.freeze({
-    name: "BoneTransforms",
-    identity: "sampled-resource:0:0",
-    scopeIdentity: "sampled-resource:0:0@vertex",
-    registerIndex: 0,
-    binding: 5
+    name,
+    identity: `sampled-resource:0:${registerIndex}`,
+    scopeIdentity: `sampled-resource:0:${registerIndex}@${scope}`,
+    registerIndex,
+    binding,
+    scope,
+    arrayElements: 1,
+    ...extra
   });
 }
 
-function expectedResourceBindings(backend, skinned, heat, heatDetail)
+/**
+ * Resolve the exact canonical bind-group layout for one variant at one tier.
+ *
+ * Slots are computed from the inventory rather than tabulated, so a tier that
+ * adds bindings cannot silently disagree with itself about where the samplers
+ * start. Registers stay the producer's physical ones.
+ *
+ * @param {"dx11"|"dx12"} backend Package backend.
+ * @param {string} variant Fixture variant.
+ * @param {"high"|"medium"|"low"} tier Compiled quality tier.
+ * @returns {{uniforms: object[], storage: object[], textures: object[], samplers: object[]}} Layout.
+ */
+function expectedLayout(backend, variant, tier)
 {
-  const registerTable = heatDetail
-    ? HEAT_DETAIL_RESOURCE_REGISTERS
-    : (heat ? HEAT_RESOURCE_REGISTERS : RESOURCE_REGISTERS);
+  const skinned = variant !== "static";
+  const heat = variant === "skinnedHeat";
+  const heatDetail = variant === "skinnedHeatDetail";
+  const high = tier === "high";
+  if (high && variant !== "static")
+  {
+    fail(`the High tier is only encoded for the static variant, not ${variant}`);
+  }
+  const registerTable = high
+    ? HIGH_RESOURCE_REGISTERS
+    : (heatDetail
+      ? HEAT_DETAIL_RESOURCE_REGISTERS
+      : (heat ? HEAT_RESOURCE_REGISTERS : RESOURCE_REGISTERS));
   const registers = registerTable[backend];
   if (!registers) fail(`unsupported package backend ${String(backend)}`);
-  const names = heatDetail
-    ? HEAT_DETAIL_RESOURCE_NAMES
-    : (heat ? HEAT_RESOURCE_NAMES : RESOURCE_NAMES);
-  return names.map((name, index) => Object.freeze({
-    name,
-    identity: `sampled-resource:0:${registers[index]}`,
-    scopeIdentity: `sampled-resource:0:${registers[index]}@fragment`,
-    registerIndex: registers[index],
-    binding: (skinned ? 6 : 5) + index,
-    viewDimension: index === 0 ? "cube" : "2d",
-    registerType: index === 0 ? 41 : 36,
-    carbonType: index === 0 ? 4 : 2,
-    arrayElements: 1,
-    isSRGB: index === 0 || name === "AlbedoMap",
-    isAutoregister: name === "EveSpaceSceneShadowMap"
-  }));
-}
+  const names = high
+    ? HIGH_RESOURCE_NAMES
+    : (heatDetail
+      ? HEAT_DETAIL_RESOURCE_NAMES
+      : (heat ? HEAT_RESOURCE_NAMES : RESOURCE_NAMES));
 
-function expectedSamplerBindings(skinned, heat, heatDetail)
-{
-  return SAMPLER_NAMES.map((name, registerIndex) => Object.freeze({
-    name,
-    identity: `sampler:0:${registerIndex}`,
-    scopeIdentity: `sampler:0:${registerIndex}@fragment`,
-    registerIndex,
-    binding: (heatDetail ? 20 : (heat ? 18 : (skinned ? 17 : 16))) + registerIndex
-  }));
+  const uniforms = requiredUniforms(skinned, heat, heatDetail);
+  let slot = uniforms.length;
+  const storage = [];
+  if (skinned)
+  {
+    storage.push(sampledResource("BoneTransforms", 0, slot, "vertex", {
+      registerType: 33,
+      carbonType: 7,
+      isSRGB: false,
+      isAutoregister: false,
+      minBindingSize: 48,
+      structureStride: 48
+    }));
+    slot += 1;
+  }
+  const textures = names.map((name, index) => sampledResource(
+    name, registers[index], slot + index, "fragment", {
+      viewDimension: index === 0 ? "cube" : "2d",
+      registerType: index === 0 ? 41 : 36,
+      carbonType: index === 0 ? 4 : 2,
+      isSRGB: index === 0 || name === "AlbedoMap",
+      isAutoregister: name === "EveSpaceSceneShadowMap"
+    }
+  ));
+  slot += textures.length;
+  if (high)
+  {
+    for (const entry of HIGH_STORAGE_RESOURCES)
+    {
+      storage.push(sampledResource(entry.name, entry.registers[backend], slot, "fragment", {
+        registerType: 33,
+        carbonType: 7,
+        isSRGB: false,
+        isAutoregister: true,
+        minBindingSize: entry.minBindingSize,
+        structureStride: entry.structureStride
+      }));
+      slot += 1;
+    }
+    for (const entry of HIGH_ARRAY_RESOURCES)
+    {
+      textures.push(sampledResource(entry.name, entry.registers[backend], slot, "fragment", {
+        viewDimension: entry.viewDimension,
+        registerType: 37,
+        carbonType: 5,
+        isSRGB: false,
+        isAutoregister: true
+      }));
+      slot += 1;
+    }
+  }
+  const samplers = (high ? HIGH_SAMPLER_DESCRIPTORS : SAMPLER_DESCRIPTORS)
+    .map((descriptor, registerIndex) => Object.freeze({
+      name: descriptor.name,
+      named: descriptor.named,
+      state: descriptor.state,
+      gpu: descriptor.gpu,
+      identity: `sampler:0:${registerIndex}`,
+      scopeIdentity: `sampler:0:${registerIndex}@fragment`,
+      registerIndex,
+      binding: slot + registerIndex
+    }));
+  return { uniforms, storage, textures, samplers };
 }
 
 const HEAT_DETAIL_MATERIAL_CONSTANTS = Object.freeze([
@@ -517,30 +702,96 @@ function assertHeatMaterial(record, heatDetail)
   }
 }
 
-function hasExactSamplerState(state, isDynamic)
+// The High material block. It keeps Medium's 384-byte footprint and fills what
+// Medium leaves as a 64-byte hole at 224 with the four dust colors, so the size
+// alone cannot tell the tiers apart - the constant inventory can.
+const HIGH_MATERIAL_CONSTANTS = Object.freeze([
+  [ "GeneralData", 0 ],
+  [ "GeneralGlowColor", 16 ],
+  [ "Mtl1DiffuseColor", 32 ],
+  [ "Mtl2DiffuseColor", 48 ],
+  [ "Mtl3DiffuseColor", 64 ],
+  [ "Mtl4DiffuseColor", 80 ],
+  [ "Mtl1FresnelColor", 96 ],
+  [ "Mtl2FresnelColor", 112 ],
+  [ "Mtl3FresnelColor", 128 ],
+  [ "Mtl4FresnelColor", 144 ],
+  [ "Mtl1Gloss", 160 ],
+  [ "Mtl2Gloss", 176 ],
+  [ "Mtl3Gloss", 192 ],
+  [ "Mtl4Gloss", 208 ],
+  [ "Mtl1DustDiffuseColor", 224 ],
+  [ "Mtl2DustDiffuseColor", 240 ],
+  [ "Mtl3DustDiffuseColor", 256 ],
+  [ "Mtl4DustDiffuseColor", 272 ],
+  [ "PMtl1DiffuseColor", 288 ],
+  [ "PMtl1FresnelColor", 304 ],
+  [ "PMtl1Gloss", 320 ],
+  [ "PMtl2DiffuseColor", 336 ],
+  [ "PMtl2FresnelColor", 352 ],
+  [ "PMtl2Gloss", 368 ]
+]);
+
+function assertHighMaterial(record)
+{
+  const pixel = record.analysis.stages.find((entry) =>
+    entry?.techniqueName === "Main"
+      && entry.passIndex === 0
+      && entry.stageName === "pixel");
+  const material = pixel?.bindings?.filter((entry) =>
+    entry?.kind === "constantBuffer" && entry.registerIndex === 0);
+  if (!Array.isArray(material) || material.length !== 1
+    || material[0].carbon?.hasLocalConstants !== true
+    || material[0].carbon?.constantValueSize !== 384)
+  {
+    fail("pixel cb0 must expose the exact 384-byte High material layout");
+  }
+  const constants = material[0].carbon.constants;
+  if (!Array.isArray(constants) || constants.length !== HIGH_MATERIAL_CONSTANTS.length)
+  {
+    fail(`pixel cb0 must expose exactly ${HIGH_MATERIAL_CONSTANTS.length} High constants`);
+  }
+  for (let index = 0; index < HIGH_MATERIAL_CONSTANTS.length; index += 1)
+  {
+    const [ name, offset ] = HIGH_MATERIAL_CONSTANTS[index];
+    const constant = constants[index];
+    if (constant?.name !== name || constant.offset !== offset || constant.size !== 16
+      || constant.dimension !== 4 || constant.type !== 0 || constant.elements !== 0)
+    {
+      fail(`pixel cb0 has an unexpected ${name} layout`);
+    }
+  }
+}
+
+function hasFilterState(state, expected)
 {
   return state?.comparison === false
-    && state.minFilter === 3 && state.magFilter === 2 && state.mipFilter === 2
-    && state.addressU === 1 && state.addressV === 1 && state.addressW === 3
-    && state.mipLODBias === 0 && state.maxAnisotropy === 16
-    && state.isDynamic === isDynamic;
+    && state.minFilter === expected.minFilter
+    && state.magFilter === expected.magFilter
+    && state.mipFilter === expected.mipFilter
+    && state.addressU === expected.addressU
+    && state.addressV === expected.addressV
+    && state.addressW === expected.addressW
+    && state.mipLODBias === 0 && state.maxAnisotropy === 16;
+}
+
+function hasExactSamplerState(state, expected, isDynamic)
+{
+  return hasFilterState(state, expected) && state.isDynamic === isDynamic;
 }
 
 // A DX12 immutable root-signature sampler is a D3D12_STATIC_SAMPLER_DESC: the
 // same filter/address/LOD state, an enum borderColor rather than a float4, and
 // no dynamic flag at all. Absence of `isDynamic` is part of the contract, so it
 // is asserted rather than defaulted.
-function hasStaticSamplerState(state)
+function hasStaticSamplerState(state, expected)
 {
-  return state?.comparison === false
-    && state.minFilter === 3 && state.magFilter === 2 && state.mipFilter === 2
-    && state.addressU === 1 && state.addressV === 1 && state.addressW === 3
-    && state.mipLODBias === 0 && state.maxAnisotropy === 16
+  return hasFilterState(state, expected)
     && state.borderColor === 0
     && state.isDynamic === undefined;
 }
 
-function assertAnalysisResources(record, resources, samplers, skinned, strictHeat)
+function assertAnalysisResources(record, layout, strict)
 {
   const pixel = record.analysis?.stages?.filter((entry) =>
     entry?.techniqueName === "Main" && entry.passIndex === 0 && entry.stageName === "pixel");
@@ -554,30 +805,45 @@ function assertAnalysisResources(record, resources, samplers, skinned, strictHea
   {
     fail("analysis must contain exactly one Main.pass0.vertex stage");
   }
+  const samplers = layout.samplers;
+  const vertexStorage = layout.storage.filter((entry) => entry.scope === "vertex");
+  const resources = [
+    ...layout.textures,
+    ...layout.storage.filter((entry) => entry.scope === "fragment")
+  ];
   const vertexBindings = Array.isArray(vertex[0].bindings) ? vertex[0].bindings : [];
-  const boneBindings = vertexBindings.filter((entry) => entry?.kind === "resource"
-    && entry.registerSpace === 0 && entry.registerIndex === 0
-    && entry.carbon?.name === "BoneTransforms");
-  if ((skinned && boneBindings.length !== 1) || (!skinned && boneBindings.length !== 0))
+  const vertexResources = vertexBindings.filter((entry) => entry?.kind === "resource");
+  if (vertexResources.length !== vertexStorage.length)
   {
-    fail("vertex t0 BoneTransforms reflection does not match the QuadV5 variant");
+    fail("vertex resource reflection does not match the QuadV5 variant");
   }
-  if (strictHeat)
+  for (const expected of vertexStorage)
   {
-    const vertexResources = vertexBindings.filter((entry) => entry?.kind === "resource");
-    const bone = boneBindings[0];
-    if (vertexResources.length !== 1 || bone?.registerType !== 33
-      || bone.carbon?.type !== 7 || bone.carbon?.arrayElements !== 1
-      || bone.carbon?.isSRGB !== false || bone.carbon?.isAutoregister !== false)
+    const matches = vertexBindings.filter((entry) => entry?.kind === "resource"
+      && entry.registerSpace === 0 && entry.registerIndex === expected.registerIndex
+      && entry.carbon?.name === expected.name);
+    if (matches.length !== 1)
     {
-      fail("vertex t0 BoneTransforms has unexpected skinned-heat Carbon metadata");
+      fail(`vertex t${expected.registerIndex} must reflect ${expected.name}`);
+    }
+    if (strict)
+    {
+      const reflected = matches[0];
+      if (reflected.registerType !== expected.registerType
+        || reflected.carbon?.type !== expected.carbonType
+        || reflected.carbon?.arrayElements !== expected.arrayElements
+        || reflected.carbon?.isSRGB !== expected.isSRGB
+        || reflected.carbon?.isAutoregister !== expected.isAutoregister)
+      {
+        fail(`vertex t${expected.registerIndex} has unexpected ${expected.name} Carbon metadata`);
+      }
     }
   }
   const bindings = Array.isArray(pixel[0].bindings) ? pixel[0].bindings : [];
-  if (strictHeat
+  if (strict
     && bindings.filter((entry) => entry?.kind === "resource").length !== resources.length)
   {
-    fail("pixel resources must match the exact skinned-heat inventory");
+    fail("pixel resources must match the exact declared inventory");
   }
   for (const expected of resources)
   {
@@ -587,7 +853,7 @@ function assertAnalysisResources(record, resources, samplers, skinned, strictHea
     {
       fail(`${expected.identity} must reflect ${expected.name}`);
     }
-    if (strictHeat)
+    if (strict)
     {
       const reflected = matches[0];
       if (reflected.registerType !== expected.registerType
@@ -596,50 +862,50 @@ function assertAnalysisResources(record, resources, samplers, skinned, strictHea
         || reflected.carbon?.isSRGB !== expected.isSRGB
         || reflected.carbon?.isAutoregister !== expected.isAutoregister)
       {
-        fail(`${expected.identity} has unexpected skinned-heat Carbon metadata`);
+        fail(`${expected.identity} has unexpected Carbon metadata`);
       }
     }
   }
   const reflectedSamplers = bindings.filter((entry) => entry?.kind === "sampler");
-  if (strictHeat && reflectedSamplers.length !== samplers.length)
+  if (strict && reflectedSamplers.length !== samplers.length)
   {
-    fail("pixel samplers must match the exact skinned-heat inventory");
+    fail("pixel samplers must match the exact declared inventory");
   }
   for (const expected of samplers)
   {
     const matches = bindings.filter((entry) => entry?.kind === "sampler"
       && entry.registerSpace === 0 && entry.registerIndex === expected.registerIndex);
-    if (expected.registerIndex === 0 && record.backend === "dx12")
+    if (!expected.named && record.backend === "dx12")
     {
-      // DX12 declares the unnamed s0 as an immutable root-signature sampler,
-      // so it reflects through the signature rather than a stage register and
-      // carries the D3D12 enum borderColor instead of a float4. That is a real
-      // backend difference, not missing reflection - assert its exact shape.
+      // DX12 declares every unnamed sampler as an immutable root-signature
+      // sampler, so it reflects through the signature rather than a stage
+      // register and carries the D3D12 enum borderColor instead of a float4.
+      // That is a real backend difference, not missing reflection - assert its
+      // exact shape.
       const signature = matches[0];
       const state = signature?.carbon?.sampler;
       if (matches.length !== 1
         || (signature.carbon?.name ?? null) !== null
         || signature.dynamic !== false
         || signature.sourceTruth !== "carbon-signature-sampler"
-        || !hasStaticSamplerState(state))
+        || !hasStaticSamplerState(state, expected.state))
       {
         fail(`${expected.identity} has unexpected DX12 signature-sampler reflection`);
       }
       continue;
     }
     const reflectedName = matches[0]?.carbon?.name ?? null;
-    const expectedName = expected.registerIndex === 0 ? null : expected.name;
+    const expectedName = expected.named ? expected.name : null;
     if (matches.length !== 1 || reflectedName !== expectedName)
     {
       fail(`${expected.identity} has unexpected sampler reflection`);
     }
-    if (expected.registerIndex === 0 || strictHeat)
+    if (!expected.named || strict)
     {
       const state = matches[0].carbon?.sampler;
-      const isDynamic = expected.registerIndex !== 0;
-      if (!hasExactSamplerState(state, isDynamic))
+      if (!hasExactSamplerState(state, expected.state, expected.named))
       {
-        fail(`${expected.identity} has unexpected ${isDynamic ? "dynamic" : "static"} sampler state`);
+        fail(`${expected.identity} has unexpected ${expected.named ? "dynamic" : "static"} sampler state`);
       }
     }
   }
@@ -668,7 +934,7 @@ function assertBindingSlot(binding, expected, kind, visibility)
   }
 }
 
-function assertBindings(record)
+function assertBindings(record, tier)
 {
   const pipeline = record.pipeline;
   if (!Array.isArray(pipeline.bindGroups) || pipeline.bindGroups.length !== 1
@@ -676,16 +942,16 @@ function assertBindings(record)
   {
     fail("Main.pass0 requires exactly canonical bind group 0");
   }
-  const skinned = record.variant === "skinned";
-  const heat = record.variant === "skinnedHeat";
-  const heatDetail = record.variant === "skinnedHeatDetail";
+  const variant = record.variant ?? "static";
+  const heat = variant === "skinnedHeat";
+  const heatDetail = variant === "skinnedHeatDetail";
   const strictHeat = heat || heatDetail;
-  const usesSkinning = skinned || strictHeat;
-  const uniforms = requiredUniforms(usesSkinning, heat, heatDetail);
-  const bone = usesSkinning ? expectedBoneBinding() : null;
-  const resources = expectedResourceBindings(record.backend, usesSkinning, heat, heatDetail);
-  const samplers = expectedSamplerBindings(usesSkinning, heat, heatDetail);
-  const expectedCount = uniforms.length + (bone ? 1 : 0) + resources.length + samplers.length;
+  // High is a newly pinned contract read straight from its own reflection, so
+  // it is asserted as strictly as the heat pair rather than by name alone.
+  const strict = strictHeat || tier === "high";
+  const layout = expectedLayout(record.backend, variant, tier);
+  const { uniforms, storage, textures, samplers } = layout;
+  const expectedCount = uniforms.length + storage.length + textures.length + samplers.length;
   const bindings = pipeline.bindGroups[0].bindings;
   if (!Array.isArray(bindings) || bindings.length !== expectedCount)
   {
@@ -704,27 +970,30 @@ function assertBindings(record)
       fail(`${expected.identity} has an unexpected uniform-buffer layout`);
     }
   }
-  if (bone)
+  for (const expected of storage)
   {
-    const binding = byScope.get(bone.scopeIdentity);
-    assertBindingSlot(binding, bone, "buffer", "vertex");
+    const binding = byScope.get(expected.scopeIdentity);
+    assertBindingSlot(binding, expected, "buffer", expected.scope);
     if (binding.resourceKind !== "sampled-resource"
       || binding.layout.buffer.type !== "read-only-storage"
       || binding.layout.buffer.hasDynamicOffset !== false
-      || binding.layout.buffer.minBindingSize !== 48
-      || binding.structureStride !== 48)
+      || binding.layout.buffer.minBindingSize !== expected.minBindingSize
+      || binding.structureStride !== expected.structureStride)
     {
-      fail("BoneTransforms has an unexpected read-only storage layout");
+      fail(`${expected.name} has an unexpected read-only storage layout`);
     }
   }
-  for (const expected of resources)
+  for (const expected of textures)
   {
     const binding = byScope.get(expected.scopeIdentity);
     assertBindingSlot(binding, expected, "texture", "fragment");
+    // The WGSL type spells the view dimension with an underscore where the
+    // WebGPU enum uses a hyphen: texture_2d_array<f32> against "2d-array".
+    const expectedType = `texture_${expected.viewDimension.replace("-", "_")}<f32>`;
     if (binding.layout.texture.sampleType !== "float"
       || binding.layout.texture.viewDimension !== expected.viewDimension
       || binding.layout.texture.multisampled !== false
-      || binding.layout.type !== `texture_${expected.viewDimension}<f32>`
+      || binding.layout.type !== expectedType
       || binding.textureKind !== expected.viewDimension
       || binding.arrayElements !== 1
       || binding.isSRGB !== expected.isSRGB)
@@ -741,8 +1010,9 @@ function assertBindings(record)
       fail(`${expected.identity} has an unexpected sampler layout`);
     }
   }
-  assertAnalysisResources(record, resources, samplers, usesSkinning, strictHeat);
+  assertAnalysisResources(record, layout, strict);
   if (strictHeat) assertHeatMaterial(record, heatDetail);
+  if (tier === "high") assertHighMaterial(record);
 }
 
 /**
@@ -783,13 +1053,17 @@ export function validateQuadV5PackageRecord(record)
     : (heat
       ? "unpackedskinned_quadheatv5"
       : (skinned ? "unpackedskinned_quadv5" : "unpacked_quadv5"));
-  const mediumQualitySuffix = `/managed/space/spaceobject/v5/quad/${expectedStem}.sm_hi`;
-  const lowQualitySuffix = `/managed/space/spaceobject/v5/quad/${expectedStem}.sm_lo`;
-  if (strictHeat
-    ? !analysisSource.endsWith(mediumQualitySuffix)
-    : (!analysisSource.endsWith(mediumQualitySuffix) && !analysisSource.endsWith(lowQualitySuffix)))
+  if (!analysisSource.includes(`/managed/space/spaceobject/v5/quad/${expectedStem}.`))
   {
     fail(`package source must be the ${expectedStem} ship shader`);
+  }
+  const tier = tierFromSource(analysisSource, expectedStem);
+  const allowedTiers = strictHeat
+    ? [ "medium" ]
+    : (variant === "static" ? [ "high", "medium", "low" ] : [ "medium", "low" ]);
+  if (!allowedTiers.includes(tier))
+  {
+    fail(`the ${tier} tier is not encoded for the ${variant} variant`);
   }
   if (record.analysis?.bodyIndex !== TARGET_BODY_INDEX || record.metadata?.bodyIndex !== TARGET_BODY_INDEX)
   {
@@ -819,8 +1093,26 @@ export function validateQuadV5PackageRecord(record)
   if (strictHeat) assertHeatMainInventory(record);
   assertVertexInputs(record.analysis, skinned, strictHeat);
   assertShaderModules(record.pipeline, skinned, strictHeat);
-  assertBindings(record);
+  assertBindings(record, tier);
   return record;
+}
+
+/**
+ * Read the compiled quality tier a validated package record was built from.
+ *
+ * @param {object} record One exact unpacked QuadV5 package record.
+ * @returns {"high"|"medium"|"low"} The tier named by the package source path.
+ */
+export function getQuadV5PackageTier(record)
+{
+  validateQuadV5PackageRecord(record);
+  const variant = record.variant ?? "static";
+  const expectedStem = variant === "skinnedHeatDetail"
+    ? "unpackedskinned_quadheatdetailv5"
+    : (variant === "skinnedHeat"
+      ? "unpackedskinned_quadheatv5"
+      : (variant === "skinned" ? "unpackedskinned_quadv5" : "unpacked_quadv5"));
+  return tierFromSource(normalizedPath(record.analysis?.source), expectedStem);
 }
 
 /**
@@ -828,20 +1120,17 @@ export function validateQuadV5PackageRecord(record)
  * semantic fixture resources.
  *
  * @param {object} record One exact unpacked QuadV5 package record.
- * @returns {{textures: object[], samplers: object[]}} Frozen resource plan.
+ * @returns {{storage: object[], textures: object[], samplers: object[]}} Frozen resource plan.
  */
 export function getQuadV5ResourcePlan(record)
 {
-  validateQuadV5PackageRecord(record);
-  const skinned = record.variant === "skinned";
-  const heat = record.variant === "skinnedHeat";
-  const heatDetail = record.variant === "skinnedHeatDetail";
-  const strictHeat = heat || heatDetail;
-  const usesSkinning = skinned || strictHeat;
+  const tier = getQuadV5PackageTier(record);
+  const layout = expectedLayout(record.backend, record.variant ?? "static", tier);
   return Object.freeze({
-    storage: usesSkinning ? Object.freeze([ expectedBoneBinding() ]) : Object.freeze([]),
-    textures: Object.freeze(expectedResourceBindings(record.backend, usesSkinning, heat, heatDetail)),
-    samplers: Object.freeze(expectedSamplerBindings(usesSkinning, heat, heatDetail))
+    tier,
+    storage: Object.freeze(layout.storage),
+    textures: Object.freeze(layout.textures),
+    samplers: Object.freeze(layout.samplers)
   });
 }
 
@@ -923,9 +1212,10 @@ function zeros(count)
  *
  * @param {number} width Render-target width.
  * @param {number} height Render-target height.
+ * @param {"high"|"medium"|"low"} [tier="medium"] Compiled quality tier.
  * @returns {object} Plain semantic fixture values.
  */
-export function createQuadV5MainBindingValues(width, height)
+export function createQuadV5MainBindingValues(width, height, tier = "medium")
 {
   if (!Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1)
   {
@@ -938,9 +1228,22 @@ export function createQuadV5MainBindingValues(width, height)
     unused_pad0: 0,
     DiffuseColor: [ 1, 0.92, 0.78, 1 ]
   });
+  // packMaterial is driven by the package's own reflected constant list and
+  // requires a value for every entry, so the dust colors are authored only for
+  // the tier that reflects them. A tier mismatch fails closed rather than
+  // packing a hole.
+  const dust = tier === "high"
+    ? {
+      Mtl1DustDiffuseColor: [ 0.36, 0.32, 0.28, 1 ],
+      Mtl2DustDiffuseColor: [ 0.3, 0.27, 0.24, 1 ],
+      Mtl3DustDiffuseColor: [ 0.33, 0.29, 0.25, 1 ],
+      Mtl4DustDiffuseColor: [ 0.28, 0.25, 0.22, 1 ]
+    }
+    : {};
   const material = Object.freeze({
     GeneralData: [ 1, 0, 0, 0 ],
     GeneralGlowColor: [ 0.08, 0.22, 0.7, 0 ],
+    ...dust,
     Mtl1DiffuseColor: [ 0.15, 0.36, 0.72, 1 ],
     Mtl2DiffuseColor: [ 0.52, 0.16, 0.1, 1 ],
     Mtl3DiffuseColor: [ 0.12, 0.48, 0.34, 1 ],
@@ -1193,7 +1496,7 @@ function rgbaTexture(name, format, pixel)
   return Object.freeze({ name, dimension: "2d", width, height, format, bytesPerRow, data });
 }
 
-function fixtureTextures(variant)
+function fixtureTextures(variant, tier)
 {
   const heat = variant === "skinnedHeat";
   const heatDetail = variant === "skinnedHeatDetail";
@@ -1257,6 +1560,33 @@ function fixtureTextures(variant)
       const value = y % 2 === 0 ? 0 : 255;
       return [ value, value, value, 255 ];
     }),
+    ...(tier === "high" ? [
+      rgbaTexture("DustNoiseMap", "rgba8unorm", (x, y) => [
+        40 + ((x * 29 + y * 13) % 200),
+        40 + ((x * 17 + y * 31) % 200),
+        128,
+        255
+      ]),
+      rgbaTexture("DirtMap", "rgba8unorm", (x, y) => {
+        const dirt = 96 + ((x * 7 + y * 11) % 6) * 24;
+        return [ dirt, dirt, dirt, 255 ];
+      }),
+      // A genuinely layered texture read through a 2d-array view. The two layers
+      // differ so a draw that collapsed the view to layer 0 would change the
+      // rendered target rather than pass quietly.
+      Object.freeze({
+        name: "LightProfileArray",
+        dimension: "2d-array",
+        width: 1,
+        height: 1,
+        depthOrArrayLayers: 2,
+        format: "rgba8unorm",
+        data: new Uint8Array([
+          255, 255, 255, 255,
+          64, 96, 160, 255
+        ])
+      })
+    ] : []),
     ...(strictHeat ? [
       rgbaTexture("HeatGlowNoiseMap", "rgba8unorm", (x, y) => [
         24 + ((x * 37 + y * 19) % 208),
@@ -1291,9 +1621,10 @@ function fixtureTextures(variant)
  * @param {number} width Render-target width.
  * @param {number} height Render-target height.
  * @param {"static"|"skinned"|"skinnedHeat"|"skinnedHeatDetail"} [variant="static"] Fixture variant.
+ * @param {"high"|"medium"|"low"} [tier="medium"] Compiled quality tier.
  * @returns {object} Typed-array fixture values.
  */
-export function createQuadV5FixtureValues(width, height, variant = "static")
+export function createQuadV5FixtureValues(width, height, variant = "static", tier = "medium")
 {
   if (!Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1)
   {
@@ -1306,6 +1637,14 @@ export function createQuadV5FixtureValues(width, height, variant = "static")
     throw new TypeError(
       "QuadV5 fixture variant must be static, skinned, skinnedHeat, or skinnedHeatDetail"
     );
+  }
+  if (tier !== "high" && tier !== "medium" && tier !== "low")
+  {
+    throw new TypeError("QuadV5 fixture tier must be high, medium, or low");
+  }
+  if (tier === "high" && variant !== "static")
+  {
+    throw new TypeError("QuadV5 High fixture values are only authored for the static variant");
   }
   const points = [
     [ 0, 0, 0.12 ],
@@ -1346,11 +1685,34 @@ export function createQuadV5FixtureValues(width, height, variant = "static")
   {
     boneIndices[index * 4] = 1;
   }
+  // The High forward-light bindings must be present and correctly sized, but
+  // the LightBuffer row layout is Carbon's and is not reflected, so the fixture
+  // declares zero active lights rather than authoring a struct it cannot verify.
+  // What the draw proves is that all 25 bindings realize and bind, including the
+  // 2d-array view; it does not claim to exercise light shading.
+  const storageBuffers = tier === "high"
+    ? Object.freeze([
+      Object.freeze({
+        name: "LightIndexBuffer",
+        structureStride: 4,
+        data: new Uint32Array([ 0 ])
+      }),
+      Object.freeze({
+        name: "LightBuffer",
+        structureStride: 48,
+        data: new Float32Array(12)
+      })
+    ])
+    : Object.freeze([]);
+  const samplers = tier === "high" ? HIGH_SAMPLER_DESCRIPTORS : SAMPLER_DESCRIPTORS;
   return Object.freeze({
     vertices,
     boneIndices,
     indices,
-    textures: fixtureTextures(variant),
-    samplerNames: SAMPLER_NAMES
+    tier,
+    textures: fixtureTextures(variant, tier),
+    storageBuffers,
+    samplers,
+    samplerNames: Object.freeze(samplers.map((entry) => entry.name))
   });
 }

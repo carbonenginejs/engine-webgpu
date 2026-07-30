@@ -65,6 +65,7 @@ import {
     createQuadV5HeatBindingCases,
     createQuadV5HeatDetailBindingCases,
     createQuadV5MainBindingValues,
+    getQuadV5PackageTier,
     getQuadV5ResourcePlan,
     validateQuadV5PackagePair
 } from "/quadV5Fixture.js";
@@ -937,7 +938,8 @@ async function CreateGeneratedDraw(webgpu)
 async function CreateQuadV5GpuResources(webgpu, records)
 {
     const variant = records[0]?.variant ?? "static";
-    const values = createQuadV5FixtureValues(WIDTH, HEIGHT, variant);
+    const tier = getQuadV5PackageTier(records[0]);
+    const values = createQuadV5FixtureValues(WIDTH, HEIGHT, variant, tier);
     const skinned = variant === "skinned"
         || variant === "skinnedHeat"
         || variant === "skinnedHeatDetail";
@@ -946,7 +948,7 @@ async function CreateQuadV5GpuResources(webgpu, records)
         variant: skinned ? "skinned" : "static"
     });
     const texturePayloads = Object.fromEntries(values.textures
-        .filter((entry) => entry.dimension === "2d")
+        .filter((entry) => entry.dimension === "2d" || entry.dimension === "2d-array")
         .map((entry) => [
         entry.name,
         {
@@ -954,21 +956,21 @@ async function CreateQuadV5GpuResources(webgpu, records)
                 width: entry.width,
                 height: entry.height,
                 format: entry.format,
-                bytesPerRow: entry.bytesPerRow,
-                data: entry.data
+                bytesPerRow: entry.bytesPerRow ?? entry.width * 4,
+                data: entry.data,
+                // A layered texture read through a 2d-array view goes through the
+                // same engine texture path as every 2d texture here, so the draw
+                // exercises the realizer rather than a harness-local shortcut.
+                ...(entry.dimension === "2d-array"
+                    ? { layers: entry.depthOrArrayLayers, viewDimension: "2d-array" }
+                    : {})
             }
         ]));
-    const samplers = Object.fromEntries(values.samplerNames.map((name) => [
-        name,
+    const samplers = Object.fromEntries(values.samplers.map((entry) => [
+        entry.name,
         {
-            label: `QuadV5 ${name}`,
-            minFilter: "linear",
-            magFilter: "linear",
-            mipmapFilter: "linear",
-            addressModeU: "repeat",
-            addressModeV: "repeat",
-            addressModeW: "clamp-to-edge",
-            maxAnisotropy: 16
+            label: `QuadV5 ${entry.name}`,
+            ...entry.gpu
         }
     ]));
     const device = webgpu.GetDevice();
@@ -1001,6 +1003,7 @@ async function CreateQuadV5GpuResources(webgpu, records)
     const cubeDefinition = values.textures.find((entry) => entry.dimension === "cube");
     let cubeTexture = null;
     let boneBuffer = null;
+    const storageBuffers = new Map();
     try
     {
         Assert(cubeDefinition, "QuadV5 fixture requires an environment cube");
@@ -1047,6 +1050,20 @@ async function CreateQuadV5GpuResources(webgpu, records)
             });
             device.queue.writeBuffer(boneBuffer, 0, boneTransform);
         }
+        for (const definition of values.storageBuffers)
+        {
+            const buffer = device.createBuffer({
+                label: `QuadV5 ${definition.name}`,
+                size: definition.data.byteLength,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            });
+            device.queue.writeBuffer(buffer, 0, definition.data);
+            Assert(
+                definition.data.byteLength % definition.structureStride === 0,
+                `QuadV5 ${definition.name} must hold whole ${definition.structureStride}-byte rows`
+            );
+            storageBuffers.set(definition.name, buffer);
+        }
         const resourcesByBackend = new Map();
         for (const record of records)
         {
@@ -1054,11 +1071,14 @@ async function CreateQuadV5GpuResources(webgpu, records)
             const resources = new Map();
             for (const storage of plan.storage)
             {
-                Assert(boneBuffer, `QuadV5 fixture is missing storage ${storage.name}`);
+                const buffer = storage.name === "BoneTransforms"
+                    ? boneBuffer
+                    : storageBuffers.get(storage.name);
+                Assert(buffer, `QuadV5 fixture is missing storage ${storage.name}`);
                 resources.set(storage.scopeIdentity, {
-                    buffer: boneBuffer,
+                    buffer,
                     offset: 0,
-                    size: boneBuffer.size
+                    size: buffer.size
                 });
             }
             for (const texture of plan.textures)
@@ -1085,18 +1105,20 @@ async function CreateQuadV5GpuResources(webgpu, records)
         const caseNames = heatCases?.caseNames ?? Object.freeze([ "base" ]);
         const bindingValuesByCase = heatCases?.bindingValuesByCase
             ?? Object.freeze({
-                base: createQuadV5MainBindingValues(WIDTH, HEIGHT)
+                base: createQuadV5MainBindingValues(WIDTH, HEIGHT, tier)
             });
         return {
             caseNames,
             bindingValuesByCase,
             resourcesByBackend,
+            tier,
             geometry: bundle.geometries.main,
             geometrySource,
             bundle,
             destroy()
             {
                 boneBuffer?.destroy();
+                for (const buffer of storageBuffers.values()) buffer.destroy();
                 cubeTexture.destroy();
                 bundle.Destroy();
             }
@@ -1105,6 +1127,7 @@ async function CreateQuadV5GpuResources(webgpu, records)
     catch (error)
     {
         boneBuffer?.destroy();
+        for (const buffer of storageBuffers.values()) buffer.destroy();
         cubeTexture?.destroy();
         bundle.Destroy();
         throw error;
@@ -4765,6 +4788,15 @@ async function RunQuadV5Comparison(webgpu)
         return {
             bodyIndex: 4,
             variant,
+            tier: fixture.tier,
+            // The logical count is what the fixture demanded; the physical count is
+            // what the package's own layout declared. They are reported separately
+            // because agreement between them is the claim being made.
+            logicalBindingCount: getQuadV5ResourcePlan(records[0]).textures.length
+                + getQuadV5ResourcePlan(records[0]).storage.length
+                + getQuadV5ResourcePlan(records[0]).samplers.length
+                + 5,
+            physicalBindingCount: records[0].pipeline.bindGroups[0].bindings.length,
             labels: records.map((record) => `${record.backend}:${record.label}`),
             loadPath: records[0].loadPath,
             pixelCount: WIDTH * HEIGHT,

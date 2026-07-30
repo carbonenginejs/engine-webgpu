@@ -4,6 +4,17 @@
   "gate": "npm run test:webgpu:required -- --draw-quadv5 <dx11.cewgpu> <dx12.cewgpu>",
   "rationale": "A .cewgpu is a derived artifact, fully determined by (source bytes at a pinned build id + compiler version). Storing the package duplicates a guarantee the compiler already gives and rots silently when the compiler moves. This manifest pins the identity instead: rebuild, compare packageSha256, and a compiler change announces itself as a reviewable manifest diff. The rendered target bytes are pinned because they are the only part that needs a GPU to reproduce.",
   "sourcePolicy": "Source .sm_lo/.sm_hi/.sm_depth bytes are CCP game files. Never commit, fixture, or publish them. Fetch through tools-core at the pinned build id.",
+  "transformBlockedGates": [
+    {
+      "gate": "--draw-skinned-quadheatdetailv5",
+      "stem": "unpackedskinned_quadheatdetailv5",
+      "tier": "medium",
+      "resourceTransforms": 1,
+      "layoutBindings": 22,
+      "status": "blocked",
+      "detail": "At the current compiler this body emits one wgsl resource transform, so CjsWebGPUPackage.from rejects it fail-closed. It was drawn under an earlier compiler whose packages predate INFO v3 and can no longer be read, so the two cannot be compared directly. This is the smallest available resource-transform case and is therefore the nearest target for realizing transforms - smaller than the Avatar's three-map Detail family."
+    }
+  ],
   "goldenTargets": {
     "path": "unpacked_quadv5.sm_hi-ppt-main.golden.png",
     "capture": "--capture-quadv5 <path>",
@@ -107,7 +118,7 @@
       "resourceTransforms": 0,
       "gates": {
         "prepared": "--prepare-cewgpu and --prepare-bodyset are green at High: 25 canonical bindings per selected package, and all 168 all-body translation units, with 0 WGSL warnings",
-        "drawn": "not yet - the --draw-quadv5 fixture encodes the 19-binding Medium inventory only. See inventory below for what a High draw fixture needs."
+        "drawn": "npm run test:webgpu:required -- --draw-quadv5 <dx11.cewgpu> <dx12.cewgpu> with the .sm_depth pair: 25 logical bindings over 25 physical, 4096 pixels matched exactly across 1 case, both MRTs, and both backends with 0 WGSL warnings. The tier is derived from the package source-path suffix, so the same flag covers both tiers."
       },
       "inventory": {
         "uniformBuffers": 5,
@@ -117,7 +128,9 @@
         "arrayTextures": 1,
         "samplers": 4,
         "renderTargets": 2,
-        "note": "Uniform buffer sizes and the vertex layout are identical to Medium. cb0 keeps the same 384-byte footprint and adds Mtl1..4DustDiffuseColor at offsets 224-287, which Medium leaves as a hole; packMaterial is reflection-driven, so only those four values are new. The pixel interface adds TEXCOORD11 at register 10 (vec3) and the vertex output adds output10.",
+        "note": "Uniform buffer sizes and the vertex layout are identical to Medium. cb0 keeps the same 384-byte footprint and adds Mtl1..4DustDiffuseColor at offsets 224-287, which Medium leaves as a hole; packMaterial is reflection-driven and requires a value for every reflected constant, so a tier mismatch fails closed. The pixel interface adds TEXCOORD11 at register 10 (vec3) and the vertex output adds output10.",
+        "materialConstants": 24,
+        "materialConstantValueSize": 384,
         "textureNames": [
           "EveSpaceSceneEnvMap", "SSAOMap", "EveSpaceSceneShadowMap", "NormalMap", "GlowMap",
           "DustNoiseMap", "AlbedoMap", "RoughnessMap", "DirtMap", "MaterialMap",
@@ -127,11 +140,24 @@
           { "name": "LightIndexBuffer", "structureStride": 4, "minBindingSize": 4 },
           { "name": "LightBuffer", "structureStride": 48, "minBindingSize": 48 }
         ],
-        "arrayTexture": { "name": "LightProfileArray", "viewDimension": "2d-array", "transform": null },
-        "samplerNames": [ "s0", "PatternMask1MapSampler", "PatternMask2MapSampler", "s3" ],
+        "arrayTexture": {
+          "name": "LightProfileArray",
+          "viewDimension": "2d-array",
+          "wgslType": "texture_2d_array<f32>",
+          "transform": null,
+          "note": "The WGSL type spells the dimension with an underscore where the WebGPU enum uses a hyphen. Realizing 2d-array textures is therefore a prerequisite for a High draw, not a follow-on to resource-transform support."
+        },
+        "samplers": [
+          { "register": 0, "wgslName": "s0", "carbonName": null, "filters": "aniso/linear/linear, wrap/wrap/clamp" },
+          { "register": 1, "wgslName": "PatternMask1MapSampler", "carbonName": "PatternMask1MapSampler", "filters": "aniso/linear/linear, wrap/wrap/clamp" },
+          { "register": 2, "wgslName": "PatternMask2MapSampler", "carbonName": "PatternMask2MapSampler", "filters": "aniso/linear/linear, wrap/wrap/clamp" },
+          { "register": 3, "wgslName": "s3", "carbonName": null, "filters": "linear/linear/none, clamp/clamp/clamp" }
+        ],
+        "samplerNote": "Carbon reflects s0 and s3 without a name, and DX12 lowers exactly those two unnamed samplers to immutable root-signature samplers (enum borderColor, no isDynamic). s3 is not a copy of s0: minFilter 2, mipFilter 0, and clamped addressing on every axis.",
         "textureRegisters": {
           "dx11": [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ],
-          "dx12": [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ]
+          "dx12": [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ],
+          "note": "Contiguous on both backends. Medium's DX12 run has holes at 5 and 8 because DustNoiseMap and DirtMap are declared but unused there; High fills them."
         },
         "storageRegisters": { "dx11": [ 13, 14 ], "dx12": [ 14, 15 ] },
         "arrayTextureRegister": { "dx11": 15, "dx12": 16 }

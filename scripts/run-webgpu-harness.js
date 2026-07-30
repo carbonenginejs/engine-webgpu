@@ -1278,7 +1278,12 @@ async function Main()
             const heatControl = quad.heatOracle;
             console.log(
                 `Rendered PPT-on QuadV5 body ${quad.bodyIndex} from ` +
-                `${quad.variant} ${quad.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `${quad.variant}${quad.tier ? ` ${quad.tier}-tier` : ""} ` +
+                `${quad.labels.join(" and ")} from direct CEWGPU reads; ` +
+                (quad.physicalBindingCount
+                    ? `${quad.logicalBindingCount} logical bindings over ` +
+                        `${quad.physicalBindingCount} physical; `
+                    : "") +
                 `${quad.pixelCount} pixels matched exactly across ${quad.renderCaseCount} ` +
                 `case${quad.renderCaseCount === 1 ? "" : "s"}, both MRTs, and both ` +
                 `backends with 0 WGSL warnings.` +

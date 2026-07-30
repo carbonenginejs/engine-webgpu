@@ -61,6 +61,64 @@ const HEAT_RESOURCE_REGISTERS = {
   dx12: [ 0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13 ]
 };
 
+const HIGH_RESOURCE_NAMES = [
+  "EveSpaceSceneEnvMap",
+  "SSAOMap",
+  "EveSpaceSceneShadowMap",
+  "NormalMap",
+  "GlowMap",
+  "DustNoiseMap",
+  "AlbedoMap",
+  "RoughnessMap",
+  "DirtMap",
+  "MaterialMap",
+  "PaintMaskMap",
+  "PatternMask1Map",
+  "PatternMask2Map"
+];
+
+const HIGH_RESOURCE_REGISTERS = {
+  dx11: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ],
+  dx12: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ]
+};
+
+const HIGH_STORAGE = [
+  { name: "LightIndexBuffer", stride: 4, registers: { dx11: 13, dx12: 14 } },
+  { name: "LightBuffer", stride: 48, registers: { dx11: 14, dx12: 15 } }
+];
+
+const HIGH_ARRAY_TEXTURE = {
+  name: "LightProfileArray",
+  registers: { dx11: 15, dx12: 16 }
+};
+
+const HIGH_MATERIAL_CONSTANTS = [
+  [ "GeneralData", 0 ],
+  [ "GeneralGlowColor", 16 ],
+  [ "Mtl1DiffuseColor", 32 ],
+  [ "Mtl2DiffuseColor", 48 ],
+  [ "Mtl3DiffuseColor", 64 ],
+  [ "Mtl4DiffuseColor", 80 ],
+  [ "Mtl1FresnelColor", 96 ],
+  [ "Mtl2FresnelColor", 112 ],
+  [ "Mtl3FresnelColor", 128 ],
+  [ "Mtl4FresnelColor", 144 ],
+  [ "Mtl1Gloss", 160 ],
+  [ "Mtl2Gloss", 176 ],
+  [ "Mtl3Gloss", 192 ],
+  [ "Mtl4Gloss", 208 ],
+  [ "Mtl1DustDiffuseColor", 224 ],
+  [ "Mtl2DustDiffuseColor", 240 ],
+  [ "Mtl3DustDiffuseColor", 256 ],
+  [ "Mtl4DustDiffuseColor", 272 ],
+  [ "PMtl1DiffuseColor", 288 ],
+  [ "PMtl1FresnelColor", 304 ],
+  [ "PMtl1Gloss", 320 ],
+  [ "PMtl2DiffuseColor", 336 ],
+  [ "PMtl2FresnelColor", 352 ],
+  [ "PMtl2Gloss", 368 ]
+];
+
 const HEAT_DETAIL_MATERIAL_CONSTANTS = [
   [ "GeneralData", 0 ],
   [ "Mtl1DiffuseColor", 32 ],
@@ -119,34 +177,36 @@ const HEAT_DETAIL_PIXEL_INPUTS = [
   { usageName: "TEXCOORD", usageIndex: 9, registerIndex: 9, usedMask: 11, type: 0, dimension: 4 }
 ];
 
-function samplerState(isDynamic)
+const ANISOTROPIC_REPEAT = {
+  minFilter: 3, magFilter: 2, mipFilter: 2,
+  addressU: 1, addressV: 1, addressW: 3
+};
+
+// The High light-profile sampler is not a copy of s0: linear, no mip filter,
+// clamped on every axis.
+const LINEAR_CLAMP = {
+  minFilter: 2, magFilter: 2, mipFilter: 0,
+  addressU: 3, addressV: 3, addressW: 3
+};
+
+function samplerState(isDynamic, filters = ANISOTROPIC_REPEAT)
 {
   return {
     comparison: false,
-    minFilter: 3,
-    magFilter: 2,
-    mipFilter: 2,
-    addressU: 1,
-    addressV: 1,
-    addressW: 3,
+    ...filters,
     mipLODBias: 0,
     maxAnisotropy: 16,
     isDynamic
   };
 }
 
-// DX12 declares s0 as an immutable root-signature sampler: an enum borderColor
-// instead of a float4, and no dynamic flag at all.
-function staticSamplerState()
+// DX12 declares every unnamed sampler as an immutable root-signature sampler: an
+// enum borderColor instead of a float4, and no dynamic flag at all.
+function staticSamplerState(filters = ANISOTROPIC_REPEAT)
 {
   return {
     comparison: false,
-    minFilter: 3,
-    magFilter: 2,
-    mipFilter: 2,
-    addressU: 1,
-    addressV: 1,
-    addressW: 3,
+    ...filters,
     mipLODBias: 0,
     maxAnisotropy: 16,
     borderColor: 0
@@ -265,14 +325,42 @@ function analysisConstantBuffer(registerIndex, localConstants = null)
   };
 }
 
-function analysisPixelBindings(backend, heat = false, heatDetail = false)
+function unnamedSampler(backend, registerIndex, filters)
 {
-  const names = heatDetail
-    ? HEAT_DETAIL_RESOURCE_NAMES
-    : (heat ? HEAT_RESOURCE_NAMES : RESOURCE_NAMES);
-  const registers = (heatDetail
-    ? HEAT_DETAIL_RESOURCE_REGISTERS
-    : (heat ? HEAT_RESOURCE_REGISTERS : RESOURCE_REGISTERS))[backend];
+  return backend === "dx11" ? {
+    kind: "sampler",
+    registerSpace: 0,
+    registerIndex,
+    carbon: {
+      name: null,
+      sampler: samplerState(false, filters)
+    }
+  } : {
+    kind: "sampler",
+    registerSpace: 0,
+    registerIndex,
+    dynamic: false,
+    sourceTruth: "carbon-signature-sampler",
+    carbon: {
+      name: null,
+      sampler: staticSamplerState(filters)
+    }
+  };
+}
+
+function analysisPixelBindings(backend, heat = false, heatDetail = false, tier = "medium")
+{
+  const high = tier === "high";
+  const names = high
+    ? HIGH_RESOURCE_NAMES
+    : (heatDetail
+      ? HEAT_DETAIL_RESOURCE_NAMES
+      : (heat ? HEAT_RESOURCE_NAMES : RESOURCE_NAMES));
+  const registers = (high
+    ? HIGH_RESOURCE_REGISTERS
+    : (heatDetail
+      ? HEAT_DETAIL_RESOURCE_REGISTERS
+      : (heat ? HEAT_RESOURCE_REGISTERS : RESOURCE_REGISTERS)))[backend];
   const resources = registers.map((registerIndex, index) => ({
     kind: "resource",
     registerSpace: 0,
@@ -286,26 +374,40 @@ function analysisPixelBindings(backend, heat = false, heatDetail = false)
       isAutoregister: names[index] === "EveSpaceSceneShadowMap"
     }
   }));
+  if (high)
+  {
+    for (const entry of HIGH_STORAGE)
+    {
+      resources.push({
+        kind: "resource",
+        registerSpace: 0,
+        registerIndex: entry.registers[backend],
+        registerType: 33,
+        carbon: {
+          name: entry.name,
+          type: 7,
+          arrayElements: 1,
+          isSRGB: false,
+          isAutoregister: true
+        }
+      });
+    }
+    resources.push({
+      kind: "resource",
+      registerSpace: 0,
+      registerIndex: HIGH_ARRAY_TEXTURE.registers[backend],
+      registerType: 37,
+      carbon: {
+        name: HIGH_ARRAY_TEXTURE.name,
+        type: 5,
+        arrayElements: 1,
+        isSRGB: false,
+        isAutoregister: true
+      }
+    });
+  }
   const samplers = [
-    backend === "dx11" ? {
-      kind: "sampler",
-      registerSpace: 0,
-      registerIndex: 0,
-      carbon: {
-        name: null,
-        sampler: samplerState(false)
-      }
-    } : {
-      kind: "sampler",
-      registerSpace: 0,
-      registerIndex: 0,
-      dynamic: false,
-      sourceTruth: "carbon-signature-sampler",
-      carbon: {
-        name: null,
-        sampler: staticSamplerState()
-      }
-    },
+    unnamedSampler(backend, 0, ANISOTROPIC_REPEAT),
     {
       kind: "sampler",
       registerSpace: 0,
@@ -317,13 +419,21 @@ function analysisPixelBindings(backend, heat = false, heatDetail = false)
       registerSpace: 0,
       registerIndex: 2,
       carbon: { name: "PatternMask2MapSampler", sampler: samplerState(true) }
-    }
+    },
+    ...(high ? [ unnamedSampler(backend, 3, LINEAR_CLAMP) ] : [])
   ];
   const strictHeat = heat || heatDetail;
-  const material = strictHeat ? [ analysisConstantBuffer(0, {
-      constantValueSize: heatDetail ? 640 : 464,
-      constants: (heatDetail ? HEAT_DETAIL_MATERIAL_CONSTANTS : HEAT_MATERIAL_CONSTANTS)
-        .map(([ name, offset ]) => ({
+  const localConstants = high
+    ? { constantValueSize: 384, constants: HIGH_MATERIAL_CONSTANTS }
+    : (strictHeat
+      ? {
+        constantValueSize: heatDetail ? 640 : 464,
+        constants: heatDetail ? HEAT_DETAIL_MATERIAL_CONSTANTS : HEAT_MATERIAL_CONSTANTS
+      }
+      : null);
+  const material = localConstants ? [ analysisConstantBuffer(0, {
+      constantValueSize: localConstants.constantValueSize,
+      constants: localConstants.constants.map(([ name, offset ]) => ({
         name,
         offset,
         size: 16,
@@ -338,7 +448,7 @@ function analysisPixelBindings(backend, heat = false, heatDetail = false)
   return [ ...resources, ...samplers, ...material, ...sharedBuffers ];
 }
 
-function pipelineBindings(backend, skinned = false, heat = false, heatDetail = false)
+function pipelineBindings(backend, skinned = false, heat = false, heatDetail = false, tier = "medium")
 {
   const uniforms = [
     binding("uniform-buffer", 0, 0, "fragment", {
@@ -367,11 +477,20 @@ function pipelineBindings(backend, skinned = false, heat = false, heatDetail = f
     }),
     structureStride: 48
   } ] : [];
-  const registers = (heatDetail
-    ? HEAT_DETAIL_RESOURCE_REGISTERS
-    : (heat ? HEAT_RESOURCE_REGISTERS : RESOURCE_REGISTERS))[backend];
+  const high = tier === "high";
+  const names = high
+    ? HIGH_RESOURCE_NAMES
+    : (heatDetail
+      ? HEAT_DETAIL_RESOURCE_NAMES
+      : (heat ? HEAT_RESOURCE_NAMES : RESOURCE_NAMES));
+  const registers = (high
+    ? HIGH_RESOURCE_REGISTERS
+    : (heatDetail
+      ? HEAT_DETAIL_RESOURCE_REGISTERS
+      : (heat ? HEAT_RESOURCE_REGISTERS : RESOURCE_REGISTERS)))[backend];
+  let slot = 5 + (skinned ? 1 : 0);
   const textures = registers.map((registerIndex, index) => ({
-    ...binding("sampled-resource", registerIndex, (skinned ? 6 : 5) + index, "fragment", {
+    ...binding("sampled-resource", registerIndex, slot + index, "fragment", {
       type: `texture_${index === 0 ? "cube" : "2d"}<f32>`,
       texture: {
         sampleType: "float",
@@ -381,19 +500,49 @@ function pipelineBindings(backend, skinned = false, heat = false, heatDetail = f
     }),
     textureKind: index === 0 ? "cube" : "2d",
     arrayElements: 1,
-    isSRGB: index === 0 || (heatDetail
-      ? HEAT_DETAIL_RESOURCE_NAMES
-      : (heat ? HEAT_RESOURCE_NAMES : RESOURCE_NAMES))[index] === "AlbedoMap"
+    isSRGB: index === 0 || names[index] === "AlbedoMap"
   }));
-  const samplers = [ 0, 1, 2 ].map((registerIndex) =>
-    binding("sampler", registerIndex,
-      (heatDetail ? 20 : (heat ? 18 : (skinned ? 17 : 16))) + registerIndex, "fragment", {
+  slot += textures.length;
+  const lights = [];
+  if (high)
+  {
+    for (const entry of HIGH_STORAGE)
+    {
+      lights.push({
+        ...binding("sampled-resource", entry.registers[backend], slot, "fragment", {
+          buffer: {
+            type: "read-only-storage",
+            hasDynamicOffset: false,
+            minBindingSize: entry.stride
+          }
+        }),
+        structureStride: entry.stride
+      });
+      slot += 1;
+    }
+    textures.push({
+      ...binding("sampled-resource", HIGH_ARRAY_TEXTURE.registers[backend], slot, "fragment", {
+        type: "texture_2d_array<f32>",
+        texture: {
+          sampleType: "float",
+          viewDimension: "2d-array",
+          multisampled: false
+        }
+      }),
+      textureKind: "2d-array",
+      arrayElements: 1,
+      isSRGB: false
+    });
+    slot += 1;
+  }
+  const samplers = (high ? [ 0, 1, 2, 3 ] : [ 0, 1, 2 ]).map((registerIndex) =>
+    binding("sampler", registerIndex, slot + registerIndex, "fragment", {
       sampler: { type: "filtering" }
     }));
-  return [ ...uniforms, ...bone, ...textures, ...samplers ];
+  return [ ...uniforms, ...bone, ...lights, ...textures, ...samplers ];
 }
 
-function validRecord(backend = "dx11", variant = "static")
+function validRecord(backend = "dx11", variant = "static", tier = "medium")
 {
   const skinned = variant === "skinned"
     || variant === "skinnedHeat"
@@ -407,7 +556,9 @@ function validRecord(backend = "dx11", variant = "static")
     : (heat
       ? "unpackedskinned_quadheatv5"
       : (skinned ? "unpackedskinned_quadv5" : "unpacked_quadv5"));
-  const source = `fixtures/shaders/effect.${backend}/managed/space/spaceobject/v5/quad/${stem}.sm_hi`;
+  const tierSuffix = tier === "high" ? "sm_depth" : (tier === "low" ? "sm_lo" : "sm_hi");
+  const source =
+    `fixtures/shaders/effect.${backend}/managed/space/spaceobject/v5/quad/${stem}.${tierSuffix}`;
   return {
     backend,
     variant,
@@ -468,7 +619,7 @@ function validRecord(backend = "dx11", variant = "static")
           pipelineInputs: strictHeat
             ? HEAT_DETAIL_PIXEL_INPUTS.map((entry) => ({ ...entry }))
             : [],
-          bindings: analysisPixelBindings(backend, heat, heatDetail)
+          bindings: analysisPixelBindings(backend, heat, heatDetail, tier)
         }
       ]
     },
@@ -522,7 +673,7 @@ function validRecord(backend = "dx11", variant = "static")
       ],
       bindGroups: [ {
         group: 0,
-        bindings: pipelineBindings(backend, skinned, heat, heatDetail)
+        bindings: pipelineBindings(backend, skinned, heat, heatDetail, tier)
       } ]
     }
   };
@@ -642,6 +793,7 @@ test("QuadV5 fixture validates the common PPT-on skinned heat contract", () =>
       scopeIdentity: "sampled-resource:0:13@fragment",
       registerIndex: 13,
       binding: 17,
+      scope: "fragment",
       viewDimension: "2d",
       registerType: 36,
       carbonType: 2,
@@ -667,7 +819,7 @@ test("QuadV5 fixture validates the common PPT-on skinned heat contract", () =>
     .carbon.type = 4;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongHeatResource),
-    /sampled-resource:0:11 has unexpected skinned-heat Carbon metadata/u
+    /sampled-resource:0:11 has unexpected Carbon metadata/u
   );
 
   const lowQuality = structuredClone(dx11);
@@ -675,7 +827,7 @@ test("QuadV5 fixture validates the common PPT-on skinned heat contract", () =>
   lowQuality.metadata.sourcePath = lowQuality.metadata.sourcePath.replace(".sm_hi", ".sm_lo");
   assert.throws(
     () => validateQuadV5PackageRecord(lowQuality),
-    /unpackedskinned_quadheatv5 ship shader/u
+    /the low tier is not encoded for the skinnedHeat variant/u
   );
 
   const missingPerFrame = structuredClone(dx11);
@@ -838,7 +990,7 @@ test("QuadV5 heat-detail validator rejects reflected resource and sampler drift"
     .registerType = 36;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongBoneType),
-    /BoneTransforms has unexpected skinned-heat Carbon metadata/u
+    /vertex t0 has unexpected BoneTransforms Carbon metadata/u
   );
 
   const wrongAlbedoSrgb = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -847,7 +999,7 @@ test("QuadV5 heat-detail validator rejects reflected resource and sampler drift"
     .carbon.isSRGB = false;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongAlbedoSrgb),
-    /sampled-resource:0:5 has unexpected skinned-heat Carbon metadata/u
+    /sampled-resource:0:5 has unexpected Carbon metadata/u
   );
 
   const wrongShadowAutoreg = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -856,7 +1008,7 @@ test("QuadV5 heat-detail validator rejects reflected resource and sampler drift"
     .carbon.isAutoregister = false;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongShadowAutoreg),
-    /sampled-resource:0:2 has unexpected skinned-heat Carbon metadata/u
+    /sampled-resource:0:2 has unexpected Carbon metadata/u
   );
 
   const wrongDetailArray = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -865,7 +1017,7 @@ test("QuadV5 heat-detail validator rejects reflected resource and sampler drift"
     .carbon.arrayElements = 2;
   assert.throws(
     () => validateQuadV5PackageRecord(wrongDetailArray),
-    /sampled-resource:0:13 has unexpected skinned-heat Carbon metadata/u
+    /sampled-resource:0:13 has unexpected Carbon metadata/u
   );
 
   const extraTexture = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -884,7 +1036,7 @@ test("QuadV5 heat-detail validator rejects reflected resource and sampler drift"
   });
   assert.throws(
     () => validateQuadV5PackageRecord(extraTexture),
-    /exact skinned-heat inventory/u
+    /exact declared inventory/u
   );
 
   const wrongSamplerAddress = structuredClone(validRecord("dx11", "skinnedHeatDetail"));
@@ -914,7 +1066,141 @@ test("QuadV5 heat-detail validator rejects reflected resource and sampler drift"
   });
   assert.throws(
     () => validateQuadV5PackageRecord(extraSampler),
-    /exact skinned-heat inventory/u
+    /exact declared inventory/u
+  );
+});
+
+test("QuadV5 fixture validates the High .sm_depth 25-binding contract", () =>
+{
+  const dx11 = validRecord("dx11", "static", "high");
+  const dx12 = validRecord("dx12", "static", "high");
+  dx12.pipeline.shaderModules[0].wgsl += " // SM5.1";
+  assert.deepEqual(validateQuadV5PackagePair([ dx11, dx12 ]), [ dx11, dx12 ]);
+
+  const plan = getQuadV5ResourcePlan(dx11);
+  assert.equal(plan.tier, "high");
+  // 13 sampled textures plus the light profile array, two storage buffers, four
+  // samplers, five uniforms: the 25 canonical bindings the manifest pins.
+  assert.equal(plan.textures.length, 14);
+  assert.equal(plan.storage.length, 2);
+  assert.equal(plan.samplers.length, 4);
+  assert.deepEqual(
+    plan.textures.map((entry) => entry.binding),
+    [ 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20 ]
+  );
+  assert.deepEqual(plan.storage.map((entry) => entry.binding), [ 18, 19 ]);
+  assert.deepEqual(plan.samplers.map((entry) => entry.binding), [ 21, 22, 23, 24 ]);
+
+  const array = plan.textures.at(-1);
+  assert.equal(array.name, "LightProfileArray");
+  assert.equal(array.viewDimension, "2d-array");
+  assert.equal(array.registerIndex, 15);
+  assert.equal(getQuadV5ResourcePlan(dx12).textures.at(-1).registerIndex, 16);
+  assert.deepEqual(
+    plan.storage.map((entry) => [ entry.name, entry.structureStride, entry.minBindingSize ]),
+    [ [ "LightIndexBuffer", 4, 4 ], [ "LightBuffer", 48, 48 ] ]
+  );
+
+  // High and Medium share every uniform size, so the tiers are distinguished by
+  // their binding inventory rather than by a cheaper signal.
+  const medium = getQuadV5ResourcePlan(validRecord("dx11", "static"));
+  assert.equal(medium.tier, "medium");
+  assert.equal(medium.textures.length, 11);
+  assert.equal(medium.storage.length, 0);
+  assert.equal(medium.samplers.length, 3);
+
+  const flatArrayView = structuredClone(dx11);
+  const arrayBinding = flatArrayView.pipeline.bindGroups[0].bindings
+    .find((entry) => entry.binding === 20);
+  arrayBinding.layout.texture.viewDimension = "2d";
+  arrayBinding.layout.type = "texture_2d<f32>";
+  arrayBinding.textureKind = "2d";
+  assert.throws(
+    () => validateQuadV5PackageRecord(flatArrayView),
+    /sampled-resource:0:15 has an unexpected texture layout/u
+  );
+
+  const wrongStride = structuredClone(dx11);
+  wrongStride.pipeline.bindGroups[0].bindings.find((entry) => entry.binding === 19)
+    .structureStride = 32;
+  assert.throws(
+    () => validateQuadV5PackageRecord(wrongStride),
+    /LightBuffer has an unexpected read-only storage layout/u
+  );
+
+  // s3 is not s0: a fixture that copied s0's state would bind the wrong sampler.
+  const copiedSamplerState = structuredClone(dx11);
+  copiedSamplerState.analysis.stages[1].bindings
+    .find((entry) => entry.kind === "sampler" && entry.registerIndex === 3)
+    .carbon.sampler = samplerState(false);
+  assert.throws(
+    () => validateQuadV5PackageRecord(copiedSamplerState),
+    /sampler:0:3 has unexpected static sampler state/u
+  );
+
+  const missingDust = structuredClone(dx11);
+  const material = missingDust.analysis.stages[1].bindings
+    .find((entry) => entry.kind === "constantBuffer" && entry.registerIndex === 0);
+  material.carbon.constants = material.carbon.constants
+    .filter((entry) => !entry.name.includes("Dust"));
+  assert.throws(
+    () => validateQuadV5PackageRecord(missingDust),
+    /pixel cb0 must expose exactly 24 High constants/u
+  );
+
+  const highSkinned = validRecord("dx11", "skinned", "high");
+  assert.throws(
+    () => validateQuadV5PackageRecord(highSkinned),
+    /the high tier is not encoded for the skinned variant/u
+  );
+});
+
+test("QuadV5 High fixture values author every reflected High input", () =>
+{
+  const fixture = createQuadV5FixtureValues(
+    QUADV5_TARGET_WIDTH,
+    QUADV5_TARGET_HEIGHT,
+    "static",
+    "high"
+  );
+  assert.equal(fixture.tier, "high");
+  assert.deepEqual(fixture.samplerNames, [
+    "Sampler0",
+    "PatternMask1MapSampler",
+    "PatternMask2MapSampler",
+    "Sampler3"
+  ]);
+  const names = fixture.textures.map((entry) => entry.name);
+  assert.ok(names.includes("DustNoiseMap") && names.includes("DirtMap"));
+
+  const array = fixture.textures.find((entry) => entry.name === "LightProfileArray");
+  assert.equal(array.dimension, "2d-array");
+  assert.equal(array.depthOrArrayLayers, 2);
+  // Distinct layer contents, so collapsing the view to layer 0 changes the draw.
+  assert.notDeepEqual([ ...array.data.slice(0, 4) ], [ ...array.data.slice(4, 8) ]);
+
+  assert.deepEqual(
+    fixture.storageBuffers.map((entry) => [ entry.name, entry.data.byteLength ]),
+    [ [ "LightIndexBuffer", 4 ], [ "LightBuffer", 48 ] ]
+  );
+  for (const entry of fixture.storageBuffers)
+  {
+    assert.equal(entry.data.byteLength % entry.structureStride, 0);
+  }
+
+  // packMaterial requires a value for every reflected constant, so the four dust
+  // colors must exist at High and must not exist at Medium.
+  const high = createQuadV5MainBindingValues(QUADV5_TARGET_WIDTH, QUADV5_TARGET_HEIGHT, "high");
+  const medium = createQuadV5MainBindingValues(QUADV5_TARGET_WIDTH, QUADV5_TARGET_HEIGHT);
+  for (const index of [ 1, 2, 3, 4 ])
+  {
+    assert.equal(high.material[`Mtl${index}DustDiffuseColor`].length, 4);
+    assert.equal(medium.material[`Mtl${index}DustDiffuseColor`], undefined);
+  }
+
+  assert.throws(
+    () => createQuadV5FixtureValues(QUADV5_TARGET_WIDTH, QUADV5_TARGET_HEIGHT, "skinned", "high"),
+    /High fixture values are only authored for the static variant/u
   );
 });
 
@@ -931,15 +1217,24 @@ test("QuadV5 fixture validates the skinned storage and vertex contract", () =>
     identity: "sampled-resource:0:0",
     scopeIdentity: "sampled-resource:0:0@vertex",
     registerIndex: 0,
-    binding: 5
+    binding: 5,
+    scope: "vertex",
+    arrayElements: 1,
+    registerType: 33,
+    carbonType: 7,
+    isSRGB: false,
+    isAutoregister: false,
+    minBindingSize: 48,
+    structureStride: 48
   } ]);
+  assert.equal(plan.tier, "medium");
   assert.equal(plan.textures[0].scopeIdentity, "sampled-resource:0:0@fragment");
   assert.equal(plan.textures[0].binding, 6);
   assert.equal(plan.samplers[0].binding, 17);
 
   const missingBone = structuredClone(dx11);
   missingBone.analysis.stages[0].bindings = [];
-  assert.throws(() => validateQuadV5PackageRecord(missingBone), /BoneTransforms reflection/u);
+  assert.throws(() => validateQuadV5PackageRecord(missingBone), /vertex resource reflection/u);
 
   const wrongStride = structuredClone(dx11);
   wrongStride.pipeline.bindGroups[0].bindings[5].structureStride = 64;
