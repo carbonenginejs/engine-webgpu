@@ -62,14 +62,20 @@ The engine still owns GPU allocation, stage-slot binding, upload, and lifetime.
 WebGPU ring offsets and their device alignment remain a separate allocation
 concern, not the `RawData` struct stride.
 
-The current CEWGPU reflection cannot define a general packer by itself. Local
-material `cb0` includes named constant offsets, but shared `cb1` through `cb4`
-expose only register identity, visibility, and an active-prefix minimum binding
-size. They do not include member names, member offsets, or the complete Carbon
-struct stride. The bounded Main serializer therefore uses the reviewed Carbon
-ABI. A later general packer needs the reviewed Trinity struct-definition
-catalog or richer package reflection and must reject uncovered structs rather
-than derive a stride from the WGSL minimum.
+Package reflection is not the source for constant layout, and a general packer
+is not required. Shared `cb1` through `cb4` need none, because `runtime-trinity`
+carries Carbon's layout directly as settled above. Local material `cb0`'s named
+constant offsets belong to the effect's own reflection — `Tr2Shader.GetConstant`
+carries each constant's name, offset and size — which is why the bounded Main
+serializer can use the reviewed Carbon ABI rather than deriving a stride from
+the WGSL minimum. A package's own records expose only register identity,
+visibility and an active-prefix minimum binding size, and asking them for more
+is the wrong direction.
+
+`spaceObjectMainBindings.js` currently reads those constants out of the format
+package rather than from the shader. That is a recorded layering defect, not the
+design — see `effect-container-port-decisions.md` in `runtime-resource`. A second
+engine package must not copy it.
 
 The current custom-mask producer is a deliberate exception at the value seam:
 it already writes `customMaskMatrix` in transposed GPU form. A future RawData
