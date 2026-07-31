@@ -77,10 +77,17 @@ package rather than from the shader. That is a recorded layering defect, not the
 design — see `effect-container-port-decisions.md` in `runtime-resource`. A second
 engine package must not copy it.
 
-The current custom-mask producer is a deliberate exception at the value seam:
-it already writes `customMaskMatrix` in transposed GPU form. A future RawData
-bridge must copy those slots with `SetRaw(...)` or an equivalent direct-copy
-encoding rather than applying `MATRIX` a second time.
+Copying a matrix **between two records** is the one operation the accessor pair
+does not express. `GetTransposed`/`GetTransposedIndex` return the stored value,
+which is already transposed, so feeding that straight into `SetAndTranspose`
+transposes a second time and stores the logical matrix where the transposed one
+belongs. Double transpose is identity, so nothing throws and nothing looks wrong.
+
+There is deliberately no raw-copy accessor to reach for — see the rationale at
+the head of `runtime-trinity`'s `RawData`. A producer that owns the logical
+matrix should hand that to `SetAndTranspose` and let it transpose once, which is
+what `EveCustomMask` does. A record-to-record copy needs a genuine slot copy, not
+the accessor pair.
 
 CEWGPU bytes can be decoded by an injected reader. Offline corpus tooling can
 produce packages for qualification, but it is not an engine dependency.
