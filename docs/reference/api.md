@@ -20,13 +20,20 @@ injected reader function and optional reader options.
 ## Device boundary
 
 `CjsWebGPUDevice.Request(...)` acquires or accepts a WebGPU adapter and device.
-The device prepares CEWGPU pipelines, creates explicit geometry, RGBA8 2D
-textures and samplers, builds binding sets, encodes draws, submits command
-buffers, and manages device generations.
+The device prepares CEWGPU pipelines, creates explicit geometry, RGBA8 2D or
+2D-array textures and samplers, builds binding sets, encodes draws, submits
+command buffers, and manages device generations.
 
 The resource helpers accept complete caller-owned data. They do not select
 effects, resolve paths, infer vertex layouts, or create production uniform
 values.
+
+`CjsWebGPUPipeline.resourceTransforms` exposes validated immutable transform
+records, and `GetResourceTransform(scopeIdentity)` resolves the record carried
+by one merged binding. The current supported shape merges ordered 2D inputs
+into one 2D-array binding. The package validates the recipe and rewritten
+layout; callers remain responsible for supplying compatible layer payloads and
+assembling them before `CreateTexture(...)`.
 
 The source tree also contains an internal
 `CjsWebGPUTrinityBatchDispatcher` conformance prototype. It is intentionally

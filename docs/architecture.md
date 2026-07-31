@@ -15,8 +15,8 @@ caller data into generation-bound WebGPU objects and encoded draws.
 `CjsWebGPUPackage` normalizes decoded package data into immutable shader,
 pipeline, layout, and resource descriptors. `CjsWebGPUDevice` owns native
 device interaction: shader preparation, pipeline creation, buffer and 2D
-texture upload, sampler realization, binding sets, draw encoding, submission,
-loss handling, and recreation.
+and 2D-array texture upload, sampler realization, binding sets, draw encoding,
+submission, loss handling, and recreation.
 
 Objects created by a device carry its generation. Recreation invalidates old
 pipelines, geometry, textures, samplers, binding sets, and draws while allowing
@@ -144,26 +144,28 @@ DecalCounterV5, DecalGlowV5, and DecalGlowCylindricV5 browser gates use its one-
 path, with the glass fixture keeping complementary pass selection explicit,
 the heat fixtures keeping their caller-owned raster recipes and semantic cases
 explicit, and the decal fixtures proving that numeric batch type `1` stays
-caller-selected. HeatDetail is a tied-largest active-binding contract, not a
+caller-selected. HeatDetail is a material-block breadth gate, not a
 common-frequency shader gate: cold/detail-neutral, cold/detail-active, and
 hot/detail-active cases isolate its detail and heat response while holding
 coverage and MRT1 invariant.
-The Heat, HeatDetail, Glass, Sails, Detail, and Oil browser gates currently use
-Carbon's medium `.sm_hi` tier. High quality is `.sm_depth`; the exact PPT-on
-high QuadDetail and QuadHeatDetail packages expose 17 fragment textures. They
-fail on the current 16-texture harness adapter before a pipeline can be
-prepared. A device explicitly requested with a supported higher limit may
-accept them. They remain the target for the documented cross-adapter
-detail-array transforms.
+The Heat, HeatDetail, Glass, Sails, and Oil browser gates use Carbon's medium
+`.sm_hi` tier. QuadDetail additionally covers the High `.sm_depth` tier.
+Compiler-emitted detail-map transforms merge compatible 2D inputs into one
+ordered 2D-array binding. The current gates validate that declaration against
+the rewritten layout, assemble its layers, and draw the transformed medium and
+High QuadDetail packages; the untransformed reflected inventory remains
+available as analysis rather than as the physical binding layout.
 The build-3444265 common skinned-heat evidence (313 ship areas across 205
 hulls) remains a synthetic 21-binding cold/hot conformance gate: it uses the
 internal dispatcher shape but imports neither runtime-trinity nor a Trinity
 graph. The duck-typed boundary is shaped for future
 `runtime-trinity` `Tr2RenderBatch`,
-`TriRenderBatchAccumulator`, and `TriRenderBatchMap` instances, but this
-package does not yet run an integration gate against them. A later
-render-step executor still needs to own frame/pass planning and select the
-pass for each batch type.
+`TriRenderBatchAccumulator`, and `TriRenderBatchMap` instances. A separate
+GPU-free package test now drives those real types through the engine dispatcher
+and proves the effect-to-package pipeline read chain. It assigns
+`Tr2Effect.effectResource` by hand; a production loader still does not own that
+write. A later render-step executor still needs to own frame/pass planning and
+select the pass for each batch type.
 
 The build-3444265 common skinned-Glass evidence (57 ship areas across 57
 hulls) is likewise synthetic and library-free. Its body-4 PPT-on gate adds an
@@ -189,20 +191,17 @@ The build-3444265 QuadDetailV5 audit finds 587 opaque areas across 257 SOF
 hull records. Runtime generation separates 473 areas across 189 records onto
 the static `quad/quaddetailv5.fx` path and 114 across 68 records onto
 `skinned_quad/quaddetailv5.fx`; no audited hull record mixes the two paths.
-The static gate selects an exact PPT-on body-4, seven-axis contract with 22
-bindings. The separate skinned gate selects its exact body-4, six-axis sibling,
-adds indexed non-identity `BoneTransforms`, and carries 23 bindings. Both
-gates reuse four synthetic cases that isolate pattern projection, Detail1, and
-Detail2 while exercising five uniform buffers, fourteen textures, and three
-samplers; the skinned total includes its bone buffer. Texture and sampler limit
-categories remain distinct. These totals describe the current pre-transform
-medium `.sm_hi` CEWGPU packages: the agreed Detail1/2/3-to-array resource
-transform is not yet emitted by `format-webgpu` or realized by this package,
-and would reduce the medium QuadDetail physical sampled-texture count from
-fourteen to twelve after exact sample-pattern and layer-compatibility proof.
-The corresponding high `.sm_depth` PPT-on body contains 17 fragment textures
-and four samplers; the same proven transform would reduce it to 15 textures
-for portable/default-limit preparation.
+The static gate selects an exact PPT-on body-4, seven-axis contract. The
+separate skinned gate selects its exact body-4, six-axis sibling and adds
+indexed non-identity `BoneTransforms`. Both gates reuse four synthetic cases
+that isolate pattern projection, Detail1, and Detail2. Texture and sampler
+limit categories remain distinct. Portable analysis retains the pre-transform
+inventory of fourteen medium-tier or seventeen High-tier fragment textures.
+The compiler-emitted three-layer transform rewrites the physical layout to
+twelve or fifteen sampled textures, respectively. With uniform buffers,
+samplers, forward-light storage, and the optional bone buffer included, the
+drawn post-transform groups contain 20/21 bindings at medium and 26/27 at High
+for static/skinned variants.
 
 The real `aca1_t1:amarrbase:amarr` base DNA emits two opaque skinned
 QuadDetail effects with PPT disabled and black pattern masks. Adding
@@ -255,16 +254,17 @@ boundary; only the injected reader or material resolver changes.
 
 ## Current non-goals
 
-There is no dependency on `runtime-core`, `runtime-resource`, or
-`runtime-trinity`. The package does not load GR2 or CMF geometry, resolve
-resource paths, extract scene state, choose production material or per-object
-values, translate complete Carbon render state, infer batch-type pass policy,
-realize render-job intents, or schedule a render loop.
+There is no production or source dependency on `runtime-core`,
+`runtime-resource`, or `runtime-trinity`; the latter two are development
+dependencies used by integration tests. The package does not load GR2 or CMF
+geometry, resolve resource paths, extract scene state, choose production
+material or per-object values, translate complete Carbon render state, infer
+batch-type pass policy, realize render-job intents, or schedule a render loop.
 
-The public engine texture adapter currently uploads only explicit,
-single-mip, uncompressed 2D RGBA8 data. The standalone harness may create
-harness-owned native resources, such as cube and 2D-array views, when a shader
-contract requires a shape outside that provisional adapter.
+The public engine texture adapter uploads explicit, single-mip, uncompressed
+RGBA8 data as 2D or 2D-array textures. The standalone harness may still create
+harness-owned native resources, such as cube views, when a shader contract
+requires a shape outside that provisional adapter.
 
 ## Related documentation
 

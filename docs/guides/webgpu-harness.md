@@ -184,6 +184,14 @@ both paths converge on a JSON blob consumed by byte-identical browser code, so
 equality of the GPU-determining fields deterministically implies pixel equality,
 and a JSON diff names the discrepant field.
 
+This is the evidence boundary: every all-body WGSB translation unit is prepared,
+and the selected WGSB unit is proven Node-equivalent to the selected WGSL unit.
+Browser draws consume selected packages; there is no separate browser draw that
+selects its pipeline directly from WGSB. The earlier one-off direct confirmation
+step is retired in favor of deterministic equality of every GPU-determining
+field before the byte-identical browser path. Do not describe all-body WGSB as
+browser-drawn.
+
 It asserts three things rather than one:
 
 - **body identity** — the permutation index is resolved from the selected
@@ -232,6 +240,22 @@ This is a prerequisite for the High `.sm_depth` tier, not only for resource
 transforms: the High Quad V5 `Main` pass binds `LightProfileArray` as a plain
 `texture_2d_array<f32>` with no transform.
 
+### Resource transforms
+
+The current package accepts exactly version-1 `texture-2d-array` transforms
+with `native-or-rgba8` representation and `missingLayer: "reject"`. It validates
+both halves of the contract: the ordered input recipe and the post-transform
+layout carrying one array binding in the layer-0 slot. An undeclared carrier,
+surviving merged-away binding, missing layer, incompatible layer payload, or
+unsupported transform shape fails closed.
+
+The fixture harness assembles one array slab from each input in declared layer
+order, creates the 2D-array texture, and binds the transformed output. The
+manifest records drawn gates for the two-layer HeatDetail merge and the
+three-layer static/skinned QuadDetail merge. QuadDetail is drawn at medium and
+High tiers; its High groups also carry the forward-light storage resources and
+the source-declared `LightProfileArray`.
+
 ### Draw-fixture identity, and why no `.cewgpu` is committed
 
 A `.cewgpu` is a derived artifact, fully determined by the source bytes at a
@@ -252,12 +276,14 @@ the same source at the same compiler version produce byte-identical packages.
 Source `.sm_lo`/`.sm_hi`/`.sm_depth` bytes are CCP game files. Never commit,
 fixture, or publish them; fetch them through tools-core at the pinned build id.
 
-`--draw-quadv5` currently encodes the **medium** `.sm_hi` (or `.sm_lo`) body-4
-contract: five uniform buffers, 11 fragment textures and three fragment
-samplers, 19 canonical bindings. The corresponding High `.sm_depth` body has 25
-canonical bindings, so gating it needs a second inventory and its own semantic
-fixture values, not a tier-string change. Do not report this medium gate as
-High-tier evidence.
+`--draw-quadv5` derives the quality tier from the package source-path suffix.
+The medium `.sm_hi` body-4 contract has five uniform buffers, 11 fragment
+textures, three fragment samplers, and 19 canonical bindings. The High
+`.sm_depth` body-4 contract has 25 canonical bindings, including the
+forward-light storage resources and `LightProfileArray`. The same command has
+drawn both tiers from DX11 and DX12 packages with exact 4,096-pixel comparison
+across both MRTs and zero WGSL warnings; the fixture manifest records the
+tier-specific evidence.
 
 DX12 declares the unnamed `s0` as an immutable root-signature sampler, so it
 reflects through the effect signature (`sourceTruth: carbon-signature-sampler`,
@@ -303,26 +329,19 @@ This command requires body `4` with all five local selections, including
 sampled textures and three fragment samplers. Those are separate WebGPU limit
 categories: the gate does not flatten this medium body's 14 textures plus
 three samplers into a 17-texture count. Together with five uniform buffers and
-the vertex bone-transform
-storage buffer, the canonical group contains 23 bindings, tied for the largest
-active binding contract covered here. This is a contract-breadth and material-
-block high-water gate, not evidence that HeatDetail is a common-frequency
-shader. PPT-on is the representative/default focus for this slice; a PPT-off
-draw would not substitute for this coverage.
+the vertex bone-transform storage buffer, the portable pre-transform inventory
+contains 23 logical bindings. This is a contract-breadth and material-block
+high-water gate, not evidence that HeatDetail is a common-frequency shader.
+PPT-on is the representative/default focus for this slice; a PPT-off draw would
+not substitute for this coverage.
 
-These counts describe the exact current medium-tier `.sm_hi`, pre-transform
-CEWGPU packages. This HeatDetail body exposes `Detail1Map` and `Detail2Map`
-but no `Detail3Map`. The canonical plan applies the same ordered array
-mechanism to those two layers after the compiler proves the exact
-shared-sampler/sample pattern and the engine proves compatible layer payloads.
-That transform would reduce this medium package from 14 to 13 physical sampled
-textures. The exact PPT-on high-tier `.sm_depth` body instead has 17 fragment
-textures and four samplers; packing its two compatible detail layers would
-bring it to the portable 16-texture limit. That high package currently fails
-bind-group-layout validation on the 16-texture harness adapter. A device
-explicitly requested with a supported higher limit may accept the untransformed
-layout. This gate does not yet qualify compiler-emitted texture-array recipes,
-array payload composition, or engine-side array realization.
+This exact medium-tier HeatDetail body exposes `Detail1Map` and `Detail2Map`
+but no `Detail3Map`. The compiler-emitted transform merges those inputs into
+one ordered two-layer binding, reducing the physical sampled-texture count from
+14 to 13 and the complete group to 22 bindings. The gate draws three cases
+through the assembled array on both backends, proves the detail layer is
+sampled, preserves coverage and MRT1, and requires exact paired readbacks with
+zero WGSL warnings.
 
 The hull-derived glass gate requires packages explicitly selecting the whole
 default `unpacked_quadglassv5` `Main` technique, not only `Main.pass0`:
@@ -422,15 +441,16 @@ draws, or verify depth ordering. Neither command loads SOF, runtime-trinity, a
 Trinity graph, production texture, ship mesh, or authoritative default value,
 and neither qualifies production scene construction or pass scheduling.
 
-The static QuadDetailV5 gate requires the exact medium-quality PPT-on
-`unpacked_quaddetailv5` `Main.pass0` pair:
+The static QuadDetailV5 gate requires an exact PPT-on
+`unpacked_quaddetailv5` `Main.pass0` pair at medium `.sm_hi` or High
+`.sm_depth` quality:
 
 ```powershell
 npm.cmd run test:webgpu:required -- --draw-quaddetailv5 .\artifacts\quaddetailv5-ppt-dx11.cewgpu .\artifacts\quaddetailv5-ppt-dx12.cewgpu
 ```
 
 The skinned sibling requires the exact PPT-on
-`unpackedskinned_quaddetailv5` `Main.pass0` pair:
+`unpackedskinned_quaddetailv5` `Main.pass0` pair at the matching tier:
 
 ```powershell
 npm.cmd run test:webgpu:required -- --draw-skinned-quaddetailv5 .\artifacts\skinned-quaddetailv5-ppt-dx11.cewgpu .\artifacts\skinned-quaddetailv5-ppt-dx12.cewgpu
@@ -470,11 +490,11 @@ textures, authoritative parameter defaults, runtime-trinity, or a Trinity
 graph.
 
 Each static package must be exact body `4` with seven local selection axes and
-one complete vertex/pixel `Main.pass0`. Its active group has 22 canonical
-bindings: five uniform buffers, fourteen sampled textures, and three samplers.
-Each skinned package must be its exact body-4, six-axis sibling; it has no
-`SPACE_OBJECT_INSTANCED_ATTACHMENT` axis and adds an active blend-index input
-plus vertex `BoneTransforms` storage for 23 bindings.
+one complete vertex/pixel `Main.pass0`. Its post-transform medium group has 20
+canonical bindings: five uniform buffers, twelve sampled textures, and three
+samplers. Each skinned package must be its exact body-4, six-axis sibling; it
+has no `SPACE_OBJECT_INSTANCED_ATTACHMENT` axis and adds an active blend-index
+input plus vertex `BoneTransforms` storage for 21 bindings.
 Textures and samplers remain separate WebGPU limit categories; this is not a
 17-texture contract. Both variants render the same four synthetic cases that
 isolate PPT, Detail1, and Detail2 influence while preserving the controlled
@@ -484,20 +504,15 @@ DX11- and DX12-derived packages for every case after `rgba8unorm` target
 quantization, with zero WGSL warnings. Neither gate makes a depth-attachment,
 depth-write, or depth-ordering claim.
 
-The 14-texture and 22/23-binding totals are measurements of the current
-medium-tier `.sm_hi`, pre-transform packages, where `Detail1Map`,
-`Detail2Map`, and `Detail3Map` remain three separate `texture_2d` bindings.
-The agreed 3-to-1 detail-array design would reduce their physical
-sampled-texture count to 12 after exact sample-pattern and
-layer-compatibility proof. The exact PPT-on high-tier `.sm_depth` body adds
-`DustNoiseMap`, `DirtMap`, and the already-native `LightProfileArray`, reaching
-17 fragment textures and four samplers; the same proven packing would reduce
-it to 15. That high package currently fails bind-group-layout validation on
-the 16-texture harness adapter at the untransformed 17-texture count. A device
-explicitly requested with a supported higher limit may accept it.
-`format-webgpu` does not yet emit the detail resource-transform recipe and
-`engine-webgpu` does not yet realize it, so these browser draws qualify the
-medium separate-texture contract only.
+Portable analysis still reports the logical pre-transform inventory:
+fourteen medium-tier `.sm_hi` textures or seventeen High-tier `.sm_depth`
+textures. The compiler-emitted three-layer transform rewrites the physical
+layout to twelve or fifteen sampled textures. The High group additionally
+carries four samplers, two forward-light storage buffers, and the
+source-declared `LightProfileArray`, for 26 static or 27 skinned bindings.
+Medium and High static/skinned gates all assemble the declared layers and draw
+them with distinct Detail1/Detail2 responses, paired MRT parity, and zero WGSL
+warnings.
 
 The live-ship QuadOilV5 slice uses the exact PPT-off
 `unpackedskinned_quadoilv5` `Main.pass0` pair:
@@ -545,9 +560,9 @@ all three RGB channels with 18 distinct quantized deltas. Both cases and both
 MRTs then match byte-for-byte between the DX11- and DX12-derived packages
 after `rgba8unorm` target quantization with zero WGSL warnings. This proves
 the bounded compiled shader/resource path, not a production ship render. It
-loads no SOF, EVE mesh or texture, authoritative defaults, runtime-core,
-runtime-resource, runtime-trinity, or Trinity graph, and it attaches no depth
-target.
+uses the runtime-resource WebGPU format reader but starts no resource manager
+and loads no SOF, EVE mesh or texture, authoritative defaults, runtime-core,
+runtime-trinity, or Trinity graph. It attaches no depth target.
 
 The older PPT-off static heat gate requires explicitly selected medium-quality
 `unpacked_quadheatv5` `Main.pass0` packages:
@@ -626,7 +641,8 @@ seven-axis contract; skinned QuadDetailV5 carries its exact six-axis contract.
 Skinned QuadOilV5 carries its exact five-axis PPT-off contract.
 The launcher
 reads each file directly, decodes it with `CjsWebgpuFormat`, and constructs
-`CjsWebGPUPackage`. No runtime library, resource manager, or Trinity contract
+`CjsWebGPUPackage`. The runtime-resource format reader participates, but no
+resource manager, runtime-core/runtime-trinity runtime, or Trinity graph
 participates in this gate.
 
 The browser harness supplies an authored 13-vertex, 36-index silhouette.
@@ -653,9 +669,9 @@ identity-only, hard-coded-zero, or wrong-stride skinning path cannot pass.
 uploads each `rgba8unorm`/`rgba8unorm-srgb` payload, exposes only a generation-
 bound handle, unwraps its private view at the canonical texture binding, and
 releases the native texture idempotently. The environment cube remains
-harness-owned and is bound as a native cube view because the provisional
-engine texture adapter is intentionally still limited to uncompressed 2D
-views. Each sampler passes through
+harness-owned and is bound as a native cube view because the public engine
+adapter supports uncompressed 2D and 2D-array views, but not cube views. Each
+sampler passes through
 `RealizeSampler(...)`: its complete already-selected `webgpu-sampler` resource
 payload is mapped into the exact bundle shape and published through a guarded
 structural adapter slot. The operation then calls `CreateSampler(...)`, which
@@ -677,9 +693,9 @@ textures, three samplers, five uniform buffers, and the bone buffer. The two
 controlled cases are cold and hot. Activating heat must increase only the red
 output for at least half of covered pixels, must produce a spatially varied
 response, and must leave coverage, alpha, green/blue, and MRT1 invariant.
-Skinned QuadHeatDetailV5 retains those seven attributes while expanding to 23
-bindings: 14 textures, three samplers, five uniform buffers, and the bone
-buffer. Each backend renders three controlled cases: cold/detail-neutral with
+Skinned QuadHeatDetailV5 retains those seven attributes while using 22
+post-transform bindings: 13 textures, three samplers, five uniform buffers, and
+the bone buffer. Each backend renders three controlled cases: cold/detail-neutral with
 `DetailSelector=0`, cold/detail-active, and hot/detail-active. Activating detail
 must measurably change MRT0 from the neutral case, and activating heat must
 measurably change MRT0 from the cold/detail-active case. Coverage and every
@@ -693,15 +709,18 @@ for both MRTs. That equality is measured after `rgba8unorm` target
 quantization; it is not a claim of unquantized floating-point shader-semantic
 equivalence. Every WGSL warning or WebGPU validation error fails the command.
 
-Static QuadDetailV5 uses the same six-attribute synthetic silhouette and five
-semantic uniform buffers with 22 bindings: fourteen sampled textures and
-three samplers complete the group. Its skinned sibling adds the 8-byte
-`uint16x4` blend-index stream and vertex-stage read-only `BoneTransforms`
-buffer for 23 bindings. Every vertex selects a nonzero palette entry whose
-non-identity transform must move the observed silhouette. Both variants reuse
-four controlled cases that independently expose pattern projection, Detail1,
-and Detail2 influence. They require stable coverage/MRT1 and byte-exact paired
-DX11/DX12 readbacks for both MRTs, but neither attaches or qualifies depth.
+At medium quality, static QuadDetailV5 uses the same six-attribute synthetic
+silhouette and five semantic uniform buffers with 20 post-transform bindings:
+twelve sampled textures and three samplers complete the group. Its skinned
+sibling adds the 8-byte `uint16x4` blend-index stream and vertex-stage
+read-only `BoneTransforms` buffer for 21 bindings. High quality adds three
+sampled textures, one sampler, and two forward-light storage buffers, producing
+26 static or 27 skinned bindings. Every skinned vertex selects a nonzero palette
+entry whose non-identity transform must move the observed silhouette. Both
+variants reuse four controlled cases that independently expose pattern
+projection, Detail1, and Detail2 influence. They require stable coverage/MRT1
+and byte-exact paired DX11/DX12 readbacks for both MRTs, but neither attaches or
+qualifies depth.
 
 Skinned QuadOilV5 uses the same two vertex streams and non-identity
 `BoneTransforms` table with an 18-binding body-0 contract: five uniform
@@ -723,9 +742,10 @@ environment cube, autoregistered 2D-array fog volume, NormalMap, GlowMap,
 RoughnessMap, MaterialMap, and PaintMaskMap, plus two samplers. The audited
 SOF effect also authors AlbedoMap, DirtMap, and DustNoiseMap; they are inactive
 in this selected shader body and are deliberately not invented as live
-bindings. The environment and neutral four-layer-capable fog views remain
-harness-owned because the provisional public texture adapter is still 2D
-only.
+bindings. The environment cube remains harness-owned because the public
+texture adapter does not create cube views. The neutral four-layer fog view
+also remains a harness-owned fixture resource, although the public adapter now
+supports explicit 2D-array uploads.
 
 Each backend renders both cull passes with an opaque PaintMask and a
 transparent PaintMask. MRT1 supplies stable `[0, 0, 0, 255]` motion/coverage
@@ -952,8 +972,9 @@ Unlike the ship-family draw flags, preparation requires no geometry or live
 resource fixtures.
 
 The QuadV5, QuadGlassV5, QuadHeatV5, QuadSailsV5, QuadDetailV5, QuadOilV5,
-and decal-family commands are direct format/engine integration gates. They do
-not load `runtime-core`, `runtime-resource`, or `runtime-trinity`.
+and decal-family commands are direct format/engine integration gates. They
+import the runtime-resource WebGPU format reader, but do not start a resource
+manager or load `runtime-core`, `runtime-trinity`, or a Trinity graph.
 
 To exercise the real package boundary, pass a CEWGPU package containing the
 generated `Main.pass0.vertex` and `Main.pass0.pixel` shaders plus its canonical
