@@ -73,9 +73,9 @@ visibility and an active-prefix minimum binding size, and asking them for more
 is the wrong direction.
 
 `spaceObjectMainBindings.js` currently reads those constants out of the format
-package rather than from the shader. That is a recorded layering defect, not the
-design — see `effect-container-port-decisions.md` in `runtime-resource`. A second
-engine package must not copy it.
+package rather than from the shader. That is a known layering defect, not the
+design. Engines must consume the resource-owned `Tr2Shader` reflection graph; a
+second engine package must not copy the format-record path.
 
 Copying a matrix **between two records** is the one operation the accessor pair
 does not express. `GetTransposed`/`GetTransposedIndex` return the stored value,
