@@ -10,13 +10,14 @@
 // What the env-gated test below pins is the CURRENT mechanism, not a contract
 // anyone should build on.
 //
-// A .cewgpu is one self-contained portable file - INFO/META/PGRF/RFLX/RBLB/ANLS/
-// WGSL - and one read of it yields one CewgpuPackage that answers every question
-// about it. Today Tr2EffectRes consumes that reader object and duck-types
-// GetPortableEffectReflection off it, so a class crosses the boundary. The
-// intended direction is the opposite: the shader reads the packaged form itself
-// from bytes, the way ccpwgl's Tw2Shader.fromCCPBinary(reader, context) does,
-// with the engine supplying only binding. Nothing but bytes should cross.
+// A .cewgpu is one Carbon-v15 record container. The reader derives the former
+// analysis, permutation, reflection and WGSL package views from that one tree;
+// none is a second stored chunk. Today Tr2EffectRes consumes the raw container
+// object and duck-types GetPortableEffectReflection off it, so a class crosses
+// the boundary. The intended direction is the opposite: the shader reads the
+// packaged form itself from bytes, the way ccpwgl's
+// Tw2Shader.fromCCPBinary(reader, context) does, with the engine supplying only
+// binding. Nothing but bytes should cross.
 //
 // The engine's own CjsWebGPUPackage is not a valid Tr2EffectRes payload, because
 // normalizePackageShape deep-clones to plain JSON and drops permutationGraph and
@@ -304,7 +305,7 @@ test("the engine dispatcher reaches the package pipeline through a real batch ma
 // Pins today's mechanism so a change to it is visible. It is not an endorsement:
 // see the header - the direction of travel is bytes-in, which would retire the
 // GetPortableEffectReflection assertion entirely.
-test("a real Tr2EffectRes resolves a shader from a real CewgpuPackage", async (t) =>
+test("a real Tr2EffectRes resolves a shader from a real CEWGPU container", async (t) =>
 {
   if (!FIXTURE_DIR)
   {
@@ -318,10 +319,10 @@ test("a real Tr2EffectRes resolves a shader from a real CewgpuPackage", async (t
   const path = join(FIXTURE_DIR, `${FIXTURE_STEM}-ppt-main.dx11.cewgpu`);
   const bytes = new Uint8Array(await readFile(path));
 
-  // The raw emit is the CewgpuPackage itself. The default emit is a plain JSON
-  // projection without GetPortableEffectReflection, so it would be accepted as a
-  // payload and then silently resolve no shader at all - the failure a loader is
-  // most likely to ship by accident.
+  // The raw emit is the internal CewgpuContainer. The default emit is a plain
+  // JSON projection without GetPortableEffectReflection, so it would be accepted
+  // as a payload and then silently resolve no shader at all - the failure a
+  // loader is most likely to ship by accident.
   const reader = CjsWebgpuFormat.read(bytes, { source: path, emit: CjsWebgpuFormat.OUTPUT_RAW });
   assert.equal(typeof reader.GetPortableEffectReflection, "function");
 
