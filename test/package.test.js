@@ -746,6 +746,15 @@ test("resource transforms realize only in the exact shape the engine can assembl
 
   const pipeline = build().pipelines[0];
   assert.equal(pipeline.resourceTransforms.length, 1);
+
+  // The carrier occupies its layer-0 input's register slot, so Carbon metadata
+  // looked up by register names the first source rather than the array. The
+  // transform owns the output name, and the binding must take it from there.
+  const carrierBinding = build().bindGroups[0].bindings
+    .find((entry) => entry.transformId);
+  assert.equal(carrierBinding.name, "DetailMapArray");
+  assert.equal(carrierBinding.arrayLayerCount, 2);
+
   const realized = pipeline.resourceTransforms[0];
   assert.equal(realized.output.scopeIdentity, "sampled-resource:0:12@fragment");
   assert.equal(realized.output.layerCount, 2);

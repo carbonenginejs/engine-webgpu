@@ -428,7 +428,12 @@ export function buildPipelines(normalized, shaderModules)
     const passKey = buildPassKey(pass);
     const canonicalLayout = normalized.layouts.find((entry) => entry?.key === passKey) || null;
     const passBindGroups = canonicalLayout
-      ? buildCanonicalBindGroups(pass, canonicalLayout, normalized.wgsl?.formatVersion ?? null)
+      ? buildCanonicalBindGroups(
+        pass,
+        canonicalLayout,
+        normalized.wgsl?.formatVersion ?? null,
+        allTransforms.filter((entry) => entry.layoutKey === passKey)
+      )
       : [ new CjsWebGPUBindGroup({
         key: `${buildPassKey(pass)}.bindings`,
         techniqueName: pass.techniqueName,
@@ -570,7 +575,7 @@ function canonicalVisibility(value)
     CANONICAL_STAGE_ORDER.indexOf(left) - CANONICAL_STAGE_ORDER.indexOf(right));
 }
 
-function buildCanonicalBindGroups(pass, layout, formatVersion)
+function buildCanonicalBindGroups(pass, layout, formatVersion, transforms = [])
 {
   const slots = new Set();
   const identities = new Map();
@@ -617,7 +622,7 @@ function buildCanonicalBindGroups(pass, layout, formatVersion)
         throw new Error(`Canonical layout ${layout.key} conflicts for ${scopeIdentity}`);
       }
       identities.set(scopeIdentity, fingerprint);
-      return createCanonicalDescriptor(pass, binding);
+      return createCanonicalDescriptor(pass, binding, transforms);
     });
     return new CjsWebGPUBindGroup({
       key: `${buildPassKey(pass)}.group${groupRecord.group}`,
@@ -672,8 +677,15 @@ function canonicalScopeIdentity(binding, formatVersion = null)
   return scopeIdentity;
 }
 
-function createCanonicalDescriptor(pass, binding)
+function createCanonicalDescriptor(pass, binding, transforms = [])
 {
+  // A merged array binding sits in its layer-0 input's register slot, so the
+  // Carbon metadata found by register names the first source rather than the
+  // array - `Detail1Map`, not `DetailArrayMap`. The transform owns the output's
+  // name; the Carbon record still names the layer and stays on `metadataName`.
+  const transform = binding.transformId
+    ? transforms.find((entry) => entry.id === binding.transformId) || null
+    : null;
   const carbonKind = RESOURCE_KIND_TO_CARBON[binding.resourceKind];
   const allCandidates = pass.stages.flatMap((module) => module.bindings
     .filter((entry) => entry.kind === carbonKind
@@ -701,7 +713,10 @@ function createCanonicalDescriptor(pass, binding)
       }));
   const base = {
     key: `group${binding.group}:binding${binding.binding}`,
-    name: metadata?.metadataName || binding.generatedSymbol || "",
+    name: transform?.output?.name
+      || metadata?.metadataName
+      || binding.generatedSymbol
+      || "",
     techniqueName: pass.techniqueName,
     passIndex: pass.passIndex,
     stageName: candidates[0]?.module.stageName || "",
