@@ -352,7 +352,7 @@ test("space-object Main serializer fails closed on reflected material drift", ()
   overlap.analysis.stages[0].bindings[0].carbon.constants[1].offset = 16;
   assert.throws(
     () => buildEveSpaceObjectMainUniformData(overlap, bindingValues()),
-    /overlaps another reflected constant/u
+    /overlaps another constant/u
   );
 });
 

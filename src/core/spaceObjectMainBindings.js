@@ -1,3 +1,5 @@
+import { PackMaterialConstants } from "./materialConstants.js";
+
 const BUFFER_SIZES = Object.freeze({
   perFrameVS: 736,
   perFramePS: 1888,
@@ -249,55 +251,19 @@ function namedValue(values, name)
   return undefined;
 }
 
-function packMaterial(binding, values)
+// LEGACY LAYOUT SOURCE. Reading `binding.carbon.constants` off the package's
+// analysis chunk is the recorded layering defect: it is a format record
+// standing in for canonical reflection, which belongs to `Tr2Shader`. It stays
+// only until every caller supplies a layout, and a second engine must not
+// reproduce it. See materialConstants.js.
+function legacyMaterialLayout(binding)
 {
-  if (!values || (typeof values !== "object" && !(values instanceof Map)))
-  {
-    fail("material values are required");
-  }
   const carbon = binding.carbon;
-  const size = carbon?.constantValueSize;
-  const constants = carbon?.constants;
-  if (!carbon?.hasLocalConstants || !Number.isInteger(size) || size < 1 || size % 4 !== 0
-    || !Array.isArray(constants) || !constants.length)
+  if (!carbon?.hasLocalConstants || !Array.isArray(carbon.constants) || !carbon.constants.length)
   {
     fail("cb0 has no usable reflected local-constant layout");
   }
-  const buffer = new ArrayBuffer(size);
-  const view = new DataView(buffer);
-  const names = new Set();
-  const ranges = [];
-  for (const constant of constants)
-  {
-    const name = constant?.name;
-    const offset = constant?.offset;
-    const byteSize = constant?.size;
-    const dimension = constant?.dimension;
-    if (typeof name !== "string" || !name || names.has(name)) fail("cb0 contains malformed or duplicate constant names");
-    if (constant.type !== 0 || constant.elements !== 0 || !Number.isInteger(dimension)
-      || dimension < 1 || dimension > 4 || !Number.isInteger(offset) || offset < 0 || offset % 4 !== 0
-      || !Number.isInteger(byteSize) || byteSize < dimension * 4 || offset + byteSize > size)
-    {
-      fail(`cb0 constant ${name} has an unsupported reflected layout`);
-    }
-    if (ranges.some(([ start, end ]) => offset < end && offset + byteSize > start))
-    {
-      fail(`cb0 constant ${name} overlaps another reflected constant`);
-    }
-    names.add(name);
-    ranges.push([ offset, offset + byteSize ]);
-    const value = namedValue(values, name);
-    if (value == null) fail(`material.${name} is required`);
-    const entries = flattenNumbers(value);
-    if (entries.length !== dimension) fail(`material.${name} must contain exactly ${dimension} values`);
-    for (let index = 0; index < dimension; index += 1)
-    {
-      const item = entries[index];
-      if (!isFiniteFloat32(item)) fail(`material.${name}[${index}] must be a finite float32`);
-      view.setFloat32(offset + index * 4, item, true);
-    }
-  }
-  return new Uint8Array(buffer);
+  return { size: carbon.constantValueSize, constants: carbon.constants };
 }
 
 function resolvePackageRecord(value)
@@ -413,10 +379,14 @@ function canonicalUniformBindings(pipeline)
  * @param {object} values Plain values for the five constant buffers.
  * @returns {object} Frozen scope-identity-to-Uint8Array uniform data.
  */
-export function buildEveSpaceObjectMainUniformData(record, values = {})
+export function buildEveSpaceObjectMainUniformData(record, values = {}, options = {})
 {
   const { analysis, pipeline } = resolvePackageRecord(record);
-  const material = packMaterial(findMaterialBinding(analysis), values.material);
+  // A caller-supplied layout is the correct source, because it comes from
+  // `Tr2Shader` rather than from a format record. The analysis fallback is the
+  // recorded defect and goes when the last caller stops needing it.
+  const layout = options.materialLayout ?? legacyMaterialLayout(findMaterialBinding(analysis));
+  const material = PackMaterialConstants(layout, values.material);
   const packedData = {
     [IDENTITIES.material]: material,
     [IDENTITIES.perFrameVS]: packStruct(values.perFrameVS, BUFFER_SIZES.perFrameVS, PER_FRAME_VS_FIELDS, "perFrameVS"),

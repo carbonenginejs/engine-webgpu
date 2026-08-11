@@ -74,6 +74,29 @@ later raw upload path, not through this semantic serializer.
 
 The serializer does not read SOF and does not supply production defaults.
 
+## Material constants
+
+- `MaterialLayoutFromShader(shader, { technique, pass, stage })` builds a named
+  material-constant layout by walking a pass's stage inputs, which is where
+  Carbon reads them from. `shader` is duck-typed — this package declares no
+  runtime dependencies and cannot import `Tr2Shader`, so a caller supplies
+  anything with `GetTechniqueIndex` and `GetEffect`.
+- `PackMaterialConstants(layout, values)` packs values matched **by name** into
+  that layout, seeding the buffer from the pass's authored defaults so a caller
+  names only what it overrides.
+- `NormalizeMaterialLayout(layout)` validates a hand-built layout.
+
+The buffer is sized from `max(offset + size)` across the constants, as Carbon
+sizes it. A stage input's `constantValueSize` is the authored default blob's
+length and is not that number.
+
+Reflection — constant names, offsets, sizes, defaults, annotations — belongs to
+`Tr2Shader`. The backend package owns only physical binding topology: group,
+binding, visibility, register identity. `buildEveSpaceObjectMainUniformData`
+accepts a `materialLayout` option for exactly this reason; its analysis-chunk
+fallback is a recorded layering defect and a second engine must not reproduce
+it.
+
 ## Effect paths
 
 This package does not resolve effect paths and exports no helper for it. Which

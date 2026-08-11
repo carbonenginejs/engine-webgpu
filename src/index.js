@@ -12,3 +12,8 @@ export {
   buildEveSpaceObjectMainUniformData,
   getEveSpaceObjectMainMaterialConstants
 } from "./core/spaceObjectMainBindings.js";
+export {
+  MaterialLayoutFromShader,
+  NormalizeMaterialLayout,
+  PackMaterialConstants
+} from "./core/materialConstants.js";
