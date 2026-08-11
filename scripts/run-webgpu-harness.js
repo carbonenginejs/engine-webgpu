@@ -1275,16 +1275,30 @@ html, body { margin: 0; padding: 0; background: #000; }
 canvas { display: block; }
 </style></head><body><canvas id="hull"></canvas></body></html>`
     );
-    await page.evaluate((value) =>
+    // Every target, not just the colour one. MRT1 carries what the pixel stage
+    // resolved for the surface itself, so it reads the tangent frame and the
+    // normal map without the lighting in the way — which is the difference
+    // between "the picture looks wrong" and knowing which layer is wrong.
+    for (let index = 0; index < draw.targetPixels.length; index += 1)
     {
-        const canvas = document.getElementById("hull");
-        canvas.width = value.targetWidth;
-        canvas.height = value.targetHeight;
-        canvas.getContext("2d").putImageData(new ImageData(
-            new Uint8ClampedArray(value.targetPixels[0]), value.targetWidth, value.targetHeight
-        ), 0, 0);
-    }, draw);
-    await page.locator("#hull").screenshot({ path: outputPath, type: "png" });
+        await page.evaluate((value) =>
+        {
+            const canvas = document.getElementById("hull");
+            canvas.width = value.targetWidth;
+            canvas.height = value.targetHeight;
+            canvas.getContext("2d").putImageData(new ImageData(
+                new Uint8ClampedArray(value.pixels), value.targetWidth, value.targetHeight
+            ), 0, 0);
+        }, {
+            targetWidth: draw.targetWidth,
+            targetHeight: draw.targetHeight,
+            pixels: draw.targetPixels[index]
+        });
+        await page.locator("#hull").screenshot({
+            path: index === 0 ? outputPath : outputPath.replace(/\.png$/i, `-mrt${index}.png`),
+            type: "png"
+        });
+    }
 }
 
 async function CaptureQuadV5(page, comparison, outputPath)
