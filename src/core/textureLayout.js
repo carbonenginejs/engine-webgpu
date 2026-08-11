@@ -112,6 +112,13 @@ export function LevelLayout(format, width, height, level)
     level,
     width: levelWidth,
     height: levelHeight,
+    // The PHYSICAL extent, which is the logical one rounded up to whole blocks.
+    // WebGPU validates a compressed copy size against block multiples, so a
+    // 2x2 tail level of a BC chain has to be copied as the 4x4 block it really
+    // occupies; passing the logical 2x2 is rejected outright. For an
+    // uncompressed format the block is 1x1 and these are the logical sizes.
+    copyWidth: blockColumns * format.blockWidth,
+    copyHeight: blockRows * format.blockHeight,
     bytesPerRow,
     // In BLOCK rows, which is what writeTexture wants and what makes a
     // compressed upload differ from an uncompressed one.

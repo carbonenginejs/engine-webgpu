@@ -2609,15 +2609,23 @@ test("CjsWebgpuDevice uploads a compressed mip chain one level at a time", async
   assert.equal(writes.length, 4, "one write per level, because a chain is not one contiguous slab");
 
   // rowsPerImage counts BLOCK rows, and the tail levels are one whole block.
+  //
+  // So does the copy SIZE. WebGPU validates a compressed copy extent against
+  // whole blocks, so the 2x2 and 1x1 levels are copied as the 4x4 block they
+  // physically occupy; passing their logical widths is rejected outright, with
+  // a message about block width that does not mention mip levels. This
+  // previously asserted 2 and 1, which is why a real 11-level BC chain failed
+  // the first time one was uploaded.
   assert.deepEqual(
     writes.map(([ , destination, , layout, size ]) => [
-      destination.mipLevel, layout.offset, layout.bytesPerRow, layout.rowsPerImage, size.width
+      destination.mipLevel, layout.offset, layout.bytesPerRow, layout.rowsPerImage,
+      size.width, size.height
     ]),
     [
-      [ 0, 0, 32, 2, 8 ],
-      [ 1, 64, 16, 1, 4 ],
-      [ 2, 80, 16, 1, 2 ],
-      [ 3, 96, 16, 1, 1 ]
+      [ 0, 0, 32, 2, 8, 8 ],
+      [ 1, 64, 16, 1, 4, 4 ],
+      [ 2, 80, 16, 1, 4, 4 ],
+      [ 3, 96, 16, 1, 4, 4 ]
     ]
   );
 });

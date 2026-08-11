@@ -334,6 +334,49 @@ if (ACTIVE_DECALV5_INDEX >= 0
 const DRAW_DECALV5_PATHS = ACTIVE_DECALV5_INDEX >= 0
     ? [ resolve(process.argv[ACTIVE_DECALV5_INDEX + 1]), resolve(process.argv[ACTIVE_DECALV5_INDEX + 2]) ]
     : null;
+// The hull draw takes ONE package, not a DX11/DX12 pair. Every other
+// ship-family flag exists to prove two independently translated packages agree,
+// so it needs both; this one exists to put real content on screen and a second
+// backend would only double the work without changing the picture.
+const DRAW_HULL_INDEX = process.argv.indexOf("--draw-hull");
+if (DRAW_HULL_INDEX >= 0
+  && (!process.argv[DRAW_HULL_INDEX + 1] || process.argv[DRAW_HULL_INDEX + 1].startsWith("--")))
+{
+    throw new Error("--draw-hull requires a packed quadv5 CEWGPU file path");
+}
+const DRAW_HULL_PATH = DRAW_HULL_INDEX >= 0
+    ? resolve(process.argv[DRAW_HULL_INDEX + 1])
+    : null;
+// The hull's geometry and material maps are CCP game assets. They are served
+// from a directory the caller names and are never carried in this repository:
+// the package ships to npm, and shipping someone else's ship with it is not a
+// thing a renderer gets to do. `scripts/prepare-hull-assets.js` fetches them.
+const HULL_ASSETS_INDEX = process.argv.indexOf("--hull-assets");
+if (HULL_ASSETS_INDEX >= 0
+  && (!process.argv[HULL_ASSETS_INDEX + 1] || process.argv[HULL_ASSETS_INDEX + 1].startsWith("--")))
+{
+    throw new Error("--hull-assets requires a directory path");
+}
+if (DRAW_HULL_INDEX >= 0 && HULL_ASSETS_INDEX < 0)
+{
+    throw new Error("--draw-hull requires --hull-assets <dir> holding the prepared hull binaries");
+}
+const HULL_ASSETS_DIR = HULL_ASSETS_INDEX >= 0
+    ? resolve(process.argv[HULL_ASSETS_INDEX + 1])
+    : null;
+const CAPTURE_HULL_INDEX = process.argv.indexOf("--capture-hull");
+if (CAPTURE_HULL_INDEX >= 0
+  && (!process.argv[CAPTURE_HULL_INDEX + 1] || process.argv[CAPTURE_HULL_INDEX + 1].startsWith("--")))
+{
+    throw new Error("--capture-hull requires a PNG output path");
+}
+if (CAPTURE_HULL_INDEX >= 0 && DRAW_HULL_INDEX < 0)
+{
+    throw new Error("--capture-hull requires --draw-hull");
+}
+const CAPTURE_HULL_PATH = CAPTURE_HULL_INDEX >= 0
+    ? resolve(process.argv[CAPTURE_HULL_INDEX + 1])
+    : null;
 const CAPTURE_QUADV5_INDEX = process.argv.indexOf("--capture-quadv5");
 if (CAPTURE_QUADV5_INDEX >= 0
   && (!process.argv[CAPTURE_QUADV5_INDEX + 1] || process.argv[CAPTURE_QUADV5_INDEX + 1].startsWith("--")))
@@ -459,6 +502,43 @@ async function ReadBodySetPrepare(path)
         throw new Error(`${path} carries no WGSB body set; build it with mode "all"`);
     }
     return buildBodySetPipelines(pkg);
+}
+
+/**
+ * Read the single packed-quadv5 package the hull draw binds against.
+ *
+ * The fixture rejects an unpacked package by its input signature, so this only
+ * has to get a complete Main.pass0 pipeline into the browser; it does not
+ * re-check the variant here and then again there.
+ *
+ * @param {string} path CEWGPU file path.
+ * @returns {Promise<object>} Serializable package record.
+ */
+async function ReadHullPackage(path)
+{
+    const [ { CjsWebgpuFormat }, { CjsWebgpuPackage } ] = await Promise.all([
+        import("@carbonenginejs/runtime-resource/formats/webgpu"),
+        import("../src/index.js")
+    ]);
+    const pkg = CjsWebgpuPackage.fromBytes(await readFile(path), {
+        read: CjsWebgpuFormat.read,
+        readOptions: { source: path }
+    });
+    const pipeline = pkg.GetPipeline("Main", 0);
+    if (!pipeline || !pipeline.HasCompleteWgsl())
+    {
+        throw new Error(`${path} has no complete Main.pass0 pipeline`);
+    }
+    return {
+        label: basename(path),
+        backend: "dx11",
+        filePath: path,
+        resourcePath: "res:/webgpu-harness/hull/quadv5.cewgpu",
+        // No analysis chunk: the fixture takes the material layout from the
+        // pass binding, which keeps this draw off the engine's analysis-reading
+        // fallback rather than adding another caller to it.
+        pipeline: pipeline.ToJSON()
+    };
 }
 
 async function ReadQuadV5Packages(paths, variant)
@@ -897,6 +977,8 @@ const DECALV5_DRAW = DRAW_DECALV5_PATHS
     ? await ReadDecalV5Packages(DRAW_DECALV5_PATHS, DECALV5_VARIANT)
     : null;
 
+const HULL_DRAW = DRAW_HULL_PATH ? await ReadHullPackage(DRAW_HULL_PATH) : null;
+
 const ASSETS = new Map([
     [ "/", { path: new URL("../harness/webgpu/index.html", import.meta.url), type: "text/html; charset=utf-8" } ],
     [ "/index.html", { path: new URL("../harness/webgpu/index.html", import.meta.url), type: "text/html; charset=utf-8" } ],
@@ -919,6 +1001,7 @@ const ASSETS = new Map([
     [ "/quadOilV5Fixture.js", { path: new URL("../harness/webgpu/quadOilV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadSailsV5Fixture.js", { path: new URL("../harness/webgpu/quadSailsV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadV5Fixture.js", { path: new URL("../harness/webgpu/quadV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/hullFixture.js", { path: new URL("../harness/webgpu/hullFixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/freeze.js", { path: new URL("../src/core/freeze.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     // Served under two shapes because the importer decides the URL: a core
     // module importing a sibling asks for "/x.js", while CjsWebgpuDevice.js
@@ -936,6 +1019,7 @@ const ASSETS = new Map([
             label: COMPILE_WGSL_PATH ? basename(COMPILE_WGSL_PATH) : null,
             drawWgsl: !!DRAW_VERTEX_PATH,
             drawCewgpu: !!PACKAGE_DRAW,
+            drawHull: !!HULL_DRAW,
             drawQuadV5: !!QUADV5_DRAW,
             drawQuadGlassV5: !!QUADGLASSV5_DRAW,
             drawQuadHeatV5: !!QUADHEATV5_DRAW,
@@ -982,6 +1066,31 @@ const ASSETS = new Map([
 if (COMPILE_WGSL_PATH)
 {
     ASSETS.set("/candidate.wgsl", { path: COMPILE_WGSL_PATH, type: "text/plain; charset=utf-8" });
+}
+if (HULL_DRAW)
+{
+    ASSETS.set("/draw-hull.json", {
+        body: JSON.stringify(HULL_DRAW),
+        type: "application/json; charset=utf-8"
+    });
+    // Named one by one rather than serving the directory. A harness that will
+    // happily read any path under a caller-supplied root is a file server, and
+    // this one only ever needs nine files.
+    const hullFiles = [
+        [ "af1_vertices.bin", "application/octet-stream" ],
+        [ "af1_indices.bin", "application/octet-stream" ],
+        [ "af1_geometry.json", "application/json; charset=utf-8" ],
+        [ "af1_a.dds", "application/octet-stream" ],
+        [ "af1_n.dds", "application/octet-stream" ],
+        [ "af1_r.dds", "application/octet-stream" ],
+        [ "af1_m.dds", "application/octet-stream" ],
+        [ "af1_p3.dds", "application/octet-stream" ],
+        [ "af1_g.dds", "application/octet-stream" ]
+    ];
+    for (const [ name, type ] of hullFiles)
+    {
+        ASSETS.set(`/hull/${name}`, { path: resolve(HULL_ASSETS_DIR, name), type });
+    }
 }
 if (DRAW_VERTEX_PATH)
 {
@@ -1141,6 +1250,43 @@ async function LaunchBrowser()
     throw new Error(`No Chromium browser could be launched:\n${failures.join("\n")}`);
 }
 
+/**
+ * Write the hull draw's colour target to a PNG at its native size.
+ *
+ * Deliberately plain next to `CaptureQuadV5`, which frames two targets side by
+ * side with a grid overlay because its subject is a 64-pixel silhouette nobody
+ * can read unaided. This one's subject is a picture, so it gets no chrome and
+ * no scaling: one canvas at 1:1, screenshotted.
+ *
+ * @param {object} page Playwright page.
+ * @param {object} draw Hull draw result carrying `targetPixels`.
+ * @param {string} outputPath PNG output path.
+ */
+async function CaptureHull(page, draw, outputPath)
+{
+    if (!Array.isArray(draw?.targetPixels) || !draw.targetPixels.length)
+    {
+        throw new Error("hull capture requires at least one target readback");
+    }
+    await page.setViewportSize({ width: draw.targetWidth, height: draw.targetHeight });
+    await page.setContent(
+        `<!doctype html><html><head><meta charset="utf-8"><style>
+html, body { margin: 0; padding: 0; background: #000; }
+canvas { display: block; }
+</style></head><body><canvas id="hull"></canvas></body></html>`
+    );
+    await page.evaluate((value) =>
+    {
+        const canvas = document.getElementById("hull");
+        canvas.width = value.targetWidth;
+        canvas.height = value.targetHeight;
+        canvas.getContext("2d").putImageData(new ImageData(
+            new Uint8ClampedArray(value.targetPixels[0]), value.targetWidth, value.targetHeight
+        ), 0, 0);
+    }, draw);
+    await page.locator("#hull").screenshot({ path: outputPath, type: "png" });
+}
+
 async function CaptureQuadV5(page, comparison, outputPath)
 {
     if (!Array.isArray(comparison?.targetPixels) || comparison.targetPixels.length !== 2)
@@ -1237,6 +1383,11 @@ async function Main()
         if (result.status !== "passed")
         {
             throw new Error(`WebGPU harness failed: ${result.error || "unknown browser failure"}`);
+        }
+        if (CAPTURE_HULL_PATH)
+        {
+            await CaptureHull(page, result.hullDraw, CAPTURE_HULL_PATH);
+            console.log(`Captured the hull colour target to ${CAPTURE_HULL_PATH}`);
         }
         if (CAPTURE_QUADV5_PATH)
         {

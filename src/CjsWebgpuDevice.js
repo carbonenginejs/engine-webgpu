@@ -1565,7 +1565,11 @@ export class CjsWebgpuDevice
             { texture: gpuTexture },
             plan.data,
             { offset: 0, bytesPerRow: plan.bytesPerRow, rowsPerImage: plan.plan.writes[0].rowsPerImage },
-            { width: plan.width, height: plan.height, depthOrArrayLayers: plan.layers }
+            {
+              width: plan.plan.writes[0].copyWidth,
+              height: plan.plan.writes[0].copyHeight,
+              depthOrArrayLayers: plan.layers
+            }
           );
         }
         else
@@ -1580,7 +1584,7 @@ export class CjsWebgpuDevice
               { texture: gpuTexture, mipLevel: write.level, origin: { x: 0, y: 0, z: write.layer } },
               plan.data,
               { offset: write.offset, bytesPerRow: write.bytesPerRow, rowsPerImage: write.rowsPerImage },
-              { width: write.width, height: write.height, depthOrArrayLayers: 1 }
+              { width: write.copyWidth, height: write.copyHeight, depthOrArrayLayers: 1 }
             );
           }
         }
