@@ -13,6 +13,11 @@ export {
   getEveSpaceObjectMainMaterialConstants
 } from "./core/spaceObjectMainBindings.js";
 export {
+  CollectPerObjectUploads,
+  CommitPerObjectUploads,
+  UploadPerObjectData
+} from "./core/perObjectUploader.js";
+export {
   MaterialLayoutFromShader,
   NormalizeMaterialLayout,
   PackMaterialConstants

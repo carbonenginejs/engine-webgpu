@@ -74,6 +74,30 @@ later raw upload path, not through this semantic serializer.
 
 The serializer does not read SOF and does not supply production defaults.
 
+## Per-object uploads
+
+- `CollectPerObjectUploads(pairs, { force })` filters `[{ identity, payload }]`
+  down to the payloads that changed, returning the `uniformData` record a
+  binding-set update takes.
+- `CommitPerObjectUploads(collection)` marks them uploaded.
+- `UploadPerObjectData(pairs, write, options)` does both around a caller's
+  write, with the ordering built in.
+
+`payload` is duck-typed on `RawData`: `GetData()`, and optionally `IsDirty()`
+and `ClearDirty()`. A payload that cannot report dirtiness is always uploaded,
+because "cannot say" must not read as "unchanged".
+
+Two properties of the dirty flag matter to a caller. It is an **explicit
+invalidation, not a write barrier** — a field write does not mark a record
+dirty; the owner invalidates once per frame — so a clear flag means "not
+invalidated since the last upload", never "nothing was written". And a commit
+must follow a successful write: clearing first would leave a payload claiming to
+match a buffer that was never written, uncorrected until the next invalidation.
+
+Deciding which payload binds where is not this API's business. That join is
+Trinity's stage mask plus the package's binding identity; pairs arrive already
+decided.
+
 ## Material constants
 
 - `MaterialLayoutFromShader(shader, { technique, pass, stage })` builds a named
