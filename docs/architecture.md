@@ -163,6 +163,28 @@ The plan is pure: intents in, a plan out, no device and no encoder. That keeps
 the part carrying the rules testable without a browser and leaves encoding
 mechanical.
 
+## Executing a planned frame
+
+`CjsWebGPUFrameExecutor` walks a plan's regions in order, opens the right kind
+of encoder for each, and submits once. Every judgement about what may share a
+pass already happened during planning, so this owns only encoder lifetime and
+region order.
+
+Two things are injected because they are policy rather than mechanism. Which
+prepared batch types belong to a render region is Trinity's meaning, and an
+engine deciding it would be inventing scene structure. Compute and transfer
+regions need resources this module does not own. Both arrive as hooks.
+
+A planned compute or transfer region with no handler **throws**. Skipping it
+would render a frame that looks right and is subtly wrong. A render region that
+resolves to no selections is different — that is a legitimate answer, and
+opening a pass to draw nothing is waste, so it is skipped. A plan that encodes
+nothing submits nothing rather than an empty command buffer.
+
+The canvas texture is acquired once per frame and shared by every region
+resolving to the backbuffer. A region targeting something else needs attachments
+this module does not own, so its descriptor is the caller's to supply.
+
 ## Attachments and the presentation surface
 
 `CjsWebGPURenderTarget` owns canvas configuration, the depth and multisample

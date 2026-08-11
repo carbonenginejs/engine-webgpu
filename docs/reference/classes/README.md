@@ -105,6 +105,16 @@ Per-render-pass record of bound pipeline and buffers, so a grouped run's later b
 - Visibility: Internal
 - Kind: CarbonEngineJS
 
+<!-- class:CjsWebGPUFrameExecutor -->
+## `CjsWebGPUFrameExecutor`
+
+Drives one command encoder over a planned frame's regions in order and submits once.
+
+- Export: Not exported
+- Source: `src/core/frameExecutor.js`
+- Visibility: Internal
+- Kind: CarbonEngineJS
+
 <!-- class:CjsWebGPURenderTarget -->
 ## `CjsWebGPURenderTarget`
 
