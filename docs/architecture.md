@@ -135,6 +135,29 @@ Bind groups stay per batch. Every prepared batch creates its own binding set
 even from identical values, which is where per-object data lives, and Carbon
 likewise applies per-object constants per batch.
 
+## Pipeline caching
+
+Effect realization splits in two. Stage A is program identity and dedup, which
+is backend-independent and belongs upstream. Stage B is the pipeline object,
+which is backend-owned, and this package caches it.
+
+Both caches are keyed **exactly**, on the canonical serialization rather than a
+hash, so two different pipelines cannot collide and there is nothing to recheck.
+That is affordable because a recipe is a small POD block.
+
+Program identity is the **caller's to supply**, through a `PreparePipeline`
+`identity` option. Shader source is too large to serialize into a key on every
+call and this package has no dependency to hash it with. Without an identity a
+pipeline is prepared uncached, which is never wrong, only slower. Deriving one
+from the descriptor's `key` would be worse than no cache: `Main.pass0` is the
+most common pass name in the corpus and never dedupes across effects, so it
+would hand back another effect's pipeline.
+
+Everything is bound to a device generation and dropped on loss, recreation and
+destruction. Racing callers share one build rather than each creating a GPU
+object with one silently winning, and a failed build is not retained, so a
+transient device error does not make a key permanently unbuildable.
+
 ## Planning a frame from recorded intents
 
 `PlanFrame` partitions the recorder's ordered intent stream into regions that

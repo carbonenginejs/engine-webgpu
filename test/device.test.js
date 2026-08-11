@@ -2511,3 +2511,58 @@ test("CjsWebGPUDevice elides the sets a run's first batch already performed", as
 
   assert.throws(() => webgpu.EncodeDraw({ setPipeline() {} }, first, state), /another render pass/i);
 });
+
+test("CjsWebGPUDevice reuses a prepared pipeline and a render pipeline by identity", async () =>
+{
+  const fake = fakeDevice();
+  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const count = (kind) => fake.device.calls.filter(([ name ]) => name === kind).length;
+
+  // Without an identity nothing is cached, which is never wrong, only slower.
+  await webgpu.PreparePipeline(pipelineDescriptor());
+  await webgpu.PreparePipeline(pipelineDescriptor());
+  assert.equal(count("createShaderModule"), 4, "an unnamed pipeline is rebuilt every time");
+
+  const identity = { identity: "sha256:quadv5.Main.pass0" };
+  const first = await webgpu.PreparePipeline(pipelineDescriptor(), identity);
+  const second = await webgpu.PreparePipeline(pipelineDescriptor(), identity);
+  assert.equal(first, second, "the same program under the same identity is prepared once");
+  assert.equal(count("createShaderModule"), 6);
+  assert.equal(count("createPipelineLayout"), 3);
+
+  // Stricter diagnostics are a different answer for the same program.
+  await webgpu.PreparePipeline(pipelineDescriptor(), { ...identity, warningsAsErrors: true });
+  assert.equal(count("createShaderModule"), 8);
+
+  const live = await webgpu.CreateRenderPipeline(first, renderRecipe());
+  const again = await webgpu.CreateRenderPipeline(first, renderRecipe());
+  assert.equal(live, again, "same program, same recipe, one pipeline");
+  assert.equal(count("createRenderPipelineAsync"), 1);
+
+  const other = await webgpu.CreateRenderPipeline(first, { ...renderRecipe(), primitive: { topology: "line-list" } });
+  assert.notEqual(live, other, "the recipe is part of the key");
+  assert.equal(count("createRenderPipelineAsync"), 2);
+});
+
+test("CjsWebGPUDevice drops cached pipelines when the device is replaced", async () =>
+{
+  const fake = fakeDevice();
+  const replacement = fakeDevice("replacement");
+  const adapter = { requestDevice: async () => replacement.device };
+  const webgpu = new CjsWebGPUDevice({
+    gpu: { requestAdapter: async () => adapter },
+    adapter,
+    device: fake.device,
+    shaderStage: SHADER_STAGE
+  });
+  const identity = { identity: "sha256:quadv5.Main.pass0" };
+
+  const first = await webgpu.PreparePipeline(pipelineDescriptor(), identity);
+  await webgpu.CreateRenderPipeline(first, renderRecipe());
+
+  await webgpu.Recreate();
+
+  const rebuilt = await webgpu.PreparePipeline(pipelineDescriptor(), identity);
+  assert.notEqual(rebuilt, first, "a pipeline built for a device that is gone is not repairable");
+  assert.equal(replacement.device.calls.filter(([ name ]) => name === "createShaderModule").length, 2);
+});

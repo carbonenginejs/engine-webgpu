@@ -1,3 +1,5 @@
+import { CanonicalKey, CjsWebGPUPipelineCache, RenderPipelineKey } from "./core/pipelineCache.js";
+
 const PREPARED_PIPELINES = new WeakMap();
 const LIVE_PIPELINES = new WeakMap();
 const BINDING_SETS = new WeakMap();
@@ -1033,6 +1035,8 @@ export class CjsWebGPUDevice
     this._bufferUsage = options.bufferUsage || globalThis.GPUBufferUsage || null;
     this._textureUsage = options.textureUsage || globalThis.GPUTextureUsage || null;
     this._samplerCache = new Map();
+    this._preparedCache = new CjsWebGPUPipelineCache();
+    this._renderPipelineCache = new CjsWebGPUPipelineCache();
     this._resourceRealizations = new WeakMap();
     this._onLost = typeof options.onLost === "function" ? options.onLost : null;
     this._generation = 1;
@@ -1102,7 +1106,18 @@ export class CjsWebGPUDevice
   {
     const descriptor = normalizePipeline(pipeline, this._shaderStage);
     const prepareOptions = snapshotPlain(options);
-    return this._SerializeValidation(async () =>
+    // Stage A identity is the caller's to supply: shader source is too large to
+    // serialize into a key on every call, and the composed path already has one
+    // from runtime-resource. Without it this prepares uncached, which is never
+    // wrong. The rest of the options join the key because `warningsAsErrors`
+    // decides whether a warning throws, so the same program under a stricter
+    // policy is not the same answer.
+    const identity = prepareOptions.identity ?? null;
+    const key = identity === null || identity === undefined
+      ? null
+      : `prepared|${CanonicalKey(identity)}|${CanonicalKey(prepareOptions)}`;
+
+    return this._preparedCache.Resolve(key, this._generation, () => this._SerializeValidation(async () =>
     {
       const device = this.GetDevice();
       const generation = this._generation;
@@ -1166,7 +1181,8 @@ export class CjsWebGPUDevice
           descriptor,
           modules,
           bindGroupLayouts,
-          pipelineLayout
+          pipelineLayout,
+          identity
         });
         return prepared;
       }
@@ -1175,7 +1191,7 @@ export class CjsWebGPUDevice
         await popValidationScope(device, scope).catch(() => null);
         throw error;
       }
-    });
+    }));
   }
 
   /**
@@ -1188,9 +1204,16 @@ export class CjsWebGPUDevice
     const prepared = PREPARED_PIPELINES.has(pipelineOrPrepared)
       ? pipelineOrPrepared
       : await this.PreparePipeline(pipelineOrPrepared, pipelineRecipe.prepareOptions || {});
-    return this._SerializeValidation(async () =>
+
+    // Stage B: the program's identity plus the recipe's POD block. The recipe
+    // is small enough to serialize exactly, so unlike Carbon's Metal cache -
+    // which keys on a hash and never rechecks, so a collision silently returns
+    // the wrong pipeline - two different pipelines cannot collide here.
+    const record = assertPrepared(this, prepared);
+    const cacheKey = RenderPipelineKey(record.identity, pipelineRecipe);
+
+    return this._renderPipelineCache.Resolve(cacheKey, this._generation, () => this._SerializeValidation(async () =>
     {
-      const record = assertPrepared(this, prepared);
       const device = this.GetDevice();
       const scope = { open: typeof device.pushErrorScope === "function" && typeof device.popErrorScope === "function" };
       if (scope.open) device.pushErrorScope("validation");
@@ -1234,7 +1257,7 @@ export class CjsWebGPUDevice
         await popValidationScope(device, scope).catch(() => null);
         throw error;
       }
-    });
+    }));
   }
 
   /**
@@ -2327,6 +2350,9 @@ export class CjsWebGPUDevice
     this._deviceDescriptor = deviceDescriptor;
     this._generation += 1;
     this._samplerCache = new Map();
+    // A pipeline built for a device that is gone is not repairable.
+    this._preparedCache.Clear();
+    this._renderPipelineCache.Clear();
     this._state = "ready";
     this._lostInfo = null;
     this._WatchDevice(device, this._generation);
@@ -2347,6 +2373,8 @@ export class CjsWebGPUDevice
     this._state = "destroyed";
     this._generation += 1;
     this._samplerCache.clear();
+    this._preparedCache.Clear();
+    this._renderPipelineCache.Clear();
     this._device = null;
     if (typeof device?.destroy === "function") device.destroy();
   }
@@ -2392,6 +2420,8 @@ export class CjsWebGPUDevice
       this._state = "lost";
       this._lostInfo = info || null;
       this._samplerCache.clear();
+      this._preparedCache.Clear();
+      this._renderPipelineCache.Clear();
       this._onLost?.(this._lostInfo, generation);
     }).catch(() => undefined);
   }

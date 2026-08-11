@@ -105,6 +105,16 @@ Per-render-pass record of bound pipeline and buffers, so a grouped run's later b
 - Visibility: Internal
 - Kind: CarbonEngineJS
 
+<!-- class:CjsWebGPUPipelineCache -->
+## `CjsWebGPUPipelineCache`
+
+Generation-bound cache of asynchronously built pipeline objects, keyed exactly rather than by hash.
+
+- Export: Not exported
+- Source: `src/core/pipelineCache.js`
+- Visibility: Internal
+- Kind: CarbonEngineJS
+
 <!-- class:CjsWebGPUFrameExecutor -->
 ## `CjsWebGPUFrameExecutor`
 
