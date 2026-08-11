@@ -117,10 +117,23 @@ creation.
 It also snapshots both vectors of a finalized
 `TriRenderBatchAccumulator`-compatible object, preserves their internal order,
 encodes GDPR before ordinary batches, and owns the collected binding-set
-lifecycle as one unit. GDPR entries currently use the same complete direct
-per-batch path as ordinary entries. This matches Carbon's non-indirect fallback
-semantics while deliberately giving up grouped state sharing and indirect-draw
-optimization.
+lifecycle as one unit. GDPR entries use the same non-indirect path as ordinary
+entries, matching Carbon's fallback semantics; the indirect-draw sink is a
+DirectX 12 and Metal capability that WebGPU has not been given here.
+
+Encoding is **grouped**. Runs of adjacent batches that share a pipeline, vertex
+buffers and index buffer hoist those bindings to the run's first batch, as
+Carbon's `RenderBatchGroup` hoists them to a group. Two deliberate differences
+from Carbon: the index buffer is part of the predicate, because Carbon may omit
+it only while every geometry is suballocated from one process-global buffer and
+this engine gives each geometry its own; and runs are derived at encode time
+rather than read from a precomputed partition. Order is never changed — sorting
+belongs to Trinity, and reordering here would break golden-image comparison
+between backends.
+
+Bind groups stay per batch. Every prepared batch creates its own binding set
+even from identical values, which is where per-object data lives, and Carbon
+likewise applies per-object constants per batch.
 
 At the next level it snapshots `TriRenderBatchMap` batch types in insertion
 order and prepares each accumulator. Batch-type meaning and render

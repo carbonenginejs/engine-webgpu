@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { CjsWebGPUDevice } from "../src/index.js";
+import { CjsWebGPUEncodeState } from "../src/core/batchGroups.js";
 
 const SHADER_STAGE = Object.freeze({ VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 });
 const BUFFER_USAGE = Object.freeze({ UNIFORM: 16, COPY_DST: 32, VERTEX: 64, INDEX: 128 });
@@ -2459,4 +2460,54 @@ test("CjsWebGPUDevice.Request keeps adapter policy explicit and reports unavaila
   assert.deepEqual(seen, [ [ "adapter", adapterOptions ], [ "device", deviceDescriptor ] ]);
   assert.equal(webgpu.GetAdapter(), adapter);
   assert.equal(webgpu.GetDevice(), fake.device);
+});
+
+test("CjsWebGPUDevice elides the sets a run's first batch already performed", async () =>
+{
+  const fake = fakeDevice();
+  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const prepared = await webgpu.PreparePipeline(pipelineDescriptor());
+  const live = await webgpu.CreateRenderPipeline(prepared, renderRecipe());
+
+  const vertexBuffer = { kind: "vertexBuffer" };
+  const values = {
+    resources: resources(),
+    vertexBuffers: [ { slot: 0, buffer: vertexBuffer, offset: 12 } ],
+    draw: { vertexCount: 3, instanceCount: 1, firstVertex: 0 }
+  };
+  const first = webgpu.CreateDraw(live, values);
+  const second = webgpu.CreateDraw(live, values);
+
+  const passCalls = [];
+  const pass = {
+    setPipeline(value) { passCalls.push([ "pipeline", value ]); },
+    setBindGroup(group, value) { passCalls.push([ "group", group, value ]); },
+    setVertexBuffer(slot, buffer, offset, size) { passCalls.push([ "vertex", slot, buffer, offset, size ]); },
+    draw(...args) { passCalls.push([ "draw", ...args ]); }
+  };
+
+  // Without a state every set happens, which is what an unrelated caller gets.
+  webgpu.EncodeDraw(pass, first);
+  webgpu.EncodeDraw(pass, second);
+  assert.deepEqual(passCalls.map((entry) => entry[0]), [
+    "pipeline", "group", "vertex", "draw",
+    "pipeline", "group", "vertex", "draw"
+  ]);
+
+  // With one, the run's second batch keeps only what genuinely differs. The
+  // pipeline and the vertex buffers are hoisted to its first batch; the bind
+  // group is NOT, because every prepared batch creates its own binding set even
+  // from identical values, and that is where per-object data lives. Carbon
+  // applies per-object constants per batch for the same reason, so this is the
+  // correct shape rather than a missed elision.
+  passCalls.length = 0;
+  const state = new CjsWebGPUEncodeState();
+  webgpu.EncodeDraw(pass, first, state);
+  webgpu.EncodeDraw(pass, second, state);
+  assert.deepEqual(passCalls.map((entry) => entry[0]), [
+    "pipeline", "group", "vertex", "draw",
+    "group", "draw"
+  ]);
+
+  assert.throws(() => webgpu.EncodeDraw({ setPipeline() {} }, first, state), /another render pass/i);
 });

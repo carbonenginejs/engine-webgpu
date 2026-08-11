@@ -1,3 +1,5 @@
+import { CjsWebGPUEncodeState, DeriveBatchGroups } from "./batchGroups.js";
+
 const MAX_GPU_SIZE_32 = 0xffffffff;
 
 const TOPOLOGIES = Object.freeze({
@@ -268,13 +270,39 @@ export class CjsWebGPUTrinityBatchDispatcher
     }
   }
 
-  /** Encodes one prepared batch into the supplied render pass. */
-  Encode(pass, handle)
+  /**
+   * Encodes one prepared batch into the supplied render pass.
+   *
+   * `encodeState` is optional and, when given, elides the sets a previous batch
+   * in the same run already performed. A caller encoding a single batch omits
+   * it and every set happens.
+   */
+  Encode(pass, handle, encodeState = null)
   {
     const state = PREPARED_BATCHES.get(handle);
     if (!state || state.owner !== this) fail("prepared batch belongs to another dispatcher");
     if (state.destroyed) fail("prepared batch is destroyed");
-    this.#webgpu.EncodeDraw(pass, handle.draw);
+    this.#webgpu.EncodeDraw(pass, handle.draw, encodeState);
+  }
+
+  /**
+   * Encodes a batch vector run by run, hoisting each run's shared pipeline and
+   * buffer bindings to its first batch, as Carbon's RenderBatchGroup hoists
+   * them to the group.
+   *
+   * Order is preserved exactly. Runs are found among ADJACENT batches that
+   * already agree; nothing is reordered, because sorting is Trinity's and a
+   * reorder here would break golden-image comparison between backends.
+   */
+  #EncodeGrouped(pass, batches, encodeState)
+  {
+    for (const group of DeriveBatchGroups(batches, handle => handle?.draw))
+    {
+      for (let index = group.start; index < group.end; index += 1)
+      {
+        this.Encode(pass, batches[index], encodeState);
+      }
+    }
   }
 
   /** Releases the prepared batch's owned binding set. */
@@ -290,8 +318,8 @@ export class CjsWebGPUTrinityBatchDispatcher
   /**
    * Snapshots and prepares both vectors of one finalized
    * TriRenderBatchAccumulator-compatible object. GDPR batches retain their
-   * separate identity but use complete direct per-batch state until grouped
-   * encoding is implemented.
+   * separate identity. Both vectors are grouped at encode time; preparation
+   * stays per batch, because a binding set belongs to one batch.
    */
   async PrepareAccumulator(accumulator, context = undefined)
   {
@@ -351,20 +379,22 @@ export class CjsWebGPUTrinityBatchDispatcher
     }
   }
 
-  /** Encodes GDPR then ordinary prepared batches in accumulator order. */
+  /**
+   * Encodes GDPR then ordinary prepared batches in accumulator order, grouping
+   * each vector into hoisted runs.
+   *
+   * One encode state spans both vectors because they are encoded into one pass
+   * and pass state does not reset at a vector boundary; a redundant set there
+   * would be as wasteful as one inside a run.
+   */
   EncodeAccumulator(pass, handle)
   {
     const state = PREPARED_ACCUMULATORS.get(handle);
     if (!state || state.owner !== this) fail("prepared accumulator belongs to another dispatcher");
     if (state.destroyed) fail("prepared accumulator is destroyed");
-    for (const batch of handle.gdprBatches)
-    {
-      this.Encode(pass, batch);
-    }
-    for (const batch of handle.batches)
-    {
-      this.Encode(pass, batch);
-    }
+    const encodeState = new CjsWebGPUEncodeState();
+    this.#EncodeGrouped(pass, handle.gdprBatches, encodeState);
+    this.#EncodeGrouped(pass, handle.batches, encodeState);
   }
 
   /** Releases every binding set owned by a prepared accumulator. */

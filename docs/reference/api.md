@@ -42,7 +42,8 @@ Its batch, accumulator, and batch-map paths keep material/resource resolution
 and render-pass selection injected. Batch-map preparation supplies an
 immutable `{ batchType }` context to each injected material, geometry, and
 binding resolver. Accumulator preparation retains separate GDPR and ordinary
-vectors, encoding GDPR first through the complete direct per-batch fallback.
+vectors, encoding GDPR first and grouping each vector into runs that share one
+pipeline and one set of buffer bindings.
 Geometry resolution may additionally supply a validated `draw` override when
 the neutral batch carries an area range but no realized draw arguments.
 

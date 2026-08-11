@@ -95,6 +95,16 @@ Immutable WebGPU-facing sampler binding descriptor.
 - Visibility: Public
 - Kind: CarbonEngineJS
 
+<!-- class:CjsWebGPUEncodeState -->
+## `CjsWebGPUEncodeState`
+
+Per-render-pass record of bound pipeline and buffers, so a grouped run's later batches skip redundant sets.
+
+- Export: Not exported
+- Source: `src/core/batchGroups.js`
+- Visibility: Internal
+- Kind: CarbonEngineJS
+
 <!-- class:CjsWebGPUTrinityBatchDispatcher -->
 ## `CjsWebGPUTrinityBatchDispatcher`
 

@@ -2220,8 +2220,17 @@ export class CjsWebGPUDevice
 
   /**
    * Encodes one validated draw into a render pass.
+   *
+   * An optional `state` is a CjsWebGPUEncodeState the CALLER owns for the
+   * lifetime of one render pass. When supplied, a set whose value is already
+   * bound is skipped - Carbon's DX11 path does the same redundancy compare on
+   * its shader program and its three state caches. Omitting it sets
+   * everything, which is always correct and is what an unrelated caller gets.
+   *
+   * Deciding WHICH batches may share is not this method's business; that is
+   * the dispatcher's grouping. This only honours a decision already made.
    */
-  EncodeDraw(pass, draw)
+  EncodeDraw(pass, draw, state = null)
   {
     const wrapper = DRAWS.get(draw);
     if (!wrapper || wrapper.owner !== this) fail("draw belongs to another device");
@@ -2231,22 +2240,36 @@ export class CjsWebGPUDevice
     assertAdapterResources(wrapper.adapterResources, "draw");
     if (wrapper.geometryRecord?.destroyed) fail("draw geometry is destroyed");
     if (!pass || typeof pass.setPipeline !== "function") fail("a GPURenderPassEncoder is required");
-    pass.setPipeline(draw.livePipeline.pipeline);
-    draw.bindGroups.forEach((bindGroup, group) => pass.setBindGroup(group, bindGroup));
-    for (const entry of draw.vertexBuffers)
+    const encodeState = state?.Require(pass) ?? null;
+
+    if (!encodeState || encodeState.NeedsPipeline(draw.livePipeline.pipeline))
     {
-      if (entry.size === undefined) pass.setVertexBuffer(entry.slot, entry.buffer, entry.offset ?? 0);
-      else pass.setVertexBuffer(entry.slot, entry.buffer, entry.offset ?? 0, entry.size);
+      pass.setPipeline(draw.livePipeline.pipeline);
+    }
+    draw.bindGroups.forEach((bindGroup, group) =>
+    {
+      if (!encodeState || encodeState.NeedsBindGroup(group, bindGroup)) pass.setBindGroup(group, bindGroup);
+    });
+    if (!encodeState || encodeState.NeedsVertexBuffers(draw.vertexBuffers))
+    {
+      for (const entry of draw.vertexBuffers)
+      {
+        if (entry.size === undefined) pass.setVertexBuffer(entry.slot, entry.buffer, entry.offset ?? 0);
+        else pass.setVertexBuffer(entry.slot, entry.buffer, entry.offset ?? 0, entry.size);
+      }
     }
     if (draw.indexed)
     {
-      if (draw.indexBuffer.size === undefined)
+      if (!encodeState || encodeState.NeedsIndexBuffer(draw.indexBuffer))
       {
-        pass.setIndexBuffer(draw.indexBuffer.buffer, draw.indexBuffer.format, draw.indexBuffer.offset ?? 0);
-      }
-      else
-      {
-        pass.setIndexBuffer(draw.indexBuffer.buffer, draw.indexBuffer.format, draw.indexBuffer.offset ?? 0, draw.indexBuffer.size);
+        if (draw.indexBuffer.size === undefined)
+        {
+          pass.setIndexBuffer(draw.indexBuffer.buffer, draw.indexBuffer.format, draw.indexBuffer.offset ?? 0);
+        }
+        else
+        {
+          pass.setIndexBuffer(draw.indexBuffer.buffer, draw.indexBuffer.format, draw.indexBuffer.offset ?? 0, draw.indexBuffer.size);
+        }
       }
       pass.drawIndexed(
         draw.draw.indexCount,
