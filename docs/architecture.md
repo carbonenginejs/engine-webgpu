@@ -135,6 +135,34 @@ Bind groups stay per batch. Every prepared batch creates its own binding set
 even from identical values, which is where per-object data lives, and Carbon
 likewise applies per-object constants per batch.
 
+## Planning a frame from recorded intents
+
+`PlanFrame` partitions the recorder's ordered intent stream into regions that
+WebGPU will accept. This is the look-ahead the divergence decision permits: the
+executor may plan far enough to form legal passes, provided observable Trinity
+ordering survives it.
+
+It is needed because a render pass has fixed attachments and several things
+Carbon does mid-pass are illegal inside one. Four cases cut a region: changing a
+render target or depth-stencil, compute work, transfer work such as copies,
+resolves and mip generation, and presentation.
+
+Clears become attachment load operations. A clear at the head of a region folds
+into its load ops for free; a clear arriving after work in the same region cuts
+a new one and folds into that. No explicit clear operation and no fullscreen
+clear draw is ever required, because cutting a region is always legal.
+
+Order is preserved exactly. Intents are never moved between regions, reordered,
+or merged across a boundary — two render regions separated by compute stay
+separate even though merging them would be cheaper.
+
+An intent type with no planning rule throws. Treating an unknown intent as
+harmless state is how something illegal ends up inside a pass.
+
+The plan is pure: intents in, a plan out, no device and no encoder. That keeps
+the part carrying the rules testable without a browser and leaves encoding
+mechanical.
+
 ## Attachments and the presentation surface
 
 `CjsWebGPURenderTarget` owns canvas configuration, the depth and multisample
