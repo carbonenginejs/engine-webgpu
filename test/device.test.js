@@ -2230,9 +2230,11 @@ test("CjsWebGPUDevice rejects incomplete or non-canonical live recipes", async (
   const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   await assert.rejects(webgpu.CreateRenderPipeline(pipelineDescriptor(), {}), /recipe\.vertex\.buffers must be an array/i);
 
+  // Marked dynamic in the package but not in the layout. WebGPU would reject
+  // the bind group much later with a message naming neither side.
   const dynamic = pipelineDescriptor();
   dynamic.bindGroups[0].bindings[0].dynamic = true;
-  await assert.rejects(webgpu.PreparePipeline(dynamic), /dynamic offsets/i);
+  await assert.rejects(webgpu.PreparePipeline(dynamic), /disagrees with its layout about being dynamic/i);
 
   const unknownVisibility = pipelineDescriptor();
   unknownVisibility.bindGroups[0].bindings[0].visibility = [ "geometry" ];
@@ -2617,5 +2619,98 @@ test("CjsWebGPUDevice uploads a compressed mip chain one level at a time", async
       [ 2, 80, 16, 1, 2 ],
       [ 3, 96, 16, 1, 1 ]
     ]
+  );
+});
+
+function dynamicDescriptor()
+{
+  const descriptor = pipelineDescriptor();
+  const uniform = descriptor.bindGroups[0].bindings.find((entry) => entry.layout.buffer);
+  uniform.dynamic = true;
+  uniform.layout.buffer.hasDynamicOffset = true;
+  return descriptor;
+}
+
+test("CjsWebGPUDevice re-aims a dynamic binding per draw instead of per buffer", async () =>
+{
+  const fake = fakeDevice("dynamic");
+  const webgpu = new CjsWebGPUDevice({
+    device: fake.device,
+    shaderStage: SHADER_STAGE,
+    bufferUsage: BUFFER_USAGE,
+    textureUsage: TEXTURE_USAGE
+  });
+  const prepared = await webgpu.PreparePipeline(dynamicDescriptor());
+  const live = await webgpu.CreateRenderPipeline(prepared, renderRecipe());
+  const bindingSet = webgpu.CreateBindingSet(live, bindingSetInputs(new Float32Array(64)));
+
+  // The bind group's own resource describes the WINDOW the shader sees, not
+  // the whole buffer; WebGPU adds the per-draw offset to it.
+  const bindGroup = fake.device.calls.filter(([ kind ]) => kind === "createBindGroup").at(-1)[1];
+  const bufferEntry = bindGroup.entries.find((entry) => entry.resource?.buffer);
+  assert.deepEqual([ bufferEntry.resource.offset, bufferEntry.resource.size ], [ 0, 64 ]);
+
+  const first = webgpu.CreateDraw(live, {
+    bindingSet,
+    vertexBuffers: [ { slot: 0, buffer: { kind: "vb" }, offset: 0 } ],
+    draw: { vertexCount: 3, instanceCount: 1, firstVertex: 0 },
+    dynamicOffsets: { "uniform-buffer:0:1": 0 }
+  });
+  const second = webgpu.CreateDraw(live, {
+    bindingSet,
+    vertexBuffers: [ { slot: 0, buffer: { kind: "vb" }, offset: 0 } ],
+    draw: { vertexCount: 3, instanceCount: 1, firstVertex: 0 },
+    dynamicOffsets: { "uniform-buffer:0:1": 256 }
+  });
+
+  const calls = [];
+  const pass = {
+    setPipeline() {},
+    setBindGroup(...args) { calls.push(args); },
+    setVertexBuffer() {},
+    draw() {}
+  };
+
+  // Two objects sharing one ring buffer. The bind group object is identical, so
+  // a state cache would elide the second set - and both would draw from slot 0.
+  const state = new CjsWebGPUEncodeState();
+  webgpu.EncodeDraw(pass, first, state);
+  webgpu.EncodeDraw(pass, second, state);
+
+  assert.deepEqual(calls.map((args) => args[2]), [ [ 0 ], [ 256 ] ]);
+});
+
+test("CjsWebGPUDevice refuses dynamic offsets it cannot honour", async () =>
+{
+  const fake = fakeDevice("dynamic-invalid");
+  fake.device.limits = { minUniformBufferOffsetAlignment: 256 };
+  const webgpu = new CjsWebGPUDevice({
+    device: fake.device,
+    shaderStage: SHADER_STAGE,
+    bufferUsage: BUFFER_USAGE,
+    textureUsage: TEXTURE_USAGE
+  });
+  const prepared = await webgpu.PreparePipeline(dynamicDescriptor());
+  const live = await webgpu.CreateRenderPipeline(prepared, renderRecipe());
+  const bindingSet = webgpu.CreateBindingSet(live, bindingSetInputs(new Float32Array(64)));
+  const base = {
+    bindingSet,
+    vertexBuffers: [ { slot: 0, buffer: { kind: "vb" }, offset: 0 } ],
+    draw: { vertexCount: 3, instanceCount: 1, firstVertex: 0 }
+  };
+
+  // Defaulting a missing offset to zero would aim every object at the first
+  // slot and render them identically - a scene bug, not a missing argument.
+  assert.throws(() => webgpu.CreateDraw(live, base), /missing a dynamic offset/i);
+  assert.throws(
+    () => webgpu.CreateDraw(live, { ...base, dynamicOffsets: { "uniform-buffer:0:1": 100 } }),
+    /must be a multiple of 256/i
+  );
+  assert.throws(
+    () => webgpu.CreateDraw(live, {
+      ...base,
+      dynamicOffsets: { "uniform-buffer:0:1": 0, "sampler:0:0": 0 }
+    }),
+    /not a dynamic binding/i
   );
 });

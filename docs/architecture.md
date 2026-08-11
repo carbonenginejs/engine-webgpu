@@ -135,6 +135,33 @@ Bind groups stay per batch. Every prepared batch creates its own binding set
 even from identical values, which is where per-object data lives, and Carbon
 likewise applies per-object constants per batch.
 
+## Dynamic uniform offsets
+
+A dynamic binding is bound once and re-aimed per draw through the offsets given
+to `setBindGroup`, which is what lets many objects share one ring buffer instead
+of taking a buffer each. `CreateDraw` accepts `dynamicOffsets` keyed by binding
+identity.
+
+Three rules are enforced because each fails quietly otherwise:
+
+- the bind group's own resource describes the **window** the shader sees, not
+  the whole buffer, since WebGPU adds the per-draw offset to it;
+- offsets are ordered by **binding number within the group**, derived from the
+  layout rather than from the order a caller lists them;
+- a group with dynamic offsets is re-set on **every** draw even when the bind
+  group object is unchanged, because the offsets are exactly what differs
+  between two objects sharing a buffer. Eliding that set would draw them all at
+  the same slot.
+
+A missing offset is an error rather than a defaulted zero, which would aim every
+object at the first slot and read as a scene bug. Offsets must respect the
+device's minimum alignment. A binding marked dynamic in the package but not in
+its layout, or the reverse, is rejected at preparation: WebGPU would otherwise
+reject the bind group much later with a message naming neither side.
+
+Storage buffers are caller-owned and bind through `resources` as a
+`GPUBufferBinding`; the engine creates and owns uniform buffers only.
+
 ## Textures
 
 The texture adapter accepts uncompressed 8/16/32-bit formats, the BC1–BC7

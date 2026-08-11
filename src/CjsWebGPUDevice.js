@@ -29,6 +29,7 @@ const VERTEX_FORMAT_BYTES = new Map([
   [ "sint32", 4 ], [ "sint32x2", 8 ], [ "sint32x3", 12 ], [ "sint32x4", 16 ],
   [ "unorm10-10-10-2", 4 ]
 ]);
+const TEXTURE_VIEW_DIMENSIONS = new Set([ "2d", "2d-array", "cube", "cube-array" ]);
 const TEXTURE_FORMATS = new Map([
   [ "rgba8unorm", Object.freeze({ bytesPerPixel: 4, isSRGB: false }) ],
   [ "rgba8unorm-srgb", Object.freeze({ bytesPerPixel: 4, isSRGB: true }) ]
@@ -779,7 +780,14 @@ function visibilityFlags(visibility, shaderStage)
 function bindingLayout(binding)
 {
   if (binding?.sourceTruth !== "wgsl-layout") fail("all live bindings must come from a canonical WGSL layout");
-  if (binding.dynamic || binding.layout?.buffer?.hasDynamicOffset) fail(`${bindingIdentity(binding)} uses unsupported dynamic offsets`);
+  // A dynamic binding must be marked in BOTH places or WebGPU rejects the bind
+  // group: `dynamic` is the package's word for it and `hasDynamicOffset` is the
+  // layout's, and they are written by different producers. Disagreement here
+  // surfaces much later as a bind-group validation error that names neither.
+  if (Boolean(binding.dynamic) !== Boolean(binding.layout?.buffer?.hasDynamicOffset))
+  {
+    fail(`${bindingIdentity(binding)} disagrees with its layout about being dynamic`);
+  }
   const layout = binding.layout;
   if (!layout || typeof layout !== "object") fail(`${bindingIdentity(binding)} has no WebGPU layout`);
   const keys = [ "buffer", "sampler", "texture", "storageTexture", "externalTexture" ]
@@ -961,9 +969,13 @@ function resolveBindingResource(owner, entry, resource)
     const viewDimension = layout.viewDimension ?? "2d";
     const multisampled = layout.multisampled ?? false;
     const sampleType = layout.sampleType ?? "float";
-    if ((viewDimension !== "2d" && viewDimension !== "2d-array") || multisampled || sampleType !== "float")
+    // Every dimension the texture adapter can create must be bindable, or a
+    // cube map is creatable and then unusable. Multisampled textures are still
+    // out: those are attachments, and the render target owns them.
+    if (!TEXTURE_VIEW_DIMENSIONS.has(viewDimension) || multisampled || sampleType !== "float")
     {
-      fail(`${entry.identity} is incompatible with the uncompressed 2D texture adapter`);
+      fail(`${entry.identity} requires a ${multisampled ? "multisampled " : ""}${sampleType} ${viewDimension} texture,`
+        + " which this adapter does not realize");
     }
     // The view's dimension is fixed at creation, so a layout asking for the
     // other one cannot be satisfied by reinterpreting it.
@@ -994,6 +1006,71 @@ function resolveBindingResource(owner, entry, resource)
     fail(`${entry.identity} requires a GPUBufferBinding resource`);
   }
   return { resource, adapterRecord: null };
+}
+
+// A dynamic binding is bound once and re-aimed per draw, which is what lets
+// many objects share one ring buffer instead of taking a buffer each. WebGPU
+// takes the offsets as a flat array per bind group, ordered by BINDING NUMBER
+// within the group - not by the order a caller happens to list them - so the
+// order is derived from the layout here rather than trusted from the caller.
+function resolveDynamicOffsets(record, offsets, device)
+{
+  const supplied = offsets == null ? null : new Map(resourceEntries(offsets, "draw dynamicOffsets"));
+  const perGroup = [];
+  const consumed = new Set();
+  let anyDynamic = false;
+
+  for (const group of record.descriptor.groups)
+  {
+    const dynamic = group.entries
+      .filter((entry) => entry.descriptor.buffer?.hasDynamicOffset === true)
+      .sort((first, second) => first.binding - second.binding);
+
+    if (!dynamic.length)
+    {
+      perGroup[group.group] = null;
+      continue;
+    }
+
+    anyDynamic = true;
+    const values = [];
+
+    for (const entry of dynamic)
+    {
+      // Defaulting a missing offset to zero would aim every object at the first
+      // slot of the ring and render them all identically, which looks like a
+      // scene bug rather than a missing argument.
+      const value = supplied?.get(entry.identity);
+      if (value == null) fail(`draw is missing a dynamic offset for ${entry.identity}`);
+      if (!Number.isSafeInteger(value) || value < 0 || value > MAX_GPU_SIZE_32)
+      {
+        fail(`dynamic offset for ${entry.identity} must be a GPUSize32 value`);
+      }
+
+      const alignment = entry.descriptor.buffer.type === "uniform"
+        ? device?.limits?.minUniformBufferOffsetAlignment ?? 256
+        : device?.limits?.minStorageBufferOffsetAlignment ?? 256;
+      if (value % alignment !== 0)
+      {
+        fail(`dynamic offset for ${entry.identity} must be a multiple of ${alignment}`);
+      }
+
+      consumed.add(entry.identity);
+      values.push(value);
+    }
+
+    perGroup[group.group] = Object.freeze(values);
+  }
+
+  if (supplied)
+  {
+    for (const identity of supplied.keys())
+    {
+      if (!consumed.has(identity)) fail(`draw supplies a dynamic offset for ${identity}, which is not a dynamic binding`);
+    }
+  }
+
+  return anyDynamic ? Object.freeze(perGroup) : null;
 }
 
 function assertAdapterResources(records, label)
@@ -1952,10 +2029,11 @@ export class CjsWebGPUDevice
         const buffer = entry.descriptor.buffer;
         if (buffer?.type === "uniform")
         {
-          if (buffer.hasDynamicOffset)
-          {
-            fail(`${entry.identity} is not a supported non-dynamic uniform binding`);
-          }
+          // A dynamic binding is bound ONCE and re-aimed per draw through the
+          // offsets handed to setBindGroup, which is what lets many objects
+          // share one ring buffer instead of one buffer each. The binding's
+          // size is then the WINDOW, not the buffer, so it is taken from the
+          // layout's minBindingSize rather than from the data's length.
           const size = buffer.minBindingSize;
           if (!Number.isInteger(size) || size < 1 || size % 4 !== 0)
           {
@@ -1968,7 +2046,14 @@ export class CjsWebGPUDevice
           {
             fail(`${entry.identity} uniform data must be a 4-byte-aligned view of at least ${size} bytes`);
           }
-          uniformPlans.set(entry.identity, { entry, data, size: data.byteLength, minBindingSize: size });
+          uniformPlans.set(entry.identity, {
+            entry,
+            data,
+            size: data.byteLength,
+            minBindingSize: size,
+            dynamic: buffer.hasDynamicOffset === true,
+            group: group.group
+          });
         }
         else
         {
@@ -2012,8 +2097,13 @@ export class CjsWebGPUDevice
         });
         buffers.push(buffer);
         device.queue.writeBuffer(buffer, 0, plan.data);
-        resources.set(identity, { buffer });
-        uniforms.set(identity, { buffer, size: plan.size });
+        // A dynamic binding's resource must describe the window the shader
+        // sees, not the whole buffer; WebGPU adds the per-draw offset to this
+        // one and validates that the window still fits.
+        resources.set(identity, plan.dynamic
+          ? { buffer, offset: 0, size: plan.minBindingSize }
+          : { buffer });
+        uniforms.set(identity, { buffer, size: plan.size, dynamic: plan.dynamic });
       }
       for (const [ identity, plan ] of externalPlans)
       {
@@ -2264,6 +2354,7 @@ export class CjsWebGPUDevice
       generation: record.generation,
       livePipeline,
       bindGroups: Object.freeze(bindGroups),
+      dynamicOffsets: resolveDynamicOffsets(record, options.dynamicOffsets, this.GetDevice()),
       vertexBuffers: Object.freeze(vertexBuffers),
       indexed,
       indexBuffer,
@@ -2311,7 +2402,20 @@ export class CjsWebGPUDevice
     }
     draw.bindGroups.forEach((bindGroup, group) =>
     {
-      if (!encodeState || encodeState.NeedsBindGroup(group, bindGroup)) pass.setBindGroup(group, bindGroup);
+      const dynamicOffsets = draw.dynamicOffsets?.[group] ?? null;
+      // A dynamic group is re-set every draw even when the bind group object is
+      // unchanged, because the OFFSETS are what differ between two objects
+      // sharing one ring buffer. Eliding it would draw them all at the same
+      // slot.
+      if (dynamicOffsets)
+      {
+        encodeState?.NeedsBindGroup(group, bindGroup);
+        pass.setBindGroup(group, bindGroup, dynamicOffsets);
+      }
+      else if (!encodeState || encodeState.NeedsBindGroup(group, bindGroup))
+      {
+        pass.setBindGroup(group, bindGroup);
+      }
     });
     if (!encodeState || encodeState.NeedsVertexBuffers(draw.vertexBuffers))
     {
