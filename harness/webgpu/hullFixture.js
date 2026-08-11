@@ -84,6 +84,12 @@ export const HULL_TEXTURE_ASSETS = Object.freeze({
     NormalMap: "/hull/af1_n.dds",
     RoughnessMap: "/hull/af1_r.dds",
     MaterialMap: "/hull/af1_m.dds",
+    // The paint mask protects part of the albedo from being coloured by the
+    // four base material layers. That makes it untestable here: this fixture
+    // runs on Carbon's default constants, where all four layers are white, so
+    // the colouring it exists to hold back does nothing and a correct mask and
+    // a broken one produce identical pixels. It becomes meaningful only once
+    // the SOF DNA supplies the hull's real material colours.
     PaintMaskMap: "/hull/af1_p3.dds",
     GlowMap: "/hull/af1_g.dds"
 });
@@ -721,12 +727,19 @@ export function createHullBindingValues(record, width, height)
         cameraWorld([ ...camera.eye ], [ ...camera.target ], [ ...camera.up ])
     );
 
-    // A single directional key light, warm and slightly off-axis so the hull's
-    // surfaces separate. Nothing here claims to match the client's sun.
+    // A single directional key light, warm and slightly off the camera axis so
+    // the hull's surfaces separate. Nothing here claims to match the client's sun.
+    //
+    // DirWorld points TO the light, not along the direction the light travels.
+    // The pixel stage dots it against the surface normal and clamps at zero, so
+    // the sign is not cosmetic: reversed, every camera-facing surface clamps to
+    // zero and the sun contributes NOTHING while ambient and the environment
+    // carry on unchanged. That failure reads as "the lighting is a bit flat",
+    // not as a broken light, which is what makes it worth stating here.
     const sun = Object.freeze({
-        DirWorld: [ -0.48, -0.53, 0.7 ],
+        DirWorld: [ 0.42, 0.5, -0.76 ],
         unused_pad0: 0,
-        DiffuseColor: [ 3.2, 3, 2.6, 1 ]
+        DiffuseColor: [ 2.4, 2.25, 2, 1 ]
     });
 
     const perFrameVS = Object.freeze({
