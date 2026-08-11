@@ -135,6 +135,34 @@ Bind groups stay per batch. Every prepared batch creates its own binding set
 even from identical values, which is where per-object data lives, and Carbon
 likewise applies per-object constants per batch.
 
+## Attachments and the presentation surface
+
+`CjsWebGPURenderTarget` owns canvas configuration, the depth and multisample
+attachments, their size, render-pass descriptors, and viewport and scissor. It
+does not own when a frame happens or which passes exist; those belong to the
+executor and to Trinity's steps.
+
+Carbon's render context owns a swap chain and a depth-stencil surface. WebGPU's
+model is a pass descriptor with attachments fixed before the pass opens, so this
+is one of the places the two backends implement the same frame progression
+differently rather than a port.
+
+Three rules are enforced rather than documented, because each fails silently
+otherwise: a canvas texture view is valid for exactly one frame and a reused one
+is rejected; depth and multisample attachments are recreated on resize so they
+cannot disagree with the colour attachment; and every attachment is bound to a
+device generation, so device loss forces reconfiguration instead of reusing
+surfaces belonging to a device that is gone.
+
+Clearing is a load operation on an attachment, never a draw, which is what lets
+a later pass over the same target composite by loading instead.
+
+**Presentation is not a call here.** Carbon presents the previous frame at the
+top of the next tick; WebGPU has no present, and the browser presents a
+configured canvas after the submission that drew into its current texture. The
+engine-side tick wrapper therefore has a real presentation step on WebGL and
+nothing to do on WebGPU. That asymmetry is expected, not a missing port.
+
 At the next level it snapshots `TriRenderBatchMap` batch types in insertion
 order and prepares each accumulator. Batch-type meaning and render
 pass selection remain outside the dispatcher: `EncodeBatchType(...)` requires

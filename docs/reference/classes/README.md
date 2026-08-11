@@ -105,6 +105,16 @@ Per-render-pass record of bound pipeline and buffers, so a grouped run's later b
 - Visibility: Internal
 - Kind: CarbonEngineJS
 
+<!-- class:CjsWebGPURenderTarget -->
+## `CjsWebGPURenderTarget`
+
+Owns the presentation surface, depth and multisample attachments, pass descriptors, viewport and scissor.
+
+- Export: Not exported
+- Source: `src/core/renderTarget.js`
+- Visibility: Internal
+- Kind: CarbonEngineJS
+
 <!-- class:CjsWebGPUTrinityBatchDispatcher -->
 ## `CjsWebGPUTrinityBatchDispatcher`
 
