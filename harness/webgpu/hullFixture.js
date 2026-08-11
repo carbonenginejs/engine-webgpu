@@ -479,6 +479,51 @@ export function getHullMaterialLayout(record)
  * 0.4, and only `GeneralData` and the `PMtl*Gloss` tails are zero. A hull drawn
  * against these shows its own maps with no material tint on top.
  */
+/**
+ * `af1_t1`'s own material, from its SOF DNA.
+ *
+ * Transcribed from the `area_hull` effect of `af1_t1:amarrbase:amarr` as the
+ * tools-core service resolves it — the `Tr2ConstantEffectParameter` nodes of
+ * the `Tr2Effect` whose `effectFilePath` is `quadv5.fx`. These are the numbers
+ * that make an Amarr T1 hull look Amarr: `Mtl1` is the pale gold base, `Mtl2`
+ * and `Mtl3` are near-black trim, `Mtl4` is black, and the fresnel colours
+ * carry the warm rim the client is recognisable for.
+ *
+ * Transcribed rather than fetched because the harness must run without the
+ * service, and because resolving a DNA properly is Trinity's job, not a
+ * fixture's — this is a stand-in for that hookup, not a substitute for it.
+ *
+ * The DNA also carries `Mtl*DustDiffuseColor` and a `DirtMap`, which this
+ * package does not declare: the DNA selects `SOPPT_DISABLED` while the package
+ * here is the PPT-enabled permutation. Constants the package does not declare
+ * are simply not packed, so the extra entries are inert.
+ */
+const HULL_SOF_MATERIAL = Object.freeze({
+    GeneralData: Object.freeze([ 1, 0, 0, 0 ]),
+    GeneralGlowColor: Object.freeze([ 0.7607843, 0.5176471, 0.2705882, 1 ]),
+    Mtl1DiffuseColor: Object.freeze([ 0.7803922, 0.6509804, 0.5137255, 1 ]),
+    Mtl2DiffuseColor: Object.freeze([ 0.0528606, 0.0578054, 0.0612461, 1 ]),
+    Mtl3DiffuseColor: Object.freeze([ 0.0137021, 0.0137021, 0.0137021, 1 ]),
+    Mtl4DiffuseColor: Object.freeze([ 0, 0, 0, 1 ]),
+    Mtl1FresnelColor: Object.freeze([ 0.1878208, 0.2015563, 0.2232280, 1 ]),
+    Mtl2FresnelColor: Object.freeze([ 0.4117647, 0.4392157, 0.4823529, 1 ]),
+    Mtl3FresnelColor: Object.freeze([ 0.0392157, 0.0431373, 0.0470588, 1 ]),
+    Mtl4FresnelColor: Object.freeze([ 1, 0.7083758, 0.3613068, 1 ]),
+    Mtl1Gloss: Object.freeze([ 0.3483480, 0, 0, 0 ]),
+    Mtl2Gloss: Object.freeze([ 0.6825000, 0, 0, 0 ]),
+    Mtl3Gloss: Object.freeze([ 0.6825000, 0, 0, 0 ]),
+    Mtl4Gloss: Object.freeze([ 0.7826000, 0, 0, 0 ]),
+    // The pattern materials are all zero, because this DNA carries no SKIN.
+    // Both pattern masks resolve to `res:/texture/global/black.dds`, which is
+    // what the transparent-black placeholders above stand in for.
+    PMtl1DiffuseColor: Object.freeze([ 0, 0, 0, 0 ]),
+    PMtl1FresnelColor: Object.freeze([ 0, 0, 0, 0 ]),
+    PMtl1Gloss: Object.freeze([ 0, 0, 0, 0 ]),
+    PMtl2DiffuseColor: Object.freeze([ 0, 0, 0, 0 ]),
+    PMtl2FresnelColor: Object.freeze([ 0, 0, 0, 0 ]),
+    PMtl2Gloss: Object.freeze([ 0, 0, 0, 0 ])
+});
+
 const CARBON_MATERIAL_DEFAULTS = Object.freeze({
     GeneralData: Object.freeze([ 1, 0, 0, 0 ]),
     GeneralGlowColor: Object.freeze([ 1, 1, 1, 1 ]),
@@ -503,25 +548,48 @@ const CARBON_MATERIAL_DEFAULTS = Object.freeze({
 });
 
 /**
- * Read the material constants the package itself ships as defaults.
+ * Resolve one value for every material constant the package declares.
  *
- * `PackMaterialConstants` needs a value for every reflected constant and fails
- * closed on a gap, so something has to supply twenty values. Authoring them by
- * hand would be inventing a material; the hull's real values come from its SOF
- * DNA, which is not wired to this harness yet. The package's own
- * `constantValues` are the honest third option: they are what Carbon uses when
- * nothing overrides them, so the render shows the shader's own baseline rather
- * than a guess dressed up as a material.
+ * `PackMaterialConstants` needs a value for each and fails closed on a gap, so
+ * twenty values have to come from somewhere. Three sources, in descending order
+ * of how much they mean:
+ *
+ * 1. The hull's own SOF material, when `options.sof` is set. This is what the
+ *    hull actually looks like in the client.
+ * 2. The package's own `constantValues` block, when it carries one. These are
+ *    Carbon's defaults — white everywhere — so the hull shows its maps with no
+ *    material on top.
+ * 3. The transcribed copy of those same defaults, for packages built by an
+ *    emitter that carries the constant LAYOUT but no values.
+ *
+ * A constant the chosen source does not name falls through to the defaults
+ * rather than to zero: a zero-filled material is not a neutral one, it is a
+ * black hull with no gloss, and it reads as a broken shader.
  *
  * @param {object} record Validated package record.
+ * @param {object} [options] `{ sof }` to use the hull's SOF material.
  * @returns {object} Constant name to number array.
  */
-export function getHullMaterialDefaults(record)
+export function getHullMaterialDefaults(record, options = {})
 {
     validateHullPackageRecord(record);
     const binding = materialBinding(record);
     const bytes = Uint8Array.from(binding.carbon.constantValues ?? []);
     const values = {};
+    if (options.sof)
+    {
+        for (const constant of binding.carbon.constants)
+        {
+            const value = HULL_SOF_MATERIAL[constant.name] ?? CARBON_MATERIAL_DEFAULTS[constant.name];
+            if (!value) fail(`no SOF or Carbon value is recorded for constant ${constant.name}`);
+            if (value.length !== constant.size >> 2)
+            {
+                fail(`recorded value for ${constant.name} does not match its declared size`);
+            }
+            values[constant.name] = [ ...value ];
+        }
+        return Object.freeze(values);
+    }
     if (bytes.byteLength >= binding.carbon.constantValueSize)
     {
         const floats = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 2);
@@ -709,7 +777,7 @@ export const HULL_CAMERA = Object.freeze({
  * @param {number} height Target height in pixels.
  * @returns {object} Frozen `{ material, perFrameVS, perFramePS, perObjectVS, perObjectPS }`.
  */
-export function createHullBindingValues(record, width, height)
+export function createHullBindingValues(record, width, height, options = {})
 {
     if (!Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1)
     {
@@ -869,7 +937,7 @@ export function createHullBindingValues(record, width, height)
     });
 
     return Object.freeze({
-        material: getHullMaterialDefaults(record),
+        material: getHullMaterialDefaults(record, options),
         perFrameVS,
         perFramePS,
         perObjectVS,

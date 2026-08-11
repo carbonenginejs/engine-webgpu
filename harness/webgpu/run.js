@@ -4972,7 +4972,8 @@ async function CreateHullGpuResources(webgpu, record, width, height)
 
     const geometrySource = Object.freeze({ kind: "eve-hull", hull: "af1_t1" });
     return {
-        bindingValues: createHullBindingValues(record, width, height),
+        // The hull's own SOF material, not Carbon's white defaults.
+        bindingValues: createHullBindingValues(record, width, height, { sof: true }),
         materialLayout: getHullMaterialLayout(record),
         resources,
         geometry: bundle.geometries.main,
