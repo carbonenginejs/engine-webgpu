@@ -75,9 +75,14 @@ The serializer does not read SOF and does not supply production defaults.
 
 ## Effect paths
 
-The package root exports `normalizeEffectPath`, `shaderModelSuffix`, and
-`toCompiledEffectPath`. They are also available from
-`@carbonenginejs/engine-webgpu/utils/effectPaths`.
+This package does not resolve effect paths and exports no helper for it. Which
+compiled effect tree an authored `/effect/` path resolves into is configuration,
+and the composition root owns it — see `ResolveEffectPath` in
+`@carbonenginejs/runtime-core/platform`, or supply the resolved path yourself.
+
+The engine is handed a path or a package and validates what it receives,
+failing with a thrown error rather than rendering nothing when it is given
+something it cannot load.
 
 ## Example
 

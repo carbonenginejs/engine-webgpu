@@ -7,27 +7,15 @@ import {
   CjsWebGPUPackage,
   CjsWebGPUSampler,
   CjsWebGPUShaderModule,
-  CjsWebGPUTexture,
-  normalizeEffectPath,
-  shaderModelSuffix,
-  toCompiledEffectPath
+  CjsWebGPUTexture
 } from "../src/index.js";
 import { buildCopyblitDrawDescriptor } from "../src/core/packageDraw.js";
 
-test("effect-path helpers preserve Carbon basename behavior and quality tiers", () =>
-{
-  assert.equal(normalizeEffectPath("RES:\\Graphics\\Effect\\Space\\QuadV5.fx"), "res:/graphics/effect/space/quadv5.fx");
-  assert.equal(shaderModelSuffix("low"), "sm_lo");
-  assert.equal(shaderModelSuffix("medium"), "sm_hi");
-  assert.equal(shaderModelSuffix("high"), "sm_depth");
-  assert.equal(
-    toCompiledEffectPath("res:/graphics/effect/space/quadv5.fx", {
-      effectRoot: "/effect.webgpu/",
-      quality: "high"
-    }),
-    "res:/graphics/effect.webgpu/space/quadv5.sm_depth"
-  );
-});
+// The effect-path helpers that used to be tested here have moved to
+// `@carbonenginejs/runtime-core/platform`. This engine never called them - it
+// only re-exported them - and an engine that owns a path policy is an engine
+// deciding its own configuration. It is handed a resolved path, and it fails
+// loudly on anything it cannot load, which the package validation below covers.
 
 test("CjsWebGPUPackage builds immutable pass, shader, and bind-group descriptors from ANLS data", () =>
 {

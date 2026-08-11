@@ -12,4 +12,3 @@ export {
   buildEveSpaceObjectMainUniformData,
   getEveSpaceObjectMainMaterialConstants
 } from "./core/spaceObjectMainBindings.js";
-export { normalizeEffectPath, shaderModelSuffix, toCompiledEffectPath } from "./utils/effectPaths.js";
