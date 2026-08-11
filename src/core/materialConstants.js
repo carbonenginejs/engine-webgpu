@@ -78,8 +78,16 @@ export function MaterialLayoutFromShader(shader, options = {})
   const constants = stageInput.constants ?? [];
   if (!constants.length) fail(`pass ${passIndex} stage ${stageType} declares no constants`);
 
-  let size = 0;
-  for (const constant of constants) size = Math.max(size, (constant?.offset ?? 0) + (constant?.size ?? 0));
+  // The extent belongs to the reflection, not to a backend: it is arithmetic
+  // over the stage input's own constants and every backend gets the same
+  // answer. `Tr2EffectStageInput.GetConstantBufferSize()` owns it, so this asks
+  // rather than recomputing, and falls back only for a reflection object that
+  // predates it. What IS this backend's business is alignment on top of the
+  // extent, which is applied below.
+  let size = typeof stageInput.GetConstantBufferSize === "function"
+    ? stageInput.GetConstantBufferSize()
+    : constants.reduce((extent, constant) => Math.max(extent, (constant?.offset ?? 0) + (constant?.size ?? 0)), 0);
+
   size = Math.ceil(size / 4) * 4;
 
   return NormalizeMaterialLayout({

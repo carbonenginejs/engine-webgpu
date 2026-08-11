@@ -30,7 +30,14 @@ function fakeShader(options = {})
     constants,
     constantValues: options.defaults ?? null,
     // The authored default blob's length. Deliberately NOT the buffer size.
-    constantValueSize: options.defaults?.byteLength ?? 0
+    constantValueSize: options.defaults?.byteLength ?? 0,
+    // The real Tr2EffectStageInput owns this arithmetic, so the engine asks
+    // rather than recomputing and the stand-in has to answer it too.
+    GetConstantBufferSize()
+    {
+      const extent = constants.reduce((size, constant) => Math.max(size, constant.offset + constant.size), 0);
+      return Math.max(extent, options.defaults?.byteLength ?? 0);
+    }
   };
 
   return {
