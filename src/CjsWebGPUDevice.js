@@ -1,4 +1,5 @@
 import { CanonicalKey, CjsWebGPUPipelineCache, RenderPipelineKey } from "./core/pipelineCache.js";
+import { AssertFormatFeature, PlanTextureUpload } from "./core/textureLayout.js";
 
 const PREPARED_PIPELINES = new WeakMap();
 const LIVE_PIPELINES = new WeakMap();
@@ -370,7 +371,10 @@ function normalizeTexture(options)
   if (!options || typeof options !== "object" || Array.isArray(options)) fail("texture options must be an object");
   assertKeys(
     options,
-    new Set([ "label", "width", "height", "layers", "viewDimension", "format", "bytesPerRow", "data" ]),
+    new Set([
+      "label", "width", "height", "layers", "viewDimension", "format",
+      "bytesPerRow", "mipLevelCount", "data"
+    ]),
     "texture"
   );
   if (options.label !== undefined && (typeof options.label !== "string" || !options.label))
@@ -385,54 +389,66 @@ function normalizeTexture(options)
   {
     fail("texture height must be a positive GPUSize32 value");
   }
-  const format = TEXTURE_FORMATS.get(options.format);
-  if (!format) fail(`texture format ${String(options.format || "<empty>")} is not supported by the uncompressed 2D adapter`);
-  if (!Number.isSafeInteger(options.bytesPerRow) || options.bytesPerRow < 1
-    || options.bytesPerRow > MAX_GPU_SIZE_32)
-  {
-    fail("texture bytesPerRow must be a positive GPUSize32 value");
-  }
-  const activeRowBytes = options.width * format.bytesPerPixel;
-  if (options.bytesPerRow < activeRowBytes || options.bytesPerRow % format.bytesPerPixel !== 0)
-  {
-    fail(`texture bytesPerRow must contain ${activeRowBytes} active bytes and align to the texel size`);
-  }
-  const layers = own(options, "layers") && options.layers !== undefined ? options.layers : 1;
-  if (!Number.isSafeInteger(layers) || layers < 1 || layers > MAX_GPU_SIZE_32)
-  {
-    fail("texture layers must be a positive GPUSize32 value");
-  }
   // A 1-layer array view is legal and distinct from a plain 2D view: a shader
   // declaring texture_2d_array<f32> needs the array view whatever the layer
-  // count, so the view dimension is explicit rather than inferred from it.
-  const viewDimension = own(options, "viewDimension") && options.viewDimension !== undefined
-    ? options.viewDimension
-    : (layers > 1 ? "2d-array" : "2d");
-  if (viewDimension !== "2d" && viewDimension !== "2d-array")
+  // count, so the view dimension stays explicit rather than inferred.
+  const plan = PlanTextureUpload({
+    format: options.format,
+    width: options.width,
+    height: options.height,
+    layers: own(options, "layers") && options.layers !== undefined ? options.layers : undefined,
+    viewDimension: own(options, "viewDimension") && options.viewDimension !== undefined
+      ? options.viewDimension
+      : undefined,
+    mipLevelCount: own(options, "mipLevelCount") && options.mipLevelCount !== undefined
+      ? options.mipLevelCount
+      : undefined
+  });
+
+  // `bytesPerRow` remains accepted for a single-level image, where a caller may
+  // legitimately hand over padded rows. It is checked against the tight stride
+  // the format implies rather than trusted, and it has no meaning once a mip
+  // chain is involved because each level has its own stride.
+  let bytesPerRow = plan.writes[0].bytesPerRow;
+  if (own(options, "bytesPerRow") && options.bytesPerRow !== undefined)
   {
-    fail(`texture viewDimension ${String(options.viewDimension || "<empty>")} is not supported;`
-      + " supported dimensions are 2d and 2d-array");
+    if (plan.mipLevelCount > 1)
+    {
+      fail("texture bytesPerRow cannot be supplied with a mip chain; each level has its own stride");
+    }
+    if (!Number.isSafeInteger(options.bytesPerRow) || options.bytesPerRow < 1
+      || options.bytesPerRow > MAX_GPU_SIZE_32)
+    {
+      fail("texture bytesPerRow must be a positive GPUSize32 value");
+    }
+    if (options.bytesPerRow < bytesPerRow || options.bytesPerRow % plan.format.blockBytes !== 0)
+    {
+      fail(`texture bytesPerRow must contain ${bytesPerRow} active bytes and align to the block size`);
+    }
+    bytesPerRow = options.bytesPerRow;
   }
-  if (viewDimension === "2d" && layers > 1)
-  {
-    fail("texture viewDimension 2d cannot cover multiple layers");
-  }
-  const expectedBytes = options.bytesPerRow * options.height * layers;
+
+  const expectedBytes = plan.mipLevelCount > 1
+    ? plan.byteLength
+    : bytesPerRow * plan.writes[0].rowsPerImage * plan.layers;
   if (!Number.isSafeInteger(expectedBytes)) fail("texture byte length exceeds the supported JavaScript range");
   const data = binaryView(options.data, "texture");
   if (data.byteLength !== expectedBytes)
   {
     fail(`texture data must be exactly ${expectedBytes} bytes`);
   }
+
   return {
     label: options.label || "texture",
-    width: options.width,
-    height: options.height,
-    layers,
-    viewDimension,
-    formatName: options.format,
-    format,
-    bytesPerRow: options.bytesPerRow,
+    width: plan.width,
+    height: plan.height,
+    layers: plan.layers,
+    viewDimension: plan.viewDimension,
+    mipLevelCount: plan.mipLevelCount,
+    formatName: plan.formatName,
+    format: plan.format,
+    plan,
+    bytesPerRow,
     data
   };
 }
@@ -1429,6 +1445,10 @@ export class CjsWebGPUDevice
       {
         fail("GPUDevice texture creation and queue.writeTexture are required to create textures");
       }
+      // Told before anything is created, so a device without BC support gets
+      // the feature name rather than an unsupported-format error from inside
+      // createTexture.
+      AssertFormatFeature(plan, device);
       validateTextureLimits(plan, device);
       const generation = this._generation;
       const scopes = { validation: false, memory: false };
@@ -1451,22 +1471,42 @@ export class CjsWebGPUDevice
         gpuTexture = device.createTexture({
           label: plan.label,
           size: { width: plan.width, height: plan.height, depthOrArrayLayers: plan.layers },
-          mipLevelCount: 1,
+          mipLevelCount: plan.mipLevelCount,
           sampleCount: 1,
           // A WebGPU array texture is a 2d texture with more layers, not a 3d
-          // one; only the view dimension changes.
+          // one; only the view dimension changes. A cube is the same again: six
+          // layers and a cube VIEW.
           dimension: "2d",
           format: plan.formatName,
           usage: usage.TEXTURE_BINDING | usage.COPY_DST
         });
-        // Layers are contiguous slabs of `bytesPerRow * height`, so one write
-        // covers every layer.
-        device.queue.writeTexture(
-          { texture: gpuTexture },
-          plan.data,
-          { offset: 0, bytesPerRow: plan.bytesPerRow, rowsPerImage: plan.height },
-          { width: plan.width, height: plan.height, depthOrArrayLayers: plan.layers }
-        );
+        if (plan.mipLevelCount === 1)
+        {
+          // One level means every layer is a contiguous slab of the same
+          // stride, so one write still covers them all.
+          device.queue.writeTexture(
+            { texture: gpuTexture },
+            plan.data,
+            { offset: 0, bytesPerRow: plan.bytesPerRow, rowsPerImage: plan.plan.writes[0].rowsPerImage },
+            { width: plan.width, height: plan.height, depthOrArrayLayers: plan.layers }
+          );
+        }
+        else
+        {
+          // A mip chain is stored layer-major, so one level across layers is
+          // not contiguous and each (layer, level) is written on its own.
+          // rowsPerImage counts BLOCK rows, which is what makes a compressed
+          // upload differ from an uncompressed one.
+          for (const write of plan.plan.writes)
+          {
+            device.queue.writeTexture(
+              { texture: gpuTexture, mipLevel: write.level, origin: { x: 0, y: 0, z: write.layer } },
+              plan.data,
+              { offset: write.offset, bytesPerRow: write.bytesPerRow, rowsPerImage: write.rowsPerImage },
+              { width: write.width, height: write.height, depthOrArrayLayers: 1 }
+            );
+          }
+        }
         if (typeof gpuTexture?.createView !== "function") fail("created texture cannot create a view");
         const view = gpuTexture.createView({ label: `${plan.label}.view`, dimension: plan.viewDimension });
         const validationPromise = popScope("validation");
@@ -1488,7 +1528,7 @@ export class CjsWebGPUDevice
           width: plan.width,
           height: plan.height,
           depthOrArrayLayers: plan.layers,
-          mipLevelCount: 1,
+          mipLevelCount: plan.mipLevelCount,
           sampleCount: 1,
           dimension: "2d",
           viewDimension: plan.viewDimension,

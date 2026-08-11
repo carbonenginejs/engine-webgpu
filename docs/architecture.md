@@ -135,6 +135,34 @@ Bind groups stay per batch. Every prepared batch creates its own binding set
 even from identical values, which is where per-object data lives, and Carbon
 likewise applies per-object constants per batch.
 
+## Textures
+
+The texture adapter accepts uncompressed 8/16/32-bit formats, the BC1–BC7
+block-compressed family, mip chains, 2D, 2D-array, cube and cube-array views.
+That range exists because real EVE textures arrive as DDS carrying
+block-compressed data with full mip chains, and environment probes are cubes.
+
+**Block compression is why the layout is computed rather than assumed.** For an
+uncompressed format a row is `width * bytesPerPixel` and a level is `height`
+rows. For a compressed one both are wrong: `bytesPerRow` counts *block* rows and
+`rowsPerImage` is `ceil(height / 4)`. Passing pixel rows for a BC texture does
+not fail loudly — it uploads a fraction of the data and reads garbage. An
+uncompressed format is expressed as a 1×1 block so there is one code path and
+the compressed case cannot drift from the plain one.
+
+The same rounding keeps a BC mip chain honest: a 1×1 level still occupies a
+whole block, so the tail levels of any chain are the same size, and computing a
+level's footprint from its pixel dimensions alone under-counts them.
+
+Mip chains are stored **layer-major** — each layer's complete chain, then the
+next — because that is how DDS stores an array or a cube. One level across
+layers is therefore not contiguous, so a chain is written per layer per level
+rather than in one call.
+
+BC formats require the `texture-compression-bc` device feature, which is checked
+and named before anything is created rather than left to fail inside
+`createTexture`.
+
 ## Pipeline caching
 
 Effect realization splits in two. Stage A is program identity and dedup, which

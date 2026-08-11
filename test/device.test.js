@@ -1099,7 +1099,7 @@ test("CjsWebGPUDevice array-texture creation and binding fail closed on a mismat
 
   await assert.rejects(
     webgpu.CreateTexture(arrayInputs({ layers: 0 })),
-    /layers must be a positive GPUSize32/iu
+    /layers must be a positive integer/iu
   );
   // Layer count multiplies the expected byte length; a 2D-sized payload is short.
   await assert.rejects(
@@ -1110,9 +1110,11 @@ test("CjsWebGPUDevice array-texture creation and binding fail closed on a mismat
     webgpu.CreateTexture(arrayInputs({ viewDimension: "2d" })),
     /viewDimension 2d cannot cover multiple layers/iu
   );
+  // Cube is supported now; it is six layers, and the count is what a
+  // two-layer array gets wrong.
   await assert.rejects(
     webgpu.CreateTexture(arrayInputs({ viewDimension: "cube" })),
-    /viewDimension cube is not supported/iu
+    /viewDimension cube requires exactly 6 layers/iu
   );
 
   fake.device.limits = { maxTextureArrayLayers: 1 };
@@ -1132,8 +1134,17 @@ test("CjsWebGPUDevice texture validation and native error scopes fail closed", a
     textureUsage: TEXTURE_USAGE
   });
   const badFormat = textureInputs();
-  badFormat.format = "bc1-rgba-unorm";
-  await assert.rejects(webgpu.CreateTexture(badFormat), /not supported by the uncompressed 2D adapter/i);
+  badFormat.format = "astc-4x4-unorm";
+  await assert.rejects(webgpu.CreateTexture(badFormat), /is not supported/i);
+
+  // BC is supported now, but only on a device that advertises the feature.
+  // Told before anything is created, and named, so the caller knows what to
+  // request rather than getting an unsupported-format error from createTexture.
+  const compressed = textureInputs();
+  compressed.format = "bc1-rgba-unorm";
+  compressed.bytesPerRow = 8;
+  compressed.data = new Uint8Array(8);
+  await assert.rejects(webgpu.CreateTexture(compressed), /requires the texture-compression-bc device feature/i);
   const shortRow = textureInputs();
   shortRow.bytesPerRow = 4;
   await assert.rejects(webgpu.CreateTexture(shortRow), /must contain 8 active bytes/i);
@@ -2565,4 +2576,46 @@ test("CjsWebGPUDevice drops cached pipelines when the device is replaced", async
   const rebuilt = await webgpu.PreparePipeline(pipelineDescriptor(), identity);
   assert.notEqual(rebuilt, first, "a pipeline built for a device that is gone is not repairable");
   assert.equal(replacement.device.calls.filter(([ name ]) => name === "createShaderModule").length, 2);
+});
+
+test("CjsWebGPUDevice uploads a compressed mip chain one level at a time", async () =>
+{
+  const fake = fakeDevice("compressed");
+  fake.device.features = new Set([ "texture-compression-bc" ]);
+  const webgpu = new CjsWebGPUDevice({
+    device: fake.device,
+    shaderStage: SHADER_STAGE,
+    textureUsage: TEXTURE_USAGE
+  });
+
+  // 8x8 BC3 with a full chain: 64 + 16 + 16 + 16 bytes per layer.
+  const texture = await webgpu.CreateTexture({
+    label: "hull",
+    format: "bc3-rgba-unorm",
+    width: 8,
+    height: 8,
+    mipLevelCount: 4,
+    data: new Uint8Array(112)
+  });
+
+  assert.equal(texture.mipLevelCount, 4);
+  const created = fake.device.calls.find(([ kind ]) => kind === "createTexture")[1];
+  assert.equal(created.mipLevelCount, 4);
+  assert.equal(created.format, "bc3-rgba-unorm");
+
+  const writes = fake.device.calls.filter(([ kind ]) => kind === "writeTexture");
+  assert.equal(writes.length, 4, "one write per level, because a chain is not one contiguous slab");
+
+  // rowsPerImage counts BLOCK rows, and the tail levels are one whole block.
+  assert.deepEqual(
+    writes.map(([ , destination, , layout, size ]) => [
+      destination.mipLevel, layout.offset, layout.bytesPerRow, layout.rowsPerImage, size.width
+    ]),
+    [
+      [ 0, 0, 32, 2, 8 ],
+      [ 1, 64, 16, 1, 4 ],
+      [ 2, 80, 16, 1, 2 ],
+      [ 3, 96, 16, 1, 1 ]
+    ]
+  );
 });
