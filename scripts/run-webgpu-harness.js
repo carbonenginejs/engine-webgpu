@@ -920,6 +920,16 @@ const ASSETS = new Map([
     [ "/quadSailsV5Fixture.js", { path: new URL("../harness/webgpu/quadSailsV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/quadV5Fixture.js", { path: new URL("../harness/webgpu/quadV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/freeze.js", { path: new URL("../src/core/freeze.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    // Served under two shapes because the importer decides the URL: a core
+    // module importing a sibling asks for "/x.js", while CjsWebgpuDevice.js
+    // sits a directory up and asks for "/core/x.js". Adding a module here is
+    // part of adding one to src/core — `npm test` does not load this page, so
+    // a missing route only shows up as a 404 in the browser.
+    [ "/batchGroups.js", { path: new URL("../src/core/batchGroups.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/materialConstants.js", { path: new URL("../src/core/materialConstants.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/core/batchGroups.js", { path: new URL("../src/core/batchGroups.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/core/pipelineCache.js", { path: new URL("../src/core/pipelineCache.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/core/textureLayout.js", { path: new URL("../src/core/textureLayout.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/config.json", {
         body: JSON.stringify({
             compileWgsl: !!COMPILE_WGSL_PATH,
