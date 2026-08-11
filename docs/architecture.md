@@ -12,8 +12,8 @@ caller data into generation-bound WebGPU objects and encoded draws.
 
 ## Current ownership
 
-`CjsWebGPUPackage` normalizes decoded package data into immutable shader,
-pipeline, layout, and resource descriptors. `CjsWebGPUDevice` owns native
+`CjsWebgpuPackage` normalizes decoded package data into immutable shader,
+pipeline, layout, and resource descriptors. `CjsWebgpuDevice` owns native
 device interaction: shader preparation, pipeline creation, buffer and 2D
 and 2D-array texture upload, sampler realization, binding sets, draw encoding,
 submission, loss handling, and recreation.
@@ -94,7 +94,7 @@ produce packages for qualification, but it is not an engine dependency.
 
 ## Provisional Trinity batch boundary
 
-The internal `CjsWebGPUTrinityBatchDispatcher` proves the first engine-facing
+The internal `CjsWebgpuTrinityBatchDispatcher` proves the first engine-facing
 `Tr2RenderBatch` shape without importing `runtime-trinity`. It accepts the
 transient batch's material, geometry source, object-data reference, D3D
 topology, and draw arguments. Injected composition hooks resolve those CPU
@@ -243,7 +243,7 @@ mechanical.
 
 ## Executing a planned frame
 
-`CjsWebGPUFrameExecutor` walks a plan's regions in order, opens the right kind
+`CjsWebgpuFrameExecutor` walks a plan's regions in order, opens the right kind
 of encoder for each, and submits once. Every judgement about what may share a
 pass already happened during planning, so this owns only encoder lifetime and
 region order.
@@ -265,7 +265,7 @@ this module does not own, so its descriptor is the caller's to supply.
 
 ## Attachments and the presentation surface
 
-`CjsWebGPURenderTarget` owns canvas configuration, the depth and multisample
+`CjsWebgpuRenderTarget` owns canvas configuration, the depth and multisample
 attachments, their size, render-pass descriptors, and viewport and scissor. It
 does not own when a frame happens or which passes exist; those belong to the
 executor and to Trinity's steps.
@@ -399,7 +399,7 @@ harness-authored values and does not load the cited SOF, ship mesh, production
 textures/defaults, runtime-trinity, or a Trinity graph. It makes no
 depth-policy claim.
 
-The internal `CjsWebGPUTrinityStepRecorder` proves the synchronous
+The internal `CjsWebgpuTrinityStepRecorder` proves the synchronous
 `Tr2RenderContext.SetStepExecutor(...)` seam separately. It delegates the
 step's begin, execute, and end hooks back to the GPU-free context, consumes
 `TakeIntents()` exactly once, and records immutable segments in observable
@@ -408,7 +408,7 @@ emitted before the child, then the parent resumes after the child. WebGPU
 pipeline preparation, pass creation, encoding, and submission remain a later
 asynchronous phase; none run inside Trinity's synchronous `Run(...)`.
 
-The internal `CjsWebGPUTrinityPassEncoder` proves the synchronous encoding end
+The internal `CjsWebgpuTrinityPassEncoder` proves the synchronous encoding end
 of that split. A caller supplies an existing command encoder plus ordered
 render-pass descriptors and prepared batch-map selections. Multiple batch
 types may share one pass, and separately prepared maps may be selected when a

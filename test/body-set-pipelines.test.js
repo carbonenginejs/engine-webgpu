@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CjsWebGPUPackage } from "../src/index.js";
+import { CjsWebgpuPackage } from "../src/index.js";
 import { buildBodySetPipelines } from "../src/core/bodySetPipelines.js";
 
 const SHA = Object.freeze({
@@ -64,7 +64,7 @@ function unit(passKey, sha256, vertexCode, pixelCode)
  * on Main. That is the sharing shape a real uber-shader has, in miniature.
  *
  * @param {object} [overrides] Body overrides.
- * @returns {CjsWebGPUPackage} Package with a fake backend body source.
+ * @returns {CjsWebgpuPackage} Package with a fake backend body source.
  */
 function bodySetPackage(overrides = {})
 {
@@ -95,7 +95,7 @@ function bodySetPackage(overrides = {})
     }
   ];
 
-  const pkg = CjsWebGPUPackage.from({
+  const pkg = CjsWebgpuPackage.from({
     sourcePath: "res:/test/effect.dx11/quad.sm_hi",
     wgsl: { format: "CJS_WGSL_SET", formatVersion: 3, shaders: [], layouts: [] }
   });
@@ -228,7 +228,7 @@ test("body-set preparation surfaces an unsupported body without dropping it", ()
 test("body-set preparation fails closed on unusable units", () =>
 {
   assert.throws(
-    () => buildBodySetPipelines(CjsWebGPUPackage.from({
+    () => buildBodySetPipelines(CjsWebgpuPackage.from({
       wgsl: { format: "CJS_WGSL_SET", formatVersion: 3, shaders: [], layouts: [] }
     })),
     /carries no backend body set/u

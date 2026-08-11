@@ -19,7 +19,7 @@
 // Tw2Shader.fromCCPBinary(reader, context) does, with the engine supplying only
 // binding. Nothing but bytes should cross.
 //
-// The engine's own CjsWebGPUPackage is not a valid Tr2EffectRes payload, because
+// The engine's own CjsWebgpuPackage is not a valid Tr2EffectRes payload, because
 // normalizePackageShape deep-clones to plain JSON and drops permutationGraph and
 // reflection. That is an engine-side projection choice, NOT a property of the
 // format and NOT evidence that two objects are inherent - an earlier version of
@@ -40,8 +40,8 @@ import {
 } from "@carbonenginejs/runtime-trinity/trinityCore";
 import { TriBatchType } from "@carbonenginejs/runtime-trinity/generated/trinityCore";
 
-import { CjsWebGPUPackage } from "../src/index.js";
-import { CjsWebGPUTrinityBatchDispatcher } from "../src/core/trinityBatchDispatcher.js";
+import { CjsWebgpuPackage } from "../src/index.js";
+import { CjsWebgpuTrinityBatchDispatcher } from "../src/core/trinityBatchDispatcher.js";
 
 const TRIANGLE_LIST = 4;
 
@@ -80,7 +80,7 @@ function canonicalPackage()
     type: "texture_2d<f32>",
     texture: { sampleType: "float", viewDimension: "2d", multisampled: false }
   } ];
-  return CjsWebGPUPackage.from({
+  return CjsWebgpuPackage.from({
     format: "CEWGPU",
     version: 1,
     sourcePath: "res:/fixture/trinity-read-chain.cewgpu",
@@ -254,7 +254,7 @@ test("the engine dispatcher reaches the package pipeline through a real batch ma
 
   const { calls, webgpu } = boundary();
   const resolvedMaterials = [];
-  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+  const dispatcher = new CjsWebgpuTrinityBatchDispatcher(webgpu, {
     // The same traversal the fixture hook performs today, except the material is
     // a real Tr2Effect instead of a package record.
     async ResolveMaterial(material, dispatched)
@@ -341,7 +341,7 @@ test("a real Tr2EffectRes resolves a shader from a real CEWGPU container", async
   // One file, one read. The engine builds its own view from the same bytes for
   // binding; that view is a lossy derived projection, not a second artifact the
   // format requires and not something a loader has to "also produce".
-  const enginePackage = CjsWebGPUPackage.fromBytes(bytes, {
+  const enginePackage = CjsWebgpuPackage.fromBytes(bytes, {
     source: path,
     read: CjsWebgpuFormat.read
   });

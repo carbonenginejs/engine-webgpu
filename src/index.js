@@ -1,12 +1,12 @@
-export { CjsWebGPUPackage } from "./CjsWebGPUPackage.js";
-export { CjsWebGPUDevice } from "./CjsWebGPUDevice.js";
-export { CjsWebGPUPipeline } from "./CjsWebGPUPipeline.js";
-export { CjsWebGPUShaderModule } from "./CjsWebGPUShaderModule.js";
-export { CjsWebGPUBindGroup } from "./CjsWebGPUBindGroup.js";
-export { CjsWebGPUResource } from "./CjsWebGPUResource.js";
-export { CjsWebGPUBuffer } from "./CjsWebGPUBuffer.js";
-export { CjsWebGPUTexture } from "./CjsWebGPUTexture.js";
-export { CjsWebGPUSampler } from "./CjsWebGPUSampler.js";
+export { CjsWebgpuPackage } from "./CjsWebgpuPackage.js";
+export { CjsWebgpuDevice } from "./CjsWebgpuDevice.js";
+export { CjsWebgpuPipeline } from "./CjsWebgpuPipeline.js";
+export { CjsWebgpuShaderModule } from "./CjsWebgpuShaderModule.js";
+export { CjsWebgpuBindGroup } from "./CjsWebgpuBindGroup.js";
+export { CjsWebgpuResource } from "./CjsWebgpuResource.js";
+export { CjsWebgpuBuffer } from "./CjsWebgpuBuffer.js";
+export { CjsWebgpuTexture } from "./CjsWebgpuTexture.js";
+export { CjsWebgpuSampler } from "./CjsWebgpuSampler.js";
 export {
   EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES,
   buildEveSpaceObjectMainUniformData,

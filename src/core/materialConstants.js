@@ -22,7 +22,7 @@
 
 function fail(message)
 {
-  const error = new Error(`CjsWebGPUMaterialConstants: ${message}`);
+  const error = new Error(`CjsWebgpuMaterialConstants: ${message}`);
   error.code = "CJS_WEBGPU_MATERIAL_CONSTANTS_INVALID";
   throw error;
 }

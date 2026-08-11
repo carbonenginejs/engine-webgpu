@@ -23,7 +23,7 @@
 
 function fail(message)
 {
-  const error = new Error(`CjsWebGPUTextureLayout: ${message}`);
+  const error = new Error(`CjsWebgpuTextureLayout: ${message}`);
   error.code = "CJS_WEBGPU_TEXTURE_LAYOUT_INVALID";
   throw error;
 }

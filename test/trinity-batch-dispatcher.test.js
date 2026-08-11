@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CjsWebGPUTrinityBatchDispatcher } from "../src/core/trinityBatchDispatcher.js";
+import { CjsWebgpuTrinityBatchDispatcher } from "../src/core/trinityBatchDispatcher.js";
 
 function indexedBatch(overrides = {})
 {
@@ -115,7 +115,7 @@ function accumulator(batches, gdprBatches = [])
 test("Trinity batch dispatcher resolves an indexed batch without importing Trinity", async () =>
 {
   const { bindingSets, calls, webgpu } = mockBoundary();
-  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(webgpu, hooks());
+  const dispatcher = new CjsWebgpuTrinityBatchDispatcher(webgpu, hooks());
   const batch = indexedBatch();
   const handle = await dispatcher.Prepare(batch);
 
@@ -141,7 +141,7 @@ test("Trinity batch dispatcher resolves an indexed batch without importing Trini
 test("Trinity batch dispatcher maps non-indexed batches and owns rollback", async () =>
 {
   const success = mockBoundary();
-  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(success.webgpu, hooks(false));
+  const dispatcher = new CjsWebgpuTrinityBatchDispatcher(success.webgpu, hooks(false));
   const prepared = await dispatcher.Prepare(indexedBatch({
     indexCountPerInstance: 13,
     instanceCount: 1,
@@ -158,7 +158,7 @@ test("Trinity batch dispatcher maps non-indexed batches and owns rollback", asyn
   assert.equal(success.bindingSets[0].destroyed, 1);
 
   const rejected = mockBoundary({ rejectDraw: true });
-  const rejecting = new CjsWebGPUTrinityBatchDispatcher(rejected.webgpu, hooks());
+  const rejecting = new CjsWebgpuTrinityBatchDispatcher(rejected.webgpu, hooks());
   await assert.rejects(rejecting.Prepare(indexedBatch()), /draw rejected/u);
   assert.equal(rejected.bindingSets[0].destroyed, 1);
 });
@@ -173,7 +173,7 @@ test("Trinity batch dispatcher accepts resolver draw arguments for deferred geom
     baseVertex: -7,
     firstInstance: 3
   };
-  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(
+  const dispatcher = new CjsWebgpuTrinityBatchDispatcher(
     boundary.webgpu,
     hooks(true, null, draw)
   );
@@ -194,7 +194,7 @@ test("Trinity batch dispatcher accepts resolver draw arguments for deferred geom
     firstVertex: 12,
     firstInstance: 0
   };
-  const nonIndexedDispatcher = new CjsWebGPUTrinityBatchDispatcher(
+  const nonIndexedDispatcher = new CjsWebgpuTrinityBatchDispatcher(
     nonIndexed.webgpu,
     hooks(false, null, nonIndexedDraw)
   );
@@ -207,11 +207,11 @@ test("Trinity batch dispatcher fails closed on unsupported or conflicting contra
 {
   const { webgpu } = mockBoundary();
   assert.throws(
-    () => new CjsWebGPUTrinityBatchDispatcher(webgpu, {}),
+    () => new CjsWebgpuTrinityBatchDispatcher(webgpu, {}),
     /composition hooks require ResolveMaterial/u
   );
 
-  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(webgpu, hooks());
+  const dispatcher = new CjsWebgpuTrinityBatchDispatcher(webgpu, hooks());
   await assert.rejects(
     dispatcher.Prepare(indexedBatch(), { batchType: -1 }),
     /batchType must be a non-negative integer/u
@@ -222,7 +222,7 @@ test("Trinity batch dispatcher fails closed on unsupported or conflicting contra
     /geometrySource is required/u
   );
   await assert.rejects(
-    new CjsWebGPUTrinityBatchDispatcher(
+    new CjsWebgpuTrinityBatchDispatcher(
       webgpu,
       hooks(true, null, {
         indexCount: 3,
@@ -245,7 +245,7 @@ test("Trinity batch dispatcher fails closed on unsupported or conflicting contra
     }
   });
   await assert.rejects(
-    new CjsWebGPUTrinityBatchDispatcher(webgpu, conflicting).Prepare(indexedBatch()),
+    new CjsWebgpuTrinityBatchDispatcher(webgpu, conflicting).Prepare(indexedBatch()),
     /batch topology triangle-list conflicts/u
   );
 });
@@ -253,7 +253,7 @@ test("Trinity batch dispatcher fails closed on unsupported or conflicting contra
 test("Trinity batch dispatcher preserves GDPR-first accumulator order and lifecycle", async () =>
 {
   const boundary = mockBoundary();
-  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(boundary.webgpu, hooks());
+  const dispatcher = new CjsWebgpuTrinityBatchDispatcher(boundary.webgpu, hooks());
   const gdpr = indexedBatch({ material: { id: "gdpr" }, startIndexLocation: 0 });
   const first = indexedBatch({ material: { id: "first" }, startIndexLocation: 36 });
   const second = indexedBatch({ material: { id: "second" }, startIndexLocation: 72 });
@@ -280,7 +280,7 @@ test("Trinity batch dispatcher preserves GDPR-first accumulator order and lifecy
 test("Trinity batch dispatcher rolls back partial GDPR and ordinary vectors", async () =>
 {
   const rejected = mockBoundary({ rejectDrawAt: 2 });
-  const rejecting = new CjsWebGPUTrinityBatchDispatcher(rejected.webgpu, hooks());
+  const rejecting = new CjsWebgpuTrinityBatchDispatcher(rejected.webgpu, hooks());
   await assert.rejects(
     rejecting.PrepareAccumulator(accumulator(
       [ indexedBatch({ material: { id: "ordinary" } }) ],
@@ -295,7 +295,7 @@ test("Trinity batch dispatcher snapshots batch maps and leaves pass choice exter
 {
   const boundary = mockBoundary();
   const observedContexts = [];
-  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(
+  const dispatcher = new CjsWebgpuTrinityBatchDispatcher(
     boundary.webgpu,
     hooks(true, observedContexts)
   );
@@ -352,7 +352,7 @@ test("Trinity batch dispatcher snapshots batch maps and leaves pass choice exter
 test("Trinity batch dispatcher validates batch-map identity and rolls back all types", async () =>
 {
   const boundary = mockBoundary();
-  const dispatcher = new CjsWebGPUTrinityBatchDispatcher(boundary.webgpu, hooks());
+  const dispatcher = new CjsWebgpuTrinityBatchDispatcher(boundary.webgpu, hooks());
   await assert.rejects(
     dispatcher.PrepareBatchMap({
       GetBatchTypes: () => [ 0, 0 ],
@@ -374,7 +374,7 @@ test("Trinity batch dispatcher validates batch-map identity and rolls back all t
   assert.deepEqual(boundary.bindingSets.map((entry) => entry.destroyed), [ 1 ]);
 
   const mismatched = mockBoundary();
-  const mismatchedDispatcher = new CjsWebGPUTrinityBatchDispatcher(mismatched.webgpu, hooks());
+  const mismatchedDispatcher = new CjsWebgpuTrinityBatchDispatcher(mismatched.webgpu, hooks());
   await assert.rejects(
     mismatchedDispatcher.PrepareBatchMap({
       GetBatchTypes: () => [ 0 ],

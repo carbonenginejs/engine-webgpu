@@ -375,7 +375,7 @@ function canonicalUniformBindings(pipeline)
  * is the exception: its Trinity producer already supplies GPU-form bytes, so
  * those matrix slots are copied unchanged.
  *
- * @param {object} record Loaded CjsWebGPUPackage or record with analysis and pipeline.
+ * @param {object} record Loaded CjsWebgpuPackage or record with analysis and pipeline.
  * @param {object} values Plain values for the five constant buffers.
  * @returns {object} Frozen scope-identity-to-Uint8Array uniform data.
  */

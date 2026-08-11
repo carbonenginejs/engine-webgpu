@@ -426,12 +426,12 @@ const BROWSER_ARGS = Object.freeze([
 
 async function ReadPackagePipeline(path)
 {
-    const [ { CjsWebgpuFormat }, { CjsWebGPUPackage }, { buildCopyblitDrawDescriptor } ] = await Promise.all([
+    const [ { CjsWebgpuFormat }, { CjsWebgpuPackage }, { buildCopyblitDrawDescriptor } ] = await Promise.all([
         import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js"),
         import("../src/core/packageDraw.js")
     ]);
-    const pkg = CjsWebGPUPackage.fromBytes(await readFile(path), {
+    const pkg = CjsWebgpuPackage.fromBytes(await readFile(path), {
         read: CjsWebgpuFormat.read,
         readOptions: { source: path }
     });
@@ -443,14 +443,14 @@ async function ReadPackagePipeline(path)
 
 async function ReadBodySetPrepare(path)
 {
-    const [ { CjsWebgpuFormat }, { CjsWebGPUPackage }, { buildBodySetPipelines } ] = await Promise.all([
+    const [ { CjsWebgpuFormat }, { CjsWebgpuPackage }, { buildBodySetPipelines } ] = await Promise.all([
         import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js"),
         import("../src/core/bodySetPipelines.js")
     ]);
     // Raw emit is the only route to the WGSB chunk: the default JSON emit does
     // not project the body set, and its chunk records carry no bytes.
-    const pkg = CjsWebGPUPackage.fromBytes(await readFile(path), {
+    const pkg = CjsWebgpuPackage.fromBytes(await readFile(path), {
         read: CjsWebgpuFormat.read,
         readOptions: { source: path, emit: CjsWebgpuFormat.OUTPUT_RAW }
     });
@@ -470,7 +470,7 @@ async function ReadQuadV5Packages(paths, variant)
     }
     const [
         { CjsWebgpuFormat },
-        { CjsWebGPUPackage }
+        { CjsWebgpuPackage }
     ] = await Promise.all([
         import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
@@ -485,13 +485,13 @@ async function ReadQuadV5Packages(paths, variant)
     const records = [];
     for (const request of requests)
     {
-        const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
+        const pkg = CjsWebgpuPackage.fromBytes(await readFile(request.filePath), {
             read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
-        if (!(pkg instanceof CjsWebGPUPackage))
+        if (!(pkg instanceof CjsWebgpuPackage))
         {
-            throw new Error(`${request.filePath} did not prepare as CjsWebGPUPackage`);
+            throw new Error(`${request.filePath} did not prepare as CjsWebgpuPackage`);
         }
         const pipeline = pkg.GetPipeline("Main", 0);
         if (!pipeline || !pipeline.HasCompleteWgsl())
@@ -504,7 +504,7 @@ async function ReadQuadV5Packages(paths, variant)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebgpuPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
@@ -528,7 +528,7 @@ async function ReadQuadGlassV5Packages(paths, variant)
     }
     const [
         { CjsWebgpuFormat },
-        { CjsWebGPUPackage }
+        { CjsWebgpuPackage }
     ] = await Promise.all([
         import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
@@ -544,13 +544,13 @@ async function ReadQuadGlassV5Packages(paths, variant)
     const records = [];
     for (const request of requests)
     {
-        const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
+        const pkg = CjsWebgpuPackage.fromBytes(await readFile(request.filePath), {
             read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
-        if (!(pkg instanceof CjsWebGPUPackage))
+        if (!(pkg instanceof CjsWebgpuPackage))
         {
-            throw new Error(`${request.filePath} did not prepare as CjsWebGPUPackage`);
+            throw new Error(`${request.filePath} did not prepare as CjsWebgpuPackage`);
         }
         const pipelines = [ 0, 1 ].map((passIndex) =>
         {
@@ -569,7 +569,7 @@ async function ReadQuadGlassV5Packages(paths, variant)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebgpuPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipelines
@@ -592,7 +592,7 @@ async function ReadQuadHeatV5Packages(paths)
     }
     const [
         { CjsWebgpuFormat },
-        { CjsWebGPUPackage }
+        { CjsWebgpuPackage }
     ] = await Promise.all([
         import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
@@ -605,13 +605,13 @@ async function ReadQuadHeatV5Packages(paths)
     const records = [];
     for (const request of requests)
     {
-        const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
+        const pkg = CjsWebgpuPackage.fromBytes(await readFile(request.filePath), {
             read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
-        if (!(pkg instanceof CjsWebGPUPackage))
+        if (!(pkg instanceof CjsWebgpuPackage))
         {
-            throw new Error(`${request.filePath} did not prepare as CjsWebGPUPackage`);
+            throw new Error(`${request.filePath} did not prepare as CjsWebgpuPackage`);
         }
         const pipeline = pkg.GetPipeline("Main", 0);
         if (!pipeline || !pipeline.HasCompleteWgsl())
@@ -623,7 +623,7 @@ async function ReadQuadHeatV5Packages(paths)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebgpuPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
@@ -646,7 +646,7 @@ async function ReadQuadSailsV5Packages(paths, variant)
     }
     const [
         { CjsWebgpuFormat },
-        { CjsWebGPUPackage }
+        { CjsWebgpuPackage }
     ] = await Promise.all([
         import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
@@ -660,13 +660,13 @@ async function ReadQuadSailsV5Packages(paths, variant)
     const records = [];
     for (const request of requests)
     {
-        const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
+        const pkg = CjsWebgpuPackage.fromBytes(await readFile(request.filePath), {
             read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
-        if (!(pkg instanceof CjsWebGPUPackage))
+        if (!(pkg instanceof CjsWebgpuPackage))
         {
-            throw new Error(`${request.filePath} did not prepare as CjsWebGPUPackage`);
+            throw new Error(`${request.filePath} did not prepare as CjsWebgpuPackage`);
         }
         const pipeline = pkg.GetPipeline("Main", 0);
         if (!pipeline || !pipeline.HasCompleteWgsl())
@@ -679,7 +679,7 @@ async function ReadQuadSailsV5Packages(paths, variant)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebgpuPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
@@ -702,7 +702,7 @@ async function ReadQuadDetailV5Packages(paths, variant)
     }
     const [
         { CjsWebgpuFormat },
-        { CjsWebGPUPackage }
+        { CjsWebgpuPackage }
     ] = await Promise.all([
         import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
@@ -716,13 +716,13 @@ async function ReadQuadDetailV5Packages(paths, variant)
     const records = [];
     for (const request of requests)
     {
-        const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
+        const pkg = CjsWebgpuPackage.fromBytes(await readFile(request.filePath), {
             read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
-        if (!(pkg instanceof CjsWebGPUPackage))
+        if (!(pkg instanceof CjsWebgpuPackage))
         {
-            throw new Error(`${request.filePath} did not prepare as CjsWebGPUPackage`);
+            throw new Error(`${request.filePath} did not prepare as CjsWebgpuPackage`);
         }
         const pipeline = pkg.GetPipeline("Main", 0);
         if (!pipeline || !pipeline.HasCompleteWgsl())
@@ -735,7 +735,7 @@ async function ReadQuadDetailV5Packages(paths, variant)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebgpuPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
@@ -758,7 +758,7 @@ async function ReadQuadOilV5Packages(paths)
     }
     const [
         { CjsWebgpuFormat },
-        { CjsWebGPUPackage }
+        { CjsWebgpuPackage }
     ] = await Promise.all([
         import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
@@ -773,13 +773,13 @@ async function ReadQuadOilV5Packages(paths)
     const records = [];
     for (const request of requests)
     {
-        const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
+        const pkg = CjsWebgpuPackage.fromBytes(await readFile(request.filePath), {
             read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
-        if (!(pkg instanceof CjsWebGPUPackage))
+        if (!(pkg instanceof CjsWebgpuPackage))
         {
-            throw new Error(`${request.filePath} did not prepare as CjsWebGPUPackage`);
+            throw new Error(`${request.filePath} did not prepare as CjsWebgpuPackage`);
         }
         const pipeline = pkg.GetPipeline("Main", 0);
         if (!pipeline || !pipeline.HasCompleteWgsl())
@@ -792,7 +792,7 @@ async function ReadQuadOilV5Packages(paths)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebgpuPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
@@ -811,7 +811,7 @@ async function ReadDecalV5Packages(paths, variant)
     }
     const [
         { CjsWebgpuFormat },
-        { CjsWebGPUPackage }
+        { CjsWebgpuPackage }
     ] = await Promise.all([
         import("@carbonenginejs/runtime-resource/formats/webgpu"),
         import("../src/index.js")
@@ -826,13 +826,13 @@ async function ReadDecalV5Packages(paths, variant)
     const records = [];
     for (const request of requests)
     {
-        const pkg = CjsWebGPUPackage.fromBytes(await readFile(request.filePath), {
+        const pkg = CjsWebgpuPackage.fromBytes(await readFile(request.filePath), {
             read: CjsWebgpuFormat.read,
             readOptions: { source: request.filePath }
         });
-        if (!(pkg instanceof CjsWebGPUPackage))
+        if (!(pkg instanceof CjsWebgpuPackage))
         {
-            throw new Error(`${request.filePath} did not prepare as CjsWebGPUPackage`);
+            throw new Error(`${request.filePath} did not prepare as CjsWebgpuPackage`);
         }
         const pipeline = pkg.GetPipeline("Main", 0);
         if (!pipeline || !pipeline.HasCompleteWgsl())
@@ -845,7 +845,7 @@ async function ReadDecalV5Packages(paths, variant)
             label: basename(request.filePath),
             filePath: request.filePath,
             resourcePath: request.resourcePath,
-            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebGPUPackage",
+            loadPath: "readFile -> CjsWebgpuFormat -> CjsWebgpuPackage",
             analysis: pkg.analysis,
             metadata: pkg.metadata,
             pipeline: pipeline.ToJSON()
@@ -902,7 +902,7 @@ const ASSETS = new Map([
     [ "/index.html", { path: new URL("../harness/webgpu/index.html", import.meta.url), type: "text/html; charset=utf-8" } ],
     [ "/run.js", { path: new URL("../harness/webgpu/run.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/computePipeline.js", { path: new URL("../harness/webgpu/computePipeline.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
-    [ "/CjsWebGPUDevice.js", { path: new URL("../src/CjsWebGPUDevice.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/CjsWebgpuDevice.js", { path: new URL("../src/CjsWebgpuDevice.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/packageDraw.js", { path: new URL("../src/core/packageDraw.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/spaceObjectMainBindings.js", { path: new URL("../src/core/spaceObjectMainBindings.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/trinityBatchDispatcher.js", { path: new URL("../src/core/trinityBatchDispatcher.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],

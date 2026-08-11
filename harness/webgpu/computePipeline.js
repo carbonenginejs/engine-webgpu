@@ -128,10 +128,10 @@ async function popValidationScope(device, scope)
  * Creates one validation-only native compute pipeline for a matrix descriptor.
  *
  * This is intentionally a browser-harness helper rather than a public
- * CjsWebGPUDevice compute API.
+ * CjsWebgpuDevice compute API.
  *
  * @param {GPUDevice} device Browser WebGPU device.
- * @param {object} pipeline CjsWebGPUPipeline JSON descriptor.
+ * @param {object} pipeline CjsWebgpuPipeline JSON descriptor.
  * @param {object} shaderStage Browser GPUShaderStage constants.
  * @returns {Promise<object>} Native pipeline and zero-warning summary.
  */

@@ -35,7 +35,7 @@
 
 function fail(message)
 {
-  const error = new Error(`CjsWebGPURenderTarget: ${message}`);
+  const error = new Error(`CjsWebgpuRenderTarget: ${message}`);
   error.code = "CJS_WEBGPU_RENDER_TARGET_INVALID";
   throw error;
 }
@@ -52,7 +52,7 @@ function positiveSize(value, name)
 
 
 /** Owns a WebGPU presentation surface and its per-frame attachments. */
-export class CjsWebGPURenderTarget
+export class CjsWebgpuRenderTarget
 {
   #webgpu;
 
@@ -83,7 +83,7 @@ export class CjsWebGPURenderTarget
   #destroyed = false;
 
   /**
-   * @param {object} webgpu CjsWebGPUDevice-compatible boundary.
+   * @param {object} webgpu CjsWebgpuDevice-compatible boundary.
    * @param {object} options Target options.
    * @param {object} options.canvas Canvas or OffscreenCanvas to present to.
    * @param {object} [options.context] Pre-acquired WebGPU canvas context.
@@ -338,7 +338,7 @@ export class CjsWebGPURenderTarget
     if (this.#sampleCount > 1)
     {
       const texture = device.createTexture({
-        label: "CjsWebGPURenderTarget.multisample",
+        label: "CjsWebgpuRenderTarget.multisample",
         size: { width: this.#width, height: this.#height, depthOrArrayLayers: 1 },
         sampleCount: this.#sampleCount,
         format: this.#format,
@@ -352,7 +352,7 @@ export class CjsWebGPURenderTarget
       // Same size and sample count as the colour attachment, which is what
       // beginRenderPass validates and what a stale depth texture violates.
       const texture = device.createTexture({
-        label: "CjsWebGPURenderTarget.depth",
+        label: "CjsWebgpuRenderTarget.depth",
         size: { width: this.#width, height: this.#height, depthOrArrayLayers: 1 },
         sampleCount: this.#sampleCount,
         format: this.#depthFormat,

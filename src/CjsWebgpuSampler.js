@@ -1,10 +1,10 @@
 import { cloneJson } from "./core/freeze.js";
-import { CjsWebGPUResource } from "./CjsWebGPUResource.js";
+import { CjsWebgpuResource } from "./CjsWebgpuResource.js";
 
 /**
  * Immutable WebGPU-facing sampler binding descriptor.
  */
-export class CjsWebGPUSampler extends CjsWebGPUResource
+export class CjsWebgpuSampler extends CjsWebgpuResource
 {
 
   /**

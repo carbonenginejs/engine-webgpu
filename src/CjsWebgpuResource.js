@@ -3,7 +3,7 @@ import { cloneJson, deepFreeze } from "./core/freeze.js";
 /**
  * Immutable WebGPU-facing binding/resource descriptor.
  */
-export class CjsWebGPUResource
+export class CjsWebgpuResource
 {
 
   /**
@@ -13,12 +13,12 @@ export class CjsWebGPUResource
   {
     if (values.identity !== undefined && (typeof values.identity !== "string" || !values.identity))
     {
-      throw new TypeError("CjsWebGPUResource identity must be a non-empty string when provided");
+      throw new TypeError("CjsWebgpuResource identity must be a non-empty string when provided");
     }
     if (values.scopeIdentity !== undefined
       && (typeof values.scopeIdentity !== "string" || !values.scopeIdentity))
     {
-      throw new TypeError("CjsWebGPUResource scopeIdentity must be a non-empty string when provided");
+      throw new TypeError("CjsWebgpuResource scopeIdentity must be a non-empty string when provided");
     }
     this.key = String(values.key || "");
     this.name = String(values.name || "");
@@ -53,7 +53,7 @@ export class CjsWebGPUResource
     // single texture; null means the binding is fed directly.
     this.transformId = values.transformId ? String(values.transformId) : null;
     this.arrayLayerCount = Number.isInteger(values.arrayLayerCount) ? values.arrayLayerCount : null;
-    if (new.target === CjsWebGPUResource)
+    if (new.target === CjsWebgpuResource)
     {
       Object.freeze(this);
     }

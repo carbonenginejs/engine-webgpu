@@ -1,10 +1,10 @@
 import { cloneJson } from "./core/freeze.js";
-import { CjsWebGPUResource } from "./CjsWebGPUResource.js";
+import { CjsWebgpuResource } from "./CjsWebgpuResource.js";
 
 /**
  * Immutable WebGPU-facing texture binding descriptor.
  */
-export class CjsWebGPUTexture extends CjsWebGPUResource
+export class CjsWebgpuTexture extends CjsWebgpuResource
 {
 
   /**

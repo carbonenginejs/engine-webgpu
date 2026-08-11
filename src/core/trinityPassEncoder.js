@@ -1,6 +1,6 @@
 function fail(message)
 {
-  const error = new Error(`CjsWebGPUTrinityPassEncoder: ${message}`);
+  const error = new Error(`CjsWebgpuTrinityPassEncoder: ${message}`);
   error.code = "CJS_WEBGPU_TRINITY_PASS_INVALID";
   throw error;
 }
@@ -60,12 +60,12 @@ function normalizePass(entry, index)
  * Attachment lifetime, descriptors, pass order, batch-type order, technique
  * selection, command-buffer completion, and submission all remain external.
  */
-export class CjsWebGPUTrinityPassEncoder
+export class CjsWebgpuTrinityPassEncoder
 {
   #dispatcher;
 
   /**
-   * Creates an encoder over a CjsWebGPUTrinityBatchDispatcher-compatible
+   * Creates an encoder over a CjsWebgpuTrinityBatchDispatcher-compatible
    * boundary.
    */
   constructor(dispatcher)

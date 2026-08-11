@@ -1,4 +1,4 @@
-import { CjsWebGPUPackage } from "../CjsWebGPUPackage.js";
+import { CjsWebgpuPackage } from "../CjsWebgpuPackage.js";
 
 /**
  * Realize every translated body of an all-body package as pipeline
@@ -73,7 +73,7 @@ function shaderModuleKey(shader)
 /**
  * Build deduplicated prepare records for every translated body of a package.
  *
- * @param {CjsWebGPUPackage} pkg Package carrying a backend body source.
+ * @param {CjsWebgpuPackage} pkg Package carrying a backend body source.
  * @param {object} [options] Coverage options.
  * @param {number} [options.permutationCount] Permutation indices to resolve.
  * @returns {object} Prepare document plus body-set coverage.
@@ -155,7 +155,7 @@ export function buildBodySetPipelines(pkg, options = {})
 
       // Never reassign the producer's group/binding: the emitted WGSL
       // references them by number.
-      const unitPackage = CjsWebGPUPackage.from({
+      const unitPackage = CjsWebgpuPackage.from({
         sourcePath: `${source.sourcePath}#${pass.unitKey}`,
         analysis: unitAnalysis(pass, shaders),
         wgsl: {

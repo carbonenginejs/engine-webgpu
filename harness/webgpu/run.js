@@ -124,10 +124,10 @@ import {
     getQuadSailsV5ResourcePlan,
     validateQuadSailsV5PackagePair
 } from "/quadSailsV5Fixture.js";
-import { CjsWebGPUDevice } from "/CjsWebGPUDevice.js";
+import { CjsWebgpuDevice } from "/CjsWebgpuDevice.js";
 import { buildEveSpaceObjectMainUniformData } from "/spaceObjectMainBindings.js";
-import { CjsWebGPUTrinityBatchDispatcher } from "/trinityBatchDispatcher.js";
-import { CjsWebGPUTrinityPassEncoder } from "/trinityPassEncoder.js";
+import { CjsWebgpuTrinityBatchDispatcher } from "/trinityBatchDispatcher.js";
+import { CjsWebgpuTrinityPassEncoder } from "/trinityPassEncoder.js";
 
 const WIDTH = QUADV5_TARGET_WIDTH;
 const HEIGHT = QUADV5_TARGET_HEIGHT;
@@ -2453,7 +2453,7 @@ function CreateQuadV5TrinityBatchMap(record, fixture, renderCase)
 
 function CreateQuadV5TrinityDispatcher(webgpu, fixture)
 {
-    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+    return new CjsWebgpuTrinityBatchDispatcher(webgpu, {
         ResolveMaterial(record, _batch, context)
         {
             Assert(
@@ -2566,7 +2566,7 @@ function CreateQuadDetailV5TrinityBatchMap(record, fixture, renderCase)
 
 function CreateQuadDetailV5TrinityDispatcher(webgpu, fixture)
 {
-    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+    return new CjsWebgpuTrinityBatchDispatcher(webgpu, {
         ResolveMaterial(record, _batch, context)
         {
             Assert(
@@ -2680,7 +2680,7 @@ function CreateQuadOilV5TrinityBatchMap(record, fixture, resourceVariant)
 
 function CreateQuadOilV5TrinityDispatcher(webgpu, fixture)
 {
-    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+    return new CjsWebgpuTrinityBatchDispatcher(webgpu, {
         ResolveMaterial(record, _batch, context)
         {
             Assert(
@@ -2797,7 +2797,7 @@ function CreateQuadSailsV5TrinityBatchMap(record, fixture, renderCase)
 
 function CreateQuadSailsV5TrinityDispatcher(webgpu, fixture)
 {
-    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+    return new CjsWebgpuTrinityBatchDispatcher(webgpu, {
         ResolveMaterial(record, _batch, context)
         {
             Assert(
@@ -2921,7 +2921,7 @@ function CreateQuadGlassV5TrinityBatchMap(record, fixture, passIndex, resourceVa
 
 function CreateQuadGlassV5TrinityDispatcher(webgpu, fixture)
 {
-    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+    return new CjsWebgpuTrinityBatchDispatcher(webgpu, {
         ResolveMaterial(material, _batch, context)
         {
             Assert(
@@ -3046,7 +3046,7 @@ function CreateQuadHeatV5TrinityBatchMap(record, fixture, heatCase)
 
 function CreateQuadHeatV5TrinityDispatcher(webgpu, fixture)
 {
-    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+    return new CjsWebgpuTrinityBatchDispatcher(webgpu, {
         ResolveMaterial(record, _batch, context)
         {
             Assert(
@@ -3165,7 +3165,7 @@ function CreateDecalV5TrinityBatchMap(record, fixture, resourceVariant)
 
 function CreateDecalV5TrinityDispatcher(webgpu, fixture)
 {
-    return new CjsWebGPUTrinityBatchDispatcher(webgpu, {
+    return new CjsWebgpuTrinityBatchDispatcher(webgpu, {
         ResolveMaterial(record, _batch, context)
         {
             Assert(
@@ -4749,7 +4749,7 @@ async function RunQuadV5Comparison(webgpu)
     try
     {
         dispatcher = CreateQuadV5TrinityDispatcher(webgpu, fixture);
-        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+        passEncoder = new CjsWebgpuTrinityPassEncoder(dispatcher);
         for (const record of records)
         {
             for (const renderCase of fixture.caseNames)
@@ -5003,7 +5003,7 @@ async function RunQuadDetailV5Comparison(webgpu)
             "QuadDetailV5 cases must isolate PPT, Detail1, and Detail2 in order"
         );
         dispatcher = CreateQuadDetailV5TrinityDispatcher(webgpu, fixture);
-        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+        passEncoder = new CjsWebgpuTrinityPassEncoder(dispatcher);
         for (const record of records)
         {
             for (const renderCase of fixture.caseNames)
@@ -5234,7 +5234,7 @@ async function RunQuadOilV5Comparison(webgpu)
     try
     {
         dispatcher = CreateQuadOilV5TrinityDispatcher(webgpu, fixture);
-        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+        passEncoder = new CjsWebgpuTrinityPassEncoder(dispatcher);
         for (const record of records)
         {
             for (const resourceVariant of fixture.resourceVariantNames)
@@ -5456,7 +5456,7 @@ async function RunQuadSailsV5Comparison(webgpu)
     try
     {
         dispatcher = CreateQuadSailsV5TrinityDispatcher(webgpu, fixture);
-        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+        passEncoder = new CjsWebgpuTrinityPassEncoder(dispatcher);
         for (const record of records)
         {
             for (const renderCase of fixture.caseNames)
@@ -5713,7 +5713,7 @@ async function RunQuadGlassV5Comparison(webgpu)
     try
     {
         dispatcher = CreateQuadGlassV5TrinityDispatcher(webgpu, fixture);
-        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+        passEncoder = new CjsWebgpuTrinityPassEncoder(dispatcher);
         for (const record of records)
         {
             for (const passIndex of [ 0, 1 ])
@@ -5935,7 +5935,7 @@ async function RunQuadHeatV5Comparison(webgpu)
     try
     {
         dispatcher = CreateQuadHeatV5TrinityDispatcher(webgpu, fixture);
-        passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+        passEncoder = new CjsWebgpuTrinityPassEncoder(dispatcher);
         Assert(
             JSON.stringify(fixture.caseNames) === JSON.stringify(QUAD_HEAT_V5_CASES),
             "QuadHeatV5 thermal cases must be cold then hot"
@@ -6147,7 +6147,7 @@ async function RunDecalV5Comparison(webgpu)
     const device = webgpu.GetDevice();
     const fixture = await CreateDecalV5GpuResources(webgpu, records, profile);
     const dispatcher = CreateDecalV5TrinityDispatcher(webgpu, fixture);
-    const passEncoder = new CjsWebGPUTrinityPassEncoder(dispatcher);
+    const passEncoder = new CjsWebgpuTrinityPassEncoder(dispatcher);
     const instances = [];
     let warningCount = 0;
     try
@@ -6444,7 +6444,7 @@ async function RunHarness()
     let webgpu;
     try
     {
-        webgpu = await CjsWebGPUDevice.Request({
+        webgpu = await CjsWebgpuDevice.Request({
             gpu: navigator.gpu,
             adapterOptions: { powerPreference: "low-power" },
             shaderStage: GPUShaderStage

@@ -3,7 +3,7 @@ import { cloneJson, deepFreeze } from "./core/freeze.js";
 /**
  * Immutable WebGPU-facing bind-group descriptor.
  */
-export class CjsWebGPUBindGroup
+export class CjsWebgpuBindGroup
 {
 
   /**

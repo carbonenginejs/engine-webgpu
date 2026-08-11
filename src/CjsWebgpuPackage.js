@@ -5,18 +5,18 @@ import { deepFreeze } from "./core/freeze.js";
 /**
  * Immutable descriptor-only consumer for `CEWGPU` package data.
  */
-export class CjsWebGPUPackage
+export class CjsWebgpuPackage
 {
 
   /**
    * Create a descriptor package from plain package data.
    *
    * @param {object} value Plain package data from `format-webgpu`.
-   * @returns {CjsWebGPUPackage} Immutable descriptor package.
+   * @returns {CjsWebgpuPackage} Immutable descriptor package.
    */
   static from(value)
   {
-    return new CjsWebGPUPackage(value);
+    return new CjsWebgpuPackage(value);
   }
 
   /**
@@ -26,16 +26,16 @@ export class CjsWebGPUPackage
    * @param {object} options Options with an injected `read` function.
    * @param {Function} options.read Reader such as `CjsWebgpuFormat.read`.
    * @param {object} [options.readOptions] Options forwarded to `read`.
-   * @returns {CjsWebGPUPackage} Immutable descriptor package.
+   * @returns {CjsWebgpuPackage} Immutable descriptor package.
    */
   static fromBytes(bytes, options = {})
   {
     if (typeof options.read !== "function")
     {
-      throw new TypeError("CjsWebGPUPackage.fromBytes: options.read must be a function such as CjsWebgpuFormat.read");
+      throw new TypeError("CjsWebgpuPackage.fromBytes: options.read must be a function such as CjsWebgpuFormat.read");
     }
 
-    return CjsWebGPUPackage.from(options.read(bytes, options.readOptions || {}));
+    return CjsWebgpuPackage.from(options.read(bytes, options.readOptions || {}));
   }
 
   /**

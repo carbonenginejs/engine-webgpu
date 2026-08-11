@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CjsWebGPUTrinityPassEncoder } from "../src/core/trinityPassEncoder.js";
+import { CjsWebgpuTrinityPassEncoder } from "../src/core/trinityPassEncoder.js";
 
 function boundary(rejectType = null)
 {
@@ -35,7 +35,7 @@ function boundary(rejectType = null)
 test("Trinity pass encoder preserves caller pass and batch-type order", () =>
 {
   const target = boundary();
-  const encoder = new CjsWebGPUTrinityPassEncoder(target.dispatcher);
+  const encoder = new CjsWebgpuTrinityPassEncoder(target.dispatcher);
   const mainMap = { id: "main-map" };
   const depthMap = { id: "depth-map" };
   const mainDescriptor = { label: "main" };
@@ -89,7 +89,7 @@ test("Trinity pass encoder preserves caller pass and batch-type order", () =>
 test("Trinity pass encoder validates the complete structural plan before beginning", () =>
 {
   const target = boundary();
-  const encoder = new CjsWebGPUTrinityPassEncoder(target.dispatcher);
+  const encoder = new CjsWebgpuTrinityPassEncoder(target.dispatcher);
   assert.throws(
     () => encoder.Encode(target.commandEncoder, [
       { descriptor: {}, selections: [] },
@@ -107,7 +107,7 @@ test("Trinity pass encoder validates the complete structural plan before beginni
 test("Trinity pass encoder ends a begun pass when configuration or dispatch fails", () =>
 {
   const rejected = boundary(2);
-  const encoder = new CjsWebGPUTrinityPassEncoder(rejected.dispatcher);
+  const encoder = new CjsWebgpuTrinityPassEncoder(rejected.dispatcher);
   assert.throws(
     () => encoder.Encode(rejected.commandEncoder, [ {
       descriptor: { label: "failing" },
@@ -122,7 +122,7 @@ test("Trinity pass encoder ends a begun pass when configuration or dispatch fail
 
   const asynchronous = boundary();
   assert.throws(
-    () => new CjsWebGPUTrinityPassEncoder(asynchronous.dispatcher).Encode(
+    () => new CjsWebgpuTrinityPassEncoder(asynchronous.dispatcher).Encode(
       asynchronous.commandEncoder,
       [ { descriptor: {}, configure: async () => {}, selections: [] } ]
     ),

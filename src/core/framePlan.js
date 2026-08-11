@@ -27,7 +27,7 @@
 
 function fail(message)
 {
-  const error = new Error(`CjsWebGPUFramePlan: ${message}`);
+  const error = new Error(`CjsWebgpuFramePlan: ${message}`);
   error.code = "CJS_WEBGPU_FRAME_PLAN_INVALID";
   throw error;
 }

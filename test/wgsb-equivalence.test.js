@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { CjsWebGPUPackage } from "../src/index.js";
+import { CjsWebgpuPackage } from "../src/index.js";
 
 /**
  * Equivalence between the WGSB path and the legacy WGSL-chunk path, on real
@@ -108,11 +108,11 @@ test("WGSB-derived and WGSL-chunk-derived pipelines agree on every GPU-determini
       source: fixturePath("allbody", backend),
       emit: CjsWebgpuFormat.OUTPUT_RAW
     });
-    const allBody = CjsWebGPUPackage.fromBytes(allBodyBytes, {
+    const allBody = CjsWebgpuPackage.fromBytes(allBodyBytes, {
       read: CjsWebgpuFormat.read,
       readOptions: { source: fixturePath("allbody", backend), emit: CjsWebgpuFormat.OUTPUT_RAW }
     });
-    const selected = CjsWebGPUPackage.fromBytes(selectedBytes, {
+    const selected = CjsWebgpuPackage.fromBytes(selectedBytes, {
       read: CjsWebgpuFormat.read,
       readOptions: { source: fixturePath("ppt-main", backend) }
     });
@@ -143,7 +143,7 @@ test("WGSB-derived and WGSL-chunk-derived pipelines agree on every GPU-determini
     const main = body.passes.find((pass) => pass.passKey === "Main.pass0");
     assert.ok(main, `${backend}: the resolved body has no Main.pass0`);
 
-    const wgsbPackage = CjsWebGPUPackage.from({
+    const wgsbPackage = CjsWebgpuPackage.from({
       sourcePath: fixturePath("allbody", backend),
       analysis: {
         passes: [ { techniqueName: "Main", passIndex: 0, renderStates: 0, states: [] } ],

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CjsWebGPUFrameExecutor } from "../src/core/frameExecutor.js";
+import { CjsWebgpuFrameExecutor } from "../src/core/frameExecutor.js";
 import { PlanFrame } from "../src/core/framePlan.js";
 
 function segment(...intents)
@@ -54,7 +54,7 @@ function setup(options = {})
     }
   };
 
-  const executor = new CjsWebGPUFrameExecutor(webgpu, {
+  const executor = new CjsWebgpuFrameExecutor(webgpu, {
     renderTarget,
     passEncoder,
     ResolveSelections: options.ResolveSelections
@@ -66,7 +66,7 @@ function setup(options = {})
   return { calls, commandBuffer, executor, frame, renderTarget };
 }
 
-test("CjsWebGPUFrameExecutor encodes one frame into one encoder and submits once", () =>
+test("CjsWebgpuFrameExecutor encodes one frame into one encoder and submits once", () =>
 {
   const { calls, commandBuffer, executor } = setup();
   const plan = PlanFrame([ segment(
@@ -84,7 +84,7 @@ test("CjsWebGPUFrameExecutor encodes one frame into one encoder and submits once
   assert.equal(calls.filter(([ name ]) => name === "acquire").length, 1, "the canvas texture is acquired once");
 });
 
-test("CjsWebGPUFrameExecutor spells the clear the planner already decided", () =>
+test("CjsWebgpuFrameExecutor spells the clear the planner already decided", () =>
 {
   const { calls, executor } = setup();
   const plan = PlanFrame([ segment(
@@ -106,7 +106,7 @@ test("CjsWebGPUFrameExecutor spells the clear the planner already decided", () =
   assert.equal(descriptors[1].clearDepth, undefined, "depth loads because nothing asked to clear it");
 });
 
-test("CjsWebGPUFrameExecutor refuses to silently drop compute or transfer work", () =>
+test("CjsWebgpuFrameExecutor refuses to silently drop compute or transfer work", () =>
 {
   const plan = PlanFrame([ segment(draw("a"), compute(), draw("b")) ]);
 
@@ -123,7 +123,7 @@ test("CjsWebGPUFrameExecutor refuses to silently drop compute or transfer work",
   assert.equal(result.encodedRegions, 3, "compute is encoded in order between the two render regions");
 });
 
-test("CjsWebGPUFrameExecutor treats no selections as a pass worth skipping", () =>
+test("CjsWebgpuFrameExecutor treats no selections as a pass worth skipping", () =>
 {
   const { calls, executor } = setup({ ResolveSelections: (region, index) => (index === 0 ? [] : [ { preparedBatchMap: {}, batchType: 2 } ]) });
   const plan = PlanFrame([ segment(
@@ -140,7 +140,7 @@ test("CjsWebGPUFrameExecutor treats no selections as a pass worth skipping", () 
   assert.deepEqual(calls.filter(([ name ]) => name === "encode").map(entry => entry[1]), [ "region 1" ]);
 });
 
-test("CjsWebGPUFrameExecutor submits nothing when a plan encodes nothing", () =>
+test("CjsWebgpuFrameExecutor submits nothing when a plan encodes nothing", () =>
 {
   const { calls, executor } = setup({ ResolveSelections: () => [] });
   const plan = PlanFrame([ segment(draw("a")) ]);
@@ -149,7 +149,7 @@ test("CjsWebGPUFrameExecutor submits nothing when a plan encodes nothing", () =>
   assert.equal(calls.some(([ name ]) => name === "submit"), false, "an empty command buffer is not worth submitting");
 });
 
-test("CjsWebGPUFrameExecutor lets a caller own the descriptor for offscreen targets", () =>
+test("CjsWebgpuFrameExecutor lets a caller own the descriptor for offscreen targets", () =>
 {
   // A region targeting something other than the backbuffer needs attachments
   // this module does not own, so the descriptor is the caller's to supply.
@@ -172,18 +172,18 @@ test("CjsWebGPUFrameExecutor lets a caller own the descriptor for offscreen targ
   assert.equal(calls.some(([ name ]) => name === "descriptor"), false, "the target's own descriptor is not built");
 });
 
-test("CjsWebGPUFrameExecutor validates what it was composed with", () =>
+test("CjsWebgpuFrameExecutor validates what it was composed with", () =>
 {
   const { renderTarget } = setup();
   const passEncoder = { Encode() {} };
   const webgpu = { GetDevice: () => ({}), Submit() {} };
 
-  assert.throws(() => new CjsWebGPUFrameExecutor({}, { renderTarget, passEncoder, ResolveSelections: () => [] }), /GetDevice/);
-  assert.throws(() => new CjsWebGPUFrameExecutor(webgpu, { passEncoder, ResolveSelections: () => [] }), /render target requires/);
-  assert.throws(() => new CjsWebGPUFrameExecutor(webgpu, { renderTarget, ResolveSelections: () => [] }), /pass encoder requires Encode/);
-  assert.throws(() => new CjsWebGPUFrameExecutor(webgpu, { renderTarget, passEncoder }), /ResolveSelections is required/);
+  assert.throws(() => new CjsWebgpuFrameExecutor({}, { renderTarget, passEncoder, ResolveSelections: () => [] }), /GetDevice/);
+  assert.throws(() => new CjsWebgpuFrameExecutor(webgpu, { passEncoder, ResolveSelections: () => [] }), /render target requires/);
+  assert.throws(() => new CjsWebgpuFrameExecutor(webgpu, { renderTarget, ResolveSelections: () => [] }), /pass encoder requires Encode/);
+  assert.throws(() => new CjsWebgpuFrameExecutor(webgpu, { renderTarget, passEncoder }), /ResolveSelections is required/);
 
-  const executor = new CjsWebGPUFrameExecutor(webgpu, { renderTarget, passEncoder, ResolveSelections: () => [] });
+  const executor = new CjsWebgpuFrameExecutor(webgpu, { renderTarget, passEncoder, ResolveSelections: () => [] });
   assert.throws(() => executor.ExecuteFrame(null), /frame plan with regions/);
   assert.throws(() => executor.ExecuteFrame({ regions: [] }), /createCommandEncoder is required/);
 });

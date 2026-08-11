@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CjsWebGPUDevice } from "../src/index.js";
-import { CjsWebGPUEncodeState } from "../src/core/batchGroups.js";
+import { CjsWebgpuDevice } from "../src/index.js";
+import { CjsWebgpuEncodeState } from "../src/core/batchGroups.js";
 
 const SHADER_STAGE = Object.freeze({ VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 });
 const BUFFER_USAGE = Object.freeze({ UNIFORM: 16, COPY_DST: 32, VERTEX: 64, INDEX: 128 });
@@ -424,11 +424,11 @@ function adapterResourceSlot()
   };
 }
 
-test("CjsWebGPUDevice prepares canonical layouts and realizes an explicit pipeline/draw recipe", async () =>
+test("CjsWebgpuDevice prepares canonical layouts and realizes an explicit pipeline/draw recipe", async () =>
 {
   const fake = fakeDevice();
   fake.device.compilation.set("Main.pass0.fragment", [ { type: "warning", message: "portable warning", lineNum: 2 } ]);
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
 
   const prepared = await webgpu.PreparePipeline(pipelineDescriptor());
   assert.equal(prepared.generation, 1);
@@ -482,10 +482,10 @@ test("CjsWebGPUDevice prepares canonical layouts and realizes an explicit pipeli
   assert.deepEqual(fake.device.calls.find(([ kind ]) => kind === "submit")[1], commandBuffers);
 });
 
-test("CjsWebGPUDevice encodes indexed draws without taking ownership of caller resources", async () =>
+test("CjsWebgpuDevice encodes indexed draws without taking ownership of caller resources", async () =>
 {
   const fake = fakeDevice();
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   const live = await webgpu.CreateRenderPipeline(pipelineDescriptor(), renderRecipe());
   const indexBuffer = { kind: "indexBuffer" };
   const draw = webgpu.CreateDraw(live, {
@@ -509,10 +509,10 @@ test("CjsWebGPUDevice encodes indexed draws without taking ownership of caller r
   assert.equal(indexBuffer.kind, "indexBuffer");
 });
 
-test("CjsWebGPUDevice owns explicit geometry uploads and integrates them with indexed draws", async () =>
+test("CjsWebgpuDevice owns explicit geometry uploads and integrates them with indexed draws", async () =>
 {
   const fake = fakeDevice("geometry");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -577,10 +577,10 @@ test("CjsWebGPUDevice owns explicit geometry uploads and integrates them with in
   assert.throws(() => webgpu.EncodeDraw({ setPipeline() {} }, draw), /draw geometry is destroyed/i);
 });
 
-test("CjsWebGPUDevice geometry supports non-indexed and instanced capacities", async () =>
+test("CjsWebgpuDevice geometry supports non-indexed and instanced capacities", async () =>
 {
   const fake = fakeDevice("non-indexed-geometry");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -642,10 +642,10 @@ test("CjsWebGPUDevice geometry supports non-indexed and instanced capacities", a
   geometry.Destroy();
 });
 
-test("CjsWebGPUDevice geometry validation fails closed and cleans partial uploads", async () =>
+test("CjsWebgpuDevice geometry validation fails closed and cleans partial uploads", async () =>
 {
   const fake = fakeDevice("geometry-errors");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -718,11 +718,11 @@ test("CjsWebGPUDevice geometry validation fails closed and cleans partial upload
   assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyBuffer").length, destroyedBeforeFailure + 1);
 });
 
-test("CjsWebGPUDevice geometry observes validation and out-of-memory scopes atomically", async () =>
+test("CjsWebgpuDevice geometry observes validation and out-of-memory scopes atomically", async () =>
 {
   const validationFake = fakeDevice("geometry-native-validation");
   validationFake.device.validationErrors.push({ message: "invalid native geometry" });
-  const validationDevice = new CjsWebGPUDevice({
+  const validationDevice = new CjsWebgpuDevice({
     device: validationFake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -737,7 +737,7 @@ test("CjsWebGPUDevice geometry observes validation and out-of-memory scopes atom
 
   const memoryFake = fakeDevice("geometry-native-memory");
   memoryFake.device.validationErrors.push(null, { message: "geometry out of memory" });
-  const memoryDevice = new CjsWebGPUDevice({
+  const memoryDevice = new CjsWebgpuDevice({
     device: memoryFake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -750,7 +750,7 @@ test("CjsWebGPUDevice geometry observes validation and out-of-memory scopes atom
     { message: "invalid after failed allocation" },
     { message: "causal geometry out of memory" }
   );
-  const causalDevice = new CjsWebGPUDevice({
+  const causalDevice = new CjsWebgpuDevice({
     device: causalFake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -761,10 +761,10 @@ test("CjsWebGPUDevice geometry observes validation and out-of-memory scopes atom
   );
 });
 
-test("CjsWebGPUDevice geometry draws validate ownership, layouts, modes, and ranges", async () =>
+test("CjsWebgpuDevice geometry draws validate ownership, layouts, modes, and ranges", async () =>
 {
   const fake = fakeDevice("geometry-draw-errors");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -840,7 +840,7 @@ test("CjsWebGPUDevice geometry draws validate ownership, layouts, modes, and ran
   }), /baseVertex must be a GPUSignedOffset32 value/i);
 
   const other = fakeDevice("other-geometry-device");
-  const otherDevice = new CjsWebGPUDevice({
+  const otherDevice = new CjsWebgpuDevice({
     device: other.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -860,12 +860,12 @@ test("CjsWebGPUDevice geometry draws validate ownership, layouts, modes, and ran
   }), /geometry is destroyed/i);
 });
 
-test("CjsWebGPUDevice rejects stale geometry after device recreation", async () =>
+test("CjsWebgpuDevice rejects stale geometry after device recreation", async () =>
 {
   const first = fakeDevice("stale-geometry-first");
   const second = fakeDevice("stale-geometry-second");
   const adapter = { requestDevice: async () => second.device };
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     gpu: { requestAdapter: async () => adapter },
     adapter,
     device: first.device,
@@ -889,10 +889,10 @@ test("CjsWebGPUDevice rejects stale geometry after device recreation", async () 
   assert.equal(first.device.calls.filter(([ kind ]) => kind === "destroyBuffer").length, 1);
 });
 
-test("CjsWebGPUDevice owns explicit 2D texture uploads and unwraps them for bindings", async () =>
+test("CjsWebgpuDevice owns explicit 2D texture uploads and unwraps them for bindings", async () =>
 {
   const fake = fakeDevice("texture");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE,
@@ -983,10 +983,10 @@ test("CjsWebGPUDevice owns explicit 2D texture uploads and unwraps them for bind
   bindingSet.Destroy();
 });
 
-test("CjsWebGPUDevice preserves linear and sRGB QuadV5 texture bytes", async () =>
+test("CjsWebgpuDevice preserves linear and sRGB QuadV5 texture bytes", async () =>
 {
   const fake = fakeDevice("texture-formats");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1021,10 +1021,10 @@ test("CjsWebGPUDevice preserves linear and sRGB QuadV5 texture bytes", async () 
   assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 3);
 });
 
-test("CjsWebGPUDevice creates 2d-array textures as layered 2d textures with an array view", async () =>
+test("CjsWebgpuDevice creates 2d-array textures as layered 2d textures with an array view", async () =>
 {
   const fake = fakeDevice("texture-array");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1077,10 +1077,10 @@ test("CjsWebGPUDevice creates 2d-array textures as layered 2d textures with an a
   assert.equal(plain.viewDimension, "2d");
 });
 
-test("CjsWebGPUDevice array-texture creation and binding fail closed on a mismatch", async () =>
+test("CjsWebgpuDevice array-texture creation and binding fail closed on a mismatch", async () =>
 {
   const fake = fakeDevice("texture-array-errors");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1125,10 +1125,10 @@ test("CjsWebGPUDevice array-texture creation and binding fail closed on a mismat
   fake.device.limits = {};
 });
 
-test("CjsWebGPUDevice texture validation and native error scopes fail closed", async () =>
+test("CjsWebgpuDevice texture validation and native error scopes fail closed", async () =>
 {
   const fake = fakeDevice("texture-errors");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1184,7 +1184,7 @@ test("CjsWebGPUDevice texture validation and native error scopes fail closed", a
     popCount += 1;
     return popCount === 1 ? firstPop.promise : Promise.resolve(null);
   };
-  const popDevice = new CjsWebGPUDevice({
+  const popDevice = new CjsWebgpuDevice({
     device: popFake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1197,18 +1197,18 @@ test("CjsWebGPUDevice texture validation and native error scopes fail closed", a
   completedTexture.Destroy();
 });
 
-test("CjsWebGPUDevice rejects foreign and stale texture handles", async () =>
+test("CjsWebgpuDevice rejects foreign and stale texture handles", async () =>
 {
   const first = fakeDevice("texture-owner");
   const second = fakeDevice("texture-foreign");
   const recreated = fakeDevice("texture-recreated");
-  const owner = new CjsWebGPUDevice({
+  const owner = new CjsWebgpuDevice({
     gpu: { requestAdapter: async () => ({ requestDevice: async () => recreated.device }) },
     device: first.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
   });
-  const foreign = new CjsWebGPUDevice({
+  const foreign = new CjsWebgpuDevice({
     device: second.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1231,10 +1231,10 @@ test("CjsWebGPUDevice rejects foreign and stale texture handles", async () =>
   texture.Destroy();
 });
 
-test("CjsWebGPUDevice normalizes, caches, unwraps, and logically releases samplers", async () =>
+test("CjsWebgpuDevice normalizes, caches, unwraps, and logically releases samplers", async () =>
 {
   const fake = fakeDevice("sampler");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -1345,10 +1345,10 @@ test("CjsWebGPUDevice normalizes, caches, unwraps, and logically releases sample
   bindingSet.Destroy();
 });
 
-test("CjsWebGPUDevice enforces WebGPU sampler binding compatibility", async () =>
+test("CjsWebgpuDevice enforces WebGPU sampler binding compatibility", async () =>
 {
   const fake = fakeDevice("sampler-layouts");
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   const nearest = await webgpu.CreateSampler({ label: "nearest" });
   const nearestExplicit = await webgpu.CreateSampler({
     label: "explicit defaults",
@@ -1414,10 +1414,10 @@ test("CjsWebGPUDevice enforces WebGPU sampler binding compatibility", async () =
   comparisonLinear.Destroy();
 });
 
-test("CjsWebGPUDevice canonicalizes sampler LODs and anisotropy before caching", async () =>
+test("CjsWebgpuDevice canonicalizes sampler LODs and anisotropy before caching", async () =>
 {
   const fake = fakeDevice("sampler-canonical");
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   const rounded = await webgpu.CreateSampler({
     label: "rounded lod",
     lodMinClamp: 0.100000001,
@@ -1460,10 +1460,10 @@ test("CjsWebGPUDevice canonicalizes sampler LODs and anisotropy before caching",
   maximumAnisotropy.Destroy();
 });
 
-test("CjsWebGPUDevice validates sampler descriptors and does not cache native failures", async () =>
+test("CjsWebgpuDevice validates sampler descriptors and does not cache native failures", async () =>
 {
   const fake = fakeDevice("sampler-errors");
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   await assert.rejects(webgpu.CreateSampler({ unknown: true }), /sampler has unsupported unknown/i);
   await assert.rejects(webgpu.CreateSampler(new Date()), /sampler options must be a plain object/i);
   await assert.rejects(webgpu.CreateSampler({ addressModeU: "border" }), /addressModeU has unsupported border/i);
@@ -1496,17 +1496,17 @@ test("CjsWebGPUDevice validates sampler descriptors and does not cache native fa
   cached.Destroy();
 });
 
-test("CjsWebGPUDevice rejects foreign and stale sampler handles and resets the cache", async () =>
+test("CjsWebgpuDevice rejects foreign and stale sampler handles and resets the cache", async () =>
 {
   const first = fakeDevice("sampler-owner");
   const second = fakeDevice("sampler-foreign");
   const recreated = fakeDevice("sampler-recreated");
-  const owner = new CjsWebGPUDevice({
+  const owner = new CjsWebgpuDevice({
     gpu: { requestAdapter: async () => ({ requestDevice: async () => recreated.device }) },
     device: first.device,
     shaderStage: SHADER_STAGE
   });
-  const foreign = new CjsWebGPUDevice({ device: second.device, shaderStage: SHADER_STAGE });
+  const foreign = new CjsWebgpuDevice({ device: second.device, shaderStage: SHADER_STAGE });
   const sampler = await owner.CreateSampler(samplerInputs());
   const foreignLive = await foreign.CreateRenderPipeline(pipelineDescriptor(), renderRecipe());
   const values = resources();
@@ -1529,10 +1529,10 @@ test("CjsWebGPUDevice rejects foreign and stale sampler handles and resets the c
   replacement.Destroy();
 });
 
-test("CjsWebGPUDevice maps and publishes already-selected sampler state", async () =>
+test("CjsWebgpuDevice maps and publishes already-selected sampler state", async () =>
 {
   const fake = fakeDevice("sampler-realization");
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   const selected = {
     payloadType: "webgpu-sampler",
     label: "selected material sampler",
@@ -1573,10 +1573,10 @@ test("CjsWebGPUDevice maps and publishes already-selected sampler state", async 
   second.Destroy();
 });
 
-test("CjsWebGPUDevice sampler realization fails closed without selecting policy", async () =>
+test("CjsWebgpuDevice sampler realization fails closed without selecting policy", async () =>
 {
   const fake = fakeDevice("sampler-realization-validation");
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   const resource = adapterResourceSlot();
   const selected = {
     payloadType: "webgpu-sampler",
@@ -1646,10 +1646,10 @@ test("CjsWebGPUDevice sampler realization fails closed without selecting policy"
   comparison.Destroy();
 });
 
-test("CjsWebGPUDevice maps and realizes a published canonical RGBA8 payload", async () =>
+test("CjsWebgpuDevice maps and realizes a published canonical RGBA8 payload", async () =>
 {
   const fake = fakeDevice("rgba8-realization");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1675,10 +1675,10 @@ test("CjsWebGPUDevice maps and realizes a published canonical RGBA8 payload", as
   bundle.Destroy();
 });
 
-test("CjsWebGPUDevice RGBA8 realization preserves linear bytes and fails closed on unsupported payloads", async () =>
+test("CjsWebgpuDevice RGBA8 realization preserves linear bytes and fails closed on unsupported payloads", async () =>
 {
   const fake = fakeDevice("rgba8-realization-validation");
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE, textureUsage: TEXTURE_USAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE, textureUsage: TEXTURE_USAGE });
   const resource = adapterResourceSlot();
   const linear = decodedRgba8Inputs({ colorSpace: "linear", alphaMode: "opaque" });
   resource.payload = linear;
@@ -1732,10 +1732,10 @@ test("CjsWebGPUDevice RGBA8 realization preserves linear bytes and fails closed 
   mapped.Destroy();
 });
 
-test("CjsWebGPUDevice atomically realizes and owns keyed prepared resource bundles", async () =>
+test("CjsWebgpuDevice atomically realizes and owns keyed prepared resource bundles", async () =>
 {
   const fake = fakeDevice("resource-bundle");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE,
@@ -1787,10 +1787,10 @@ test("CjsWebGPUDevice atomically realizes and owns keyed prepared resource bundl
   assert.throws(() => webgpu.EncodeDraw(pass, draw), /(geometry|texture) is destroyed/i);
 });
 
-test("CjsWebGPUDevice resource bundles await all children and roll back every fulfilled allocation", async () =>
+test("CjsWebgpuDevice resource bundles await all children and roll back every fulfilled allocation", async () =>
 {
   const early = fakeDevice("resource-bundle-early-failure");
-  const earlyWebgpu = new CjsWebGPUDevice({
+  const earlyWebgpu = new CjsWebgpuDevice({
     device: early.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1806,7 +1806,7 @@ test("CjsWebGPUDevice resource bundles await all children and roll back every fu
 
   const late = fakeDevice("resource-bundle-late-failure");
   late.device.textureError = new Error("late texture creation failed");
-  const lateWebgpu = new CjsWebGPUDevice({
+  const lateWebgpu = new CjsWebgpuDevice({
     device: late.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE,
@@ -1827,7 +1827,7 @@ test("CjsWebGPUDevice resource bundles await all children and roll back every fu
     if (textureAttempts === 1) throw new Error("first queued texture failed");
     return createTexture(descriptor);
   };
-  const recoveredWebgpu = new CjsWebGPUDevice({
+  const recoveredWebgpu = new CjsWebgpuDevice({
     device: recovered.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1842,7 +1842,7 @@ test("CjsWebGPUDevice resource bundles await all children and roll back every fu
   assert.equal(recovered.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 1);
 });
 
-test("CjsWebGPUDevice resource bundles reject mixed generations and clean old and new allocations", async () =>
+test("CjsWebgpuDevice resource bundles reject mixed generations and clean old and new allocations", async () =>
 {
   const first = fakeDevice("resource-bundle-generation-one");
   const second = fakeDevice("resource-bundle-generation-two");
@@ -1860,7 +1860,7 @@ test("CjsWebGPUDevice resource bundles reject mixed generations and clean old an
     }
     return popErrorScope();
   };
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     gpu: { requestAdapter: async () => ({ requestDevice: async () => second.device }) },
     device: first.device,
     shaderStage: SHADER_STAGE,
@@ -1880,10 +1880,10 @@ test("CjsWebGPUDevice resource bundles reject mixed generations and clean old an
   assert.equal(second.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 1);
 });
 
-test("CjsWebGPUDevice publishes prepared bundles through one guarded adapter slot", async () =>
+test("CjsWebgpuDevice publishes prepared bundles through one guarded adapter slot", async () =>
 {
   const fake = fakeDevice("resource-realization");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1921,10 +1921,10 @@ test("CjsWebGPUDevice publishes prepared bundles through one guarded adapter slo
   assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 3);
 });
 
-test("CjsWebGPUDevice shares one in-flight realization per resource and adapter key", async () =>
+test("CjsWebgpuDevice shares one in-flight realization per resource and adapter key", async () =>
 {
   const fake = fakeDevice("resource-realization-concurrent");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1949,10 +1949,10 @@ test("CjsWebGPUDevice shares one in-flight realization per resource and adapter 
   first.Destroy();
 });
 
-test("CjsWebGPUDevice realization failures restore an existing adapter bundle", async () =>
+test("CjsWebgpuDevice realization failures restore an existing adapter bundle", async () =>
 {
   const fake = fakeDevice("resource-realization-rollback");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -1981,11 +1981,11 @@ test("CjsWebGPUDevice realization failures restore an existing adapter bundle", 
   assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 3);
 });
 
-test("CjsWebGPUDevice reruns realization after device recreation while CPU data remains resident", async () =>
+test("CjsWebgpuDevice reruns realization after device recreation while CPU data remains resident", async () =>
 {
   const first = fakeDevice("resource-realization-generation-one");
   const second = fakeDevice("resource-realization-generation-two");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     gpu: { requestAdapter: async () => ({ requestDevice: async () => second.device }) },
     device: first.device,
     shaderStage: SHADER_STAGE,
@@ -2007,10 +2007,10 @@ test("CjsWebGPUDevice reruns realization after device recreation while CPU data 
   assert.equal(second.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 1);
 });
 
-test("CjsWebGPUDevice destroys a candidate when its resource becomes stale during realization", async () =>
+test("CjsWebgpuDevice destroys a candidate when its resource becomes stale during realization", async () =>
 {
   const fake = fakeDevice("resource-realization-stale-target");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -2039,16 +2039,16 @@ test("CjsWebGPUDevice destroys a candidate when its resource becomes stale durin
   assert.equal(fake.device.calls.filter(([ kind ]) => kind === "destroyTexture").length, 1);
 });
 
-test("CjsWebGPUDevice resource publication descriptors and ownership fail closed", async () =>
+test("CjsWebgpuDevice resource publication descriptors and ownership fail closed", async () =>
 {
   const ownerFake = fakeDevice("resource-owner");
   const foreignFake = fakeDevice("resource-foreign");
-  const owner = new CjsWebGPUDevice({
+  const owner = new CjsWebgpuDevice({
     device: ownerFake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
   });
-  const foreign = new CjsWebGPUDevice({ device: foreignFake.device, shaderStage: SHADER_STAGE });
+  const foreign = new CjsWebgpuDevice({ device: foreignFake.device, shaderStage: SHADER_STAGE });
 
   await assert.rejects(owner.CreateResourceBundle({}), /must contain at least one/i);
   await assert.rejects(owner.CreateResourceBundle(new Date()), /must be a plain object/i);
@@ -2076,10 +2076,10 @@ test("CjsWebGPUDevice resource publication descriptors and ownership fail closed
   bundle.Destroy();
 });
 
-test("CjsWebGPUDevice owns validated uniform buffers through opaque binding sets", async () =>
+test("CjsWebgpuDevice owns validated uniform buffers through opaque binding sets", async () =>
 {
   const fake = fakeDevice("binding-set");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -2122,10 +2122,10 @@ test("CjsWebGPUDevice owns validated uniform buffers through opaque binding sets
   assert.equal(typeof inputs.resources.get("sampled-resource:0:0").destroy, "undefined");
 });
 
-test("CjsWebGPUDevice consumes stage-scoped structured and texture t0 resources", async () =>
+test("CjsWebgpuDevice consumes stage-scoped structured and texture t0 resources", async () =>
 {
   const fake = fakeDevice("stage-scoped-bindings");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -2171,10 +2171,10 @@ test("CjsWebGPUDevice consumes stage-scoped structured and texture t0 resources"
   bindingSet.Destroy();
 });
 
-test("CjsWebGPUDevice binding sets fail closed and clean partial allocations", async () =>
+test("CjsWebgpuDevice binding sets fail closed and clean partial allocations", async () =>
 {
   const fake = fakeDevice("binding-set-errors");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE
@@ -2224,10 +2224,10 @@ test("CjsWebGPUDevice binding sets fail closed and clean partial allocations", a
   bindingSet.Destroy();
 });
 
-test("CjsWebGPUDevice rejects incomplete or non-canonical live recipes", async () =>
+test("CjsWebgpuDevice rejects incomplete or non-canonical live recipes", async () =>
 {
   const fake = fakeDevice();
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   await assert.rejects(webgpu.CreateRenderPipeline(pipelineDescriptor(), {}), /recipe\.vertex\.buffers must be an array/i);
 
   // Marked dynamic in the package but not in the layout. WebGPU would reject
@@ -2263,29 +2263,29 @@ test("CjsWebGPUDevice rejects incomplete or non-canonical live recipes", async (
   }), /missing resource sampler:0:0/i);
 });
 
-test("CjsWebGPUDevice reports compilation/validation failures with balanced error scopes", async () =>
+test("CjsWebgpuDevice reports compilation/validation failures with balanced error scopes", async () =>
 {
   const compileFake = fakeDevice("compile-error");
   compileFake.device.compilation.set("Main.pass0.vertex", [ { type: "error", message: "bad vertex", lineNum: 7 } ]);
-  const compileDevice = new CjsWebGPUDevice({ device: compileFake.device, shaderStage: SHADER_STAGE });
+  const compileDevice = new CjsWebgpuDevice({ device: compileFake.device, shaderStage: SHADER_STAGE });
   await assert.rejects(compileDevice.PreparePipeline(pipelineDescriptor()), /vertex WGSL diagnostics: bad vertex/i);
   assert.equal(compileFake.device.calls.filter(([ kind ]) => kind === "pushErrorScope").length, 1);
   assert.equal(compileFake.device.calls.filter(([ kind ]) => kind === "popErrorScope").length, 1);
 
   const validationFake = fakeDevice("validation-error");
   validationFake.device.validationErrors.push({ message: "bad layout" });
-  const validationDevice = new CjsWebGPUDevice({ device: validationFake.device, shaderStage: SHADER_STAGE });
+  const validationDevice = new CjsWebgpuDevice({ device: validationFake.device, shaderStage: SHADER_STAGE });
   await assert.rejects(validationDevice.PreparePipeline(pipelineDescriptor()), /preparation validation failed: bad layout/i);
   assert.equal(validationFake.device.calls.filter(([ kind ]) => kind === "pushErrorScope").length, 1);
   assert.equal(validationFake.device.calls.filter(([ kind ]) => kind === "popErrorScope").length, 1);
 });
 
-test("CjsWebGPUDevice serializes device-wide validation scopes and snapshots descriptors", async () =>
+test("CjsWebgpuDevice serializes device-wide validation scopes and snapshots descriptors", async () =>
 {
   const fake = fakeDevice("concurrent");
   const gate = deferred();
   fake.device.compilationWaits.set("Main.pass0.vertex", gate);
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   const firstDescriptor = pipelineDescriptor();
   const first = webgpu.PreparePipeline(firstDescriptor);
   await Promise.resolve();
@@ -2310,10 +2310,10 @@ test("CjsWebGPUDevice serializes device-wide validation scopes and snapshots des
   assert.equal(fake.device.calls.find(([ kind ]) => kind === "createBindGroupLayout")[1].entries[0].buffer.minBindingSize, 64);
 });
 
-test("CjsWebGPUDevice pops render-pipeline validation scope before awaiting async creation", async () =>
+test("CjsWebgpuDevice pops render-pipeline validation scope before awaiting async creation", async () =>
 {
   const fake = fakeDevice("pipeline-scope");
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   const prepared = await webgpu.PreparePipeline(pipelineDescriptor());
   const gate = deferred();
   fake.device.pipelineWait = gate;
@@ -2328,10 +2328,10 @@ test("CjsWebGPUDevice pops render-pipeline validation scope before awaiting asyn
   await creation;
 });
 
-test("CjsWebGPUDevice preserves zero-count draws and immutable validated draw snapshots", async () =>
+test("CjsWebgpuDevice preserves zero-count draws and immutable validated draw snapshots", async () =>
 {
   const fake = fakeDevice("zero-draw");
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   const live = await webgpu.CreateRenderPipeline(pipelineDescriptor(), renderRecipe());
   const vertexBuffer = { kind: "originalVertexBuffer" };
   const vertexEntry = { slot: 0, buffer: vertexBuffer, offset: 0 };
@@ -2363,13 +2363,13 @@ test("CjsWebGPUDevice preserves zero-count draws and immutable validated draw sn
   }), /indexCount must be a GPUSize32 value/i);
 });
 
-test("CjsWebGPUDevice invalidates stale objects across recreation and device loss", async () =>
+test("CjsWebgpuDevice invalidates stale objects across recreation and device loss", async () =>
 {
   const first = fakeDevice("first");
   const second = fakeDevice("second");
   const adapter = { requestDevice: async () => second.device };
   const gpu = { requestAdapter: async () => adapter };
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     gpu,
     adapter,
     device: first.device,
@@ -2397,13 +2397,13 @@ test("CjsWebGPUDevice invalidates stale objects across recreation and device los
   assert.throws(() => webgpu.GetDevice(), /device is lost/i);
 });
 
-test("CjsWebGPUDevice cannot be resurrected by an in-flight recreation", async () =>
+test("CjsWebgpuDevice cannot be resurrected by an in-flight recreation", async () =>
 {
   const first = fakeDevice("destroy-race-first");
   const acquired = fakeDevice("destroy-race-acquired");
   const adapterGate = deferred();
   const gpu = { requestAdapter: async () => adapterGate.promise };
-  const webgpu = new CjsWebGPUDevice({ gpu, device: first.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ gpu, device: first.device, shaderStage: SHADER_STAGE });
   const recreation = webgpu.Recreate();
   await Promise.resolve();
   webgpu.Destroy();
@@ -2415,7 +2415,7 @@ test("CjsWebGPUDevice cannot be resurrected by an in-flight recreation", async (
   assert.equal(acquired.device.calls.filter(([ kind ]) => kind === "destroy").length, 1);
 });
 
-test("CjsWebGPUDevice lets only the latest overlapping recreation commit", async () =>
+test("CjsWebgpuDevice lets only the latest overlapping recreation commit", async () =>
 {
   const initial = fakeDevice("overlap-initial");
   const older = fakeDevice("overlap-older");
@@ -2430,7 +2430,7 @@ test("CjsWebGPUDevice lets only the latest overlapping recreation commit", async
       return { requestDevice: async () => newer.device };
     }
   };
-  const webgpu = new CjsWebGPUDevice({ gpu, device: initial.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ gpu, device: initial.device, shaderStage: SHADER_STAGE });
   const firstRecreation = webgpu.Recreate();
   await Promise.resolve();
   const secondRecreation = webgpu.Recreate();
@@ -2443,10 +2443,10 @@ test("CjsWebGPUDevice lets only the latest overlapping recreation commit", async
   assert.equal(newer.device.calls.filter(([ kind ]) => kind === "destroy").length, 0);
 });
 
-test("CjsWebGPUDevice.Request keeps adapter policy explicit and reports unavailable WebGPU", async () =>
+test("CjsWebgpuDevice.Request keeps adapter policy explicit and reports unavailable WebGPU", async () =>
 {
-  await assert.rejects(CjsWebGPUDevice.Request({ gpu: null, shaderStage: SHADER_STAGE }), /WebGPU is unavailable/i);
-  await assert.rejects(CjsWebGPUDevice.Request({
+  await assert.rejects(CjsWebgpuDevice.Request({ gpu: null, shaderStage: SHADER_STAGE }), /WebGPU is unavailable/i);
+  await assert.rejects(CjsWebgpuDevice.Request({
     gpu: { requestAdapter: async () => null },
     shaderStage: SHADER_STAGE
   }), /requestAdapter returned null/i);
@@ -2469,16 +2469,16 @@ test("CjsWebGPUDevice.Request keeps adapter policy explicit and reports unavaila
       return adapter;
     }
   };
-  const webgpu = await CjsWebGPUDevice.Request({ gpu, adapterOptions, deviceDescriptor, shaderStage: SHADER_STAGE });
+  const webgpu = await CjsWebgpuDevice.Request({ gpu, adapterOptions, deviceDescriptor, shaderStage: SHADER_STAGE });
   assert.deepEqual(seen, [ [ "adapter", adapterOptions ], [ "device", deviceDescriptor ] ]);
   assert.equal(webgpu.GetAdapter(), adapter);
   assert.equal(webgpu.GetDevice(), fake.device);
 });
 
-test("CjsWebGPUDevice elides the sets a run's first batch already performed", async () =>
+test("CjsWebgpuDevice elides the sets a run's first batch already performed", async () =>
 {
   const fake = fakeDevice();
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   const prepared = await webgpu.PreparePipeline(pipelineDescriptor());
   const live = await webgpu.CreateRenderPipeline(prepared, renderRecipe());
 
@@ -2514,7 +2514,7 @@ test("CjsWebGPUDevice elides the sets a run's first batch already performed", as
   // applies per-object constants per batch for the same reason, so this is the
   // correct shape rather than a missed elision.
   passCalls.length = 0;
-  const state = new CjsWebGPUEncodeState();
+  const state = new CjsWebgpuEncodeState();
   webgpu.EncodeDraw(pass, first, state);
   webgpu.EncodeDraw(pass, second, state);
   assert.deepEqual(passCalls.map((entry) => entry[0]), [
@@ -2525,10 +2525,10 @@ test("CjsWebGPUDevice elides the sets a run's first batch already performed", as
   assert.throws(() => webgpu.EncodeDraw({ setPipeline() {} }, first, state), /another render pass/i);
 });
 
-test("CjsWebGPUDevice reuses a prepared pipeline and a render pipeline by identity", async () =>
+test("CjsWebgpuDevice reuses a prepared pipeline and a render pipeline by identity", async () =>
 {
   const fake = fakeDevice();
-  const webgpu = new CjsWebGPUDevice({ device: fake.device, shaderStage: SHADER_STAGE });
+  const webgpu = new CjsWebgpuDevice({ device: fake.device, shaderStage: SHADER_STAGE });
   const count = (kind) => fake.device.calls.filter(([ name ]) => name === kind).length;
 
   // Without an identity nothing is cached, which is never wrong, only slower.
@@ -2557,12 +2557,12 @@ test("CjsWebGPUDevice reuses a prepared pipeline and a render pipeline by identi
   assert.equal(count("createRenderPipelineAsync"), 2);
 });
 
-test("CjsWebGPUDevice drops cached pipelines when the device is replaced", async () =>
+test("CjsWebgpuDevice drops cached pipelines when the device is replaced", async () =>
 {
   const fake = fakeDevice();
   const replacement = fakeDevice("replacement");
   const adapter = { requestDevice: async () => replacement.device };
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     gpu: { requestAdapter: async () => adapter },
     adapter,
     device: fake.device,
@@ -2580,11 +2580,11 @@ test("CjsWebGPUDevice drops cached pipelines when the device is replaced", async
   assert.equal(replacement.device.calls.filter(([ name ]) => name === "createShaderModule").length, 2);
 });
 
-test("CjsWebGPUDevice uploads a compressed mip chain one level at a time", async () =>
+test("CjsWebgpuDevice uploads a compressed mip chain one level at a time", async () =>
 {
   const fake = fakeDevice("compressed");
   fake.device.features = new Set([ "texture-compression-bc" ]);
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     textureUsage: TEXTURE_USAGE
@@ -2631,10 +2631,10 @@ function dynamicDescriptor()
   return descriptor;
 }
 
-test("CjsWebGPUDevice re-aims a dynamic binding per draw instead of per buffer", async () =>
+test("CjsWebgpuDevice re-aims a dynamic binding per draw instead of per buffer", async () =>
 {
   const fake = fakeDevice("dynamic");
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE,
@@ -2673,18 +2673,18 @@ test("CjsWebGPUDevice re-aims a dynamic binding per draw instead of per buffer",
 
   // Two objects sharing one ring buffer. The bind group object is identical, so
   // a state cache would elide the second set - and both would draw from slot 0.
-  const state = new CjsWebGPUEncodeState();
+  const state = new CjsWebgpuEncodeState();
   webgpu.EncodeDraw(pass, first, state);
   webgpu.EncodeDraw(pass, second, state);
 
   assert.deepEqual(calls.map((args) => args[2]), [ [ 0 ], [ 256 ] ]);
 });
 
-test("CjsWebGPUDevice refuses dynamic offsets it cannot honour", async () =>
+test("CjsWebgpuDevice refuses dynamic offsets it cannot honour", async () =>
 {
   const fake = fakeDevice("dynamic-invalid");
   fake.device.limits = { minUniformBufferOffsetAlignment: 256 };
-  const webgpu = new CjsWebGPUDevice({
+  const webgpu = new CjsWebgpuDevice({
     device: fake.device,
     shaderStage: SHADER_STAGE,
     bufferUsage: BUFFER_USAGE,

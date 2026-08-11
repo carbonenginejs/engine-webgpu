@@ -128,7 +128,7 @@ function translateBlend(pipeline)
  * Validate and normalize the bounded package-driven copyblit draw contract.
  * The result is browser-safe JSON; numeric slots are preserved verbatim.
  *
- * @param {object} pipeline CjsWebGPUPipeline.ToJSON() output.
+ * @param {object} pipeline CjsWebgpuPipeline.ToJSON() output.
  * @returns {object} Frozen package draw descriptor.
  */
 export function buildCopyblitDrawDescriptor(pipeline)

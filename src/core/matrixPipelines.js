@@ -1,4 +1,4 @@
-import { CjsWebGPUPackage } from "../CjsWebGPUPackage.js";
+import { CjsWebgpuPackage } from "../CjsWebgpuPackage.js";
 
 function fail(message)
 {
@@ -410,7 +410,7 @@ export function buildMatrixPipelines(matrix)
         new Set(variant.stageDigests.map((entry) => entry.stageName)),
         id
       );
-      const pkg = CjsWebGPUPackage.from({
+      const pkg = CjsWebgpuPackage.from({
         sourcePath: record.sourcePath || backend,
         analysis: passAnalysis(variant),
         wgsl: variant.wgsl

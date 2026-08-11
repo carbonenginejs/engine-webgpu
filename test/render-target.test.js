@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CjsWebGPURenderTarget } from "../src/core/renderTarget.js";
+import { CjsWebgpuRenderTarget } from "../src/core/renderTarget.js";
 
 const TEXTURE_USAGE = Object.freeze({ RENDER_ATTACHMENT: 16, TEXTURE_BINDING: 4, COPY_DST: 8 });
 
@@ -54,7 +54,7 @@ function fakeSetup(options = {})
   };
 
   const canvas = { width: 0, height: 0, getContext: (type) => (type === "webgpu" ? context : null) };
-  const target = new CjsWebGPURenderTarget(webgpu, {
+  const target = new CjsWebgpuRenderTarget(webgpu, {
     canvas,
     textureUsage: TEXTURE_USAGE,
     gpu: { getPreferredCanvasFormat: () => "bgra8unorm" },
@@ -64,7 +64,7 @@ function fakeSetup(options = {})
   return { canvas, configureCalls, context, created, device, target, webgpu };
 }
 
-test("CjsWebGPURenderTarget configures the canvas and sizes its attachments", () =>
+test("CjsWebgpuRenderTarget configures the canvas and sizes its attachments", () =>
 {
   const { canvas, configureCalls, created, target } = fakeSetup({ depthFormat: "depth24plus" });
 
@@ -82,7 +82,7 @@ test("CjsWebGPURenderTarget configures the canvas and sizes its attachments", ()
   assert.equal(depth.descriptor.format, "depth24plus");
 });
 
-test("CjsWebGPURenderTarget reconfigures only when something changed", () =>
+test("CjsWebgpuRenderTarget reconfigures only when something changed", () =>
 {
   const { configureCalls, created, target } = fakeSetup({ depthFormat: "depth24plus" });
 
@@ -98,7 +98,7 @@ test("CjsWebGPURenderTarget reconfigures only when something changed", () =>
   assert.deepEqual(created.at(-1).descriptor.size, { width: 1024, height: 600, depthOrArrayLayers: 1 });
 });
 
-test("CjsWebGPURenderTarget treats a device generation change as a full rebuild", () =>
+test("CjsWebgpuRenderTarget treats a device generation change as a full rebuild", () =>
 {
   const { configureCalls, created, target, webgpu } = fakeSetup({ depthFormat: "depth24plus" });
 
@@ -116,7 +116,7 @@ test("CjsWebGPURenderTarget treats a device generation change as a full rebuild"
   assert.throws(() => target.CreateRenderPassDescriptor(frame), /stale/i);
 });
 
-test("CjsWebGPURenderTarget rejects a canvas view reused across frames", () =>
+test("CjsWebgpuRenderTarget rejects a canvas view reused across frames", () =>
 {
   const { target } = fakeSetup();
 
@@ -134,7 +134,7 @@ test("CjsWebGPURenderTarget rejects a canvas view reused across frames", () =>
   assert.ok(target.CreateRenderPassDescriptor(second));
 });
 
-test("CjsWebGPURenderTarget clears through load operations, not a draw", () =>
+test("CjsWebgpuRenderTarget clears through load operations, not a draw", () =>
 {
   const { target } = fakeSetup({ depthFormat: "depth24plus" });
   target.Configure({ width: 64, height: 64 });
@@ -154,7 +154,7 @@ test("CjsWebGPURenderTarget clears through load operations, not a draw", () =>
   assert.equal(loaded.colorAttachments[0].resolveTarget, undefined, "no multisampling means no resolve");
 });
 
-test("CjsWebGPURenderTarget resolves multisampled colour into the canvas", () =>
+test("CjsWebgpuRenderTarget resolves multisampled colour into the canvas", () =>
 {
   const { created, target } = fakeSetup({ sampleCount: 4, depthFormat: "depth24plus" });
   target.Configure({ width: 128, height: 128 });
@@ -171,7 +171,7 @@ test("CjsWebGPURenderTarget resolves multisampled colour into the canvas", () =>
   assert.notEqual(frame.colorView, frame.resolveView);
 });
 
-test("CjsWebGPURenderTarget applies viewport and scissor per pass", () =>
+test("CjsWebgpuRenderTarget applies viewport and scissor per pass", () =>
 {
   const { target } = fakeSetup();
   target.Configure({ width: 800, height: 600 });
@@ -195,7 +195,7 @@ test("CjsWebGPURenderTarget applies viewport and scissor per pass", () =>
   );
 });
 
-test("CjsWebGPURenderTarget refuses work it cannot do", () =>
+test("CjsWebgpuRenderTarget refuses work it cannot do", () =>
 {
   const { target } = fakeSetup();
 
@@ -213,7 +213,7 @@ test("CjsWebGPURenderTarget refuses work it cannot do", () =>
   target.Destroy();
 });
 
-test("CjsWebGPURenderTarget releases what it created and leaves the canvas alone", () =>
+test("CjsWebgpuRenderTarget releases what it created and leaves the canvas alone", () =>
 {
   const { canvas, context, created, target } = fakeSetup({ sampleCount: 4, depthFormat: "depth24plus" });
   target.Configure({ width: 64, height: 64 });

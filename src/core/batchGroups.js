@@ -102,7 +102,7 @@ export function DeriveBatchGroups(batches, resolveDraw = handle => handle?.draw)
  * failure would appear as geometry drawn with a previous pass's buffers, which
  * is exactly the class of bug this file exists to prevent.
  */
-export class CjsWebGPUEncodeState
+export class CjsWebgpuEncodeState
 {
   #pass = null;
 
@@ -120,7 +120,7 @@ export class CjsWebGPUEncodeState
     if (this.#pass === null) this.#pass = pass;
     else if (this.#pass !== pass)
     {
-      const error = new Error("CjsWebGPUEncodeState: encode state belongs to another render pass");
+      const error = new Error("CjsWebgpuEncodeState: encode state belongs to another render pass");
       error.code = "CJS_WEBGPU_ENCODE_STATE_INVALID";
       throw error;
     }

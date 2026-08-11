@@ -38,7 +38,7 @@ does not close phase zero; at least one documented runner must pass the required
 command. Ordinary `npm.cmd test` descriptor tests remain GPU-free.
 
 The browser acquires, prepares, realizes, encodes, and submits through
-`CjsWebGPUDevice`. The portable probe uploads its packed triangle and sampler
+`CjsWebgpuDevice`. The portable probe uploads its packed triangle and sampler
 through an atomic `CreateResourceBundle(...)`. Its 1x1 pixel instead starts as
 the canonical decoded RGBA record, passes through
 `RealizeRgba8Texture(...)`, and enters a separate guarded adapter
@@ -52,7 +52,7 @@ The static/skinned QuadV5, PPT-on skinned QuadHeatV5, static and PPT-on
 skinned two-pass QuadGlassV5, PPT-off static and PPT-on skinned QuadSailsV5,
 PPT-on static and skinned QuadDetailV5, PPT-off skinned QuadOilV5, and
 cold/hot PPT-off static QuadHeatV5 modes additionally route each draw through the internal
-`CjsWebGPUTrinityBatchDispatcher`. The fixtures
+`CjsWebgpuTrinityBatchDispatcher`. The fixtures
 construct the duck-typed fields of a transient `Tr2RenderBatch` inside a
 finalized ordinary-batch accumulator and a one-type batch-map shape. The
 caller selects the opaque batch type's render pass; injected hooks resolve its
@@ -641,7 +641,7 @@ seven-axis contract; skinned QuadDetailV5 carries its exact six-axis contract.
 Skinned QuadOilV5 carries its exact five-axis PPT-off contract.
 The launcher
 reads each file directly, decodes it with `CjsWebgpuFormat`, and constructs
-`CjsWebGPUPackage`. The runtime-resource format reader participates, but no
+`CjsWebgpuPackage`. The runtime-resource format reader participates, but no
 resource manager, runtime-core/runtime-trinity runtime, or Trinity graph
 participates in this gate.
 
@@ -656,7 +656,7 @@ from it, or infer production defaults. The 2D textures, geometry, and samplers
 are atomically realized and published as one device resource bundle. Its
 harness-local structural adapter slot does not assert a `CjsResource` or
 runtime integration contract.
-`CjsWebGPUDevice.CreateGeometry(...)`
+`CjsWebgpuDevice.CreateGeometry(...)`
 owns the silhouette's native vertex/index buffers, exposes the exact frozen 64-byte
 common vertex layout, validates draw capacity and device generation, and
 releases all owned buffers idempotently. The skinned gate adds an 8-byte
@@ -665,7 +665,7 @@ releases all owned buffers idempotently. The skinned gate adds an 8-byte
 rotation and translation. The readback must show the transformed silhouette
 at variant-specific anchors and horizontal coverage bounds, so an
 identity-only, hard-coded-zero, or wrong-stride skinning path cannot pass.
-`CjsWebGPUDevice.CreateTexture(...)` snapshots and
+`CjsWebgpuDevice.CreateTexture(...)` snapshots and
 uploads each `rgba8unorm`/`rgba8unorm-srgb` payload, exposes only a generation-
 bound handle, unwraps its private view at the canonical texture binding, and
 releases the native texture idempotently. The environment cube remains
@@ -682,7 +682,7 @@ linear/anisotropic state reflected by the DX11 package, including maximum
 anisotropy 16; the two dynamic pattern samplers use explicit harness-authored
 state. The bundle
 owns all three handle categories, while binding sets own none of them.
-For each pipeline, `CjsWebGPUDevice.CreateBindingSet(...)` validates canonical
+For each pipeline, `CjsWebgpuDevice.CreateBindingSet(...)` validates canonical
 identities, allocates/uploads five engine-owned uniform buffers, creates the
 native bind group, and destroys only those owned buffers. Static
 `Main.pass0` uses six active vertex attributes and 19 canonical bindings.
@@ -962,12 +962,12 @@ full production resource lifetime remain outstanding. The final engine
 publication stage itself is implemented and exercised.
 
 The `--prepare-cewgpu` and `--prepare-matrix` modes read through
-`format-webgpu` and `CjsWebGPUPackage`, compile WGSL, create the canonical
+`format-webgpu` and `CjsWebgpuPackage`, compile WGSL, create the canonical
 bind-group/pipeline layouts, and require zero warnings. Those preparation-only
 modes deliberately stop before render-pipeline creation and drawing. The
 matrix mode additionally creates validation-only native compute pipelines
 through a harness-private helper served to the probe page; it performs no
-dispatch and does not widen the render-only public `CjsWebGPUDevice` API.
+dispatch and does not widen the render-only public `CjsWebgpuDevice` API.
 Unlike the ship-family draw flags, preparation requires no geometry or live
 resource fixtures.
 
@@ -985,8 +985,8 @@ npm.cmd run test:webgpu:required -- --draw-cewgpu .\artifacts\copyblit.cewgpu
 ```
 
 The Node launcher reads the package through `format-webgpu` and
-`CjsWebGPUPackage`, then serves only the validated pipeline descriptor. The
-`CjsWebGPUDevice` creates explicit bind-group and pipeline layouts from numeric
+`CjsWebgpuPackage`, then serves only the validated pipeline descriptor. The
+`CjsWebgpuDevice` creates explicit bind-group and pipeline layouts from numeric
 groups, bindings, visibility, and nested buffer/texture/sampler layouts.
 Fixture resources are selected by canonical scope identity. Version-2
 unshared bindings use `@vertex`, `@fragment`, or `@compute` keys even when the

@@ -38,7 +38,7 @@
 
 function fail(message)
 {
-  const error = new Error(`CjsWebGPUPipelineCache: ${message}`);
+  const error = new Error(`CjsWebgpuPipelineCache: ${message}`);
   error.code = "CJS_WEBGPU_PIPELINE_CACHE_INVALID";
   throw error;
 }
@@ -75,7 +75,7 @@ export function CanonicalKey(value)
  * silently winning. That matters more here than in Carbon: pipeline creation is
  * asynchronous on this backend and a frame legitimately prepares many at once.
  */
-export class CjsWebGPUPipelineCache
+export class CjsWebgpuPipelineCache
 {
   #entries = new Map();
 

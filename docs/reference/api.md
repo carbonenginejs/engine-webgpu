@@ -7,19 +7,19 @@ Summary: Lists the current public exports and their supported responsibilities.
 
 ## Package descriptors
 
-- `CjsWebGPUPackage` consumes decoded CEWGPU data and exposes immutable package
+- `CjsWebgpuPackage` consumes decoded CEWGPU data and exposes immutable package
   and pipeline records.
-- `CjsWebGPUPipeline`, `CjsWebGPUShaderModule`, `CjsWebGPUBindGroup`,
-  `CjsWebGPUResource`, `CjsWebGPUBuffer`, `CjsWebGPUTexture`, and
-  `CjsWebGPUSampler` represent immutable normalized descriptors.
+- `CjsWebgpuPipeline`, `CjsWebgpuShaderModule`, `CjsWebgpuBindGroup`,
+  `CjsWebgpuResource`, `CjsWebgpuBuffer`, `CjsWebgpuTexture`, and
+  `CjsWebgpuSampler` represent immutable normalized descriptors.
 
-Use `CjsWebGPUPackage.from(packageJson)` for decoded plain data or
-`CjsWebGPUPackage.fromBytes(bytes, { read, readOptions })` with an explicitly
+Use `CjsWebgpuPackage.from(packageJson)` for decoded plain data or
+`CjsWebgpuPackage.fromBytes(bytes, { read, readOptions })` with an explicitly
 injected reader function and optional reader options.
 
 ## Device boundary
 
-`CjsWebGPUDevice.Request(...)` acquires or accepts a WebGPU adapter and device.
+`CjsWebgpuDevice.Request(...)` acquires or accepts a WebGPU adapter and device.
 The device prepares CEWGPU pipelines, creates explicit geometry, RGBA8 2D or
 2D-array textures and samplers, builds binding sets, encodes draws, submits
 command buffers, and manages device generations.
@@ -28,7 +28,7 @@ The resource helpers accept complete caller-owned data. They do not select
 effects, resolve paths, infer vertex layouts, or create production uniform
 values.
 
-`CjsWebGPUPipeline.resourceTransforms` exposes validated immutable transform
+`CjsWebgpuPipeline.resourceTransforms` exposes validated immutable transform
 records, and `GetResourceTransform(scopeIdentity)` resolves the record carried
 by one merged binding. The current supported shape merges ordered 2D inputs
 into one 2D-array binding. The package validates the recipe and rewritten
@@ -36,7 +36,7 @@ layout; callers remain responsible for supplying compatible layer payloads and
 assembling them before `CreateTexture(...)`.
 
 The source tree also contains an internal
-`CjsWebGPUTrinityBatchDispatcher` conformance prototype. It is intentionally
+`CjsWebgpuTrinityBatchDispatcher` conformance prototype. It is intentionally
 not exported from the package root and is not part of the supported public API.
 Its batch, accumulator, and batch-map paths keep material/resource resolution
 and render-pass selection injected. Batch-map preparation supplies an
@@ -47,12 +47,12 @@ pipeline and one set of buffer bindings.
 Geometry resolution may additionally supply a validated `draw` override when
 the neutral batch carries an area range but no realized draw arguments.
 
-`CjsWebGPUTrinityStepRecorder` is another internal conformance prototype. It
+`CjsWebgpuTrinityStepRecorder` is another internal conformance prototype. It
 implements the duck-typed `Tr2RenderContext.SetStepExecutor(...)` callbacks,
 preserves nested render-step intent order, and defers asynchronous WebGPU work
 until after the synchronous render-job run.
 
-`CjsWebGPUTrinityPassEncoder` synchronously encodes caller-authored pass
+`CjsWebgpuTrinityPassEncoder` synchronously encodes caller-authored pass
 descriptors and prepared batch-map selections into an existing command
 encoder. It does not choose pass order, techniques, attachments, or submission.
 
@@ -139,13 +139,13 @@ its native resources are no longer needed.
 
 ```js
 import {
-  CjsWebGPUDevice,
-  CjsWebGPUPackage
+  CjsWebgpuDevice,
+  CjsWebgpuPackage
 } from "@carbonenginejs/engine-webgpu";
 
-const pkg = CjsWebGPUPackage.from(packageJson);
+const pkg = CjsWebgpuPackage.from(packageJson);
 const selectedPipeline = pkg.GetPipeline("Main", 0);
-const webgpu = await CjsWebGPUDevice.Request({
+const webgpu = await CjsWebgpuDevice.Request({
   gpu: navigator.gpu,
   shaderStage: GPUShaderStage
 });

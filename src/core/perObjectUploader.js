@@ -37,7 +37,7 @@
 
 function fail(message)
 {
-  const error = new Error(`CjsWebGPUPerObjectUploader: ${message}`);
+  const error = new Error(`CjsWebgpuPerObjectUploader: ${message}`);
   error.code = "CJS_WEBGPU_PER_OBJECT_UPLOAD_INVALID";
   throw error;
 }

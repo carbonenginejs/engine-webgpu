@@ -1,6 +1,6 @@
 function fail(message)
 {
-  const error = new Error(`CjsWebGPUTrinityStepRecorder: ${message}`);
+  const error = new Error(`CjsWebgpuTrinityStepRecorder: ${message}`);
   error.code = "CJS_WEBGPU_TRINITY_STEP_INVALID";
   throw error;
 }
@@ -39,7 +39,7 @@ function snapshotIntent(intent)
  * re-entrant nested jobs. WebGPU preparation and encoding intentionally happen
  * later, after the synchronous Trinity run has returned.
  */
-export class CjsWebGPUTrinityStepRecorder
+export class CjsWebgpuTrinityStepRecorder
 {
   #context = null;
 

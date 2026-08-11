@@ -1,11 +1,11 @@
 import { cloneJson, deepFreeze } from "./freeze.js";
-import { CjsWebGPUBindGroup } from "../CjsWebGPUBindGroup.js";
-import { CjsWebGPUBuffer } from "../CjsWebGPUBuffer.js";
-import { CjsWebGPUPipeline } from "../CjsWebGPUPipeline.js";
-import { CjsWebGPUResource } from "../CjsWebGPUResource.js";
-import { CjsWebGPUSampler } from "../CjsWebGPUSampler.js";
-import { CjsWebGPUShaderModule } from "../CjsWebGPUShaderModule.js";
-import { CjsWebGPUTexture } from "../CjsWebGPUTexture.js";
+import { CjsWebgpuBindGroup } from "../CjsWebgpuBindGroup.js";
+import { CjsWebgpuBuffer } from "../CjsWebgpuBuffer.js";
+import { CjsWebgpuPipeline } from "../CjsWebgpuPipeline.js";
+import { CjsWebgpuResource } from "../CjsWebgpuResource.js";
+import { CjsWebgpuSampler } from "../CjsWebgpuSampler.js";
+import { CjsWebgpuShaderModule } from "../CjsWebgpuShaderModule.js";
+import { CjsWebgpuTexture } from "../CjsWebgpuTexture.js";
 
 const TEXTURE_RESOURCE_TYPES = new Map([
   [ 1, "1d" ],
@@ -41,19 +41,19 @@ export function normalizePackageShape(value)
 {
   if (!value || typeof value !== "object")
   {
-    throw new TypeError("CjsWebGPUPackage.from: package data must be an object");
+    throw new TypeError("CjsWebgpuPackage.from: package data must be an object");
   }
 
   const analysis = value.analysis && typeof value.analysis === "object" ? cloneJson(value.analysis) : null;
   const wgsl = value.wgsl && typeof value.wgsl === "object" ? cloneJson(value.wgsl) : null;
   if (wgsl && (wgsl.format !== "CJS_WGSL_SET" || !WGSL_SET_VERSIONS.has(wgsl.formatVersion)))
   {
-    throw new Error("CjsWebGPUPackage.from: wgsl must be a CJS_WGSL_SET version 1, 2 or 3 document");
+    throw new Error("CjsWebgpuPackage.from: wgsl must be a CJS_WGSL_SET version 1, 2 or 3 document");
   }
   if (wgsl && ((wgsl.shaders !== undefined && !Array.isArray(wgsl.shaders))
     || (wgsl.layouts !== undefined && !Array.isArray(wgsl.layouts))))
   {
-    throw new Error("CjsWebGPUPackage.from: structured wgsl shaders and layouts must be arrays when provided");
+    throw new Error("CjsWebgpuPackage.from: structured wgsl shaders and layouts must be arrays when provided");
   }
   const resourceTransforms = wgsl ? normalizeResourceTransforms(wgsl) : [];
   const stages = Array.isArray(value.stages)
@@ -100,7 +100,7 @@ const TRANSFORM_STAGES = new Set([ "vertex", "fragment", "compute" ]);
 
 function transformFail(message)
 {
-  throw new Error(`CjsWebGPUPackage.from: ${message}`);
+  throw new Error(`CjsWebgpuPackage.from: ${message}`);
 }
 
 function nonEmptyString(value)
@@ -348,7 +348,7 @@ function normalizeResourceTransforms(wgsl)
  * Build immutable shader-module descriptors from normalized package data.
  *
  * @param {object} normalized Normalized package data.
- * @returns {CjsWebGPUShaderModule[]} Shader-module descriptors.
+ * @returns {CjsWebgpuShaderModule[]} Shader-module descriptors.
  */
 export function buildShaderModules(normalized)
 {
@@ -356,7 +356,7 @@ export function buildShaderModules(normalized)
   {
     const shader = matchShaderSource(stage, normalized.shaders);
     const threadGroupSize = resolveThreadGroupSize(stage, shader);
-    return new CjsWebGPUShaderModule({
+    return new CjsWebgpuShaderModule({
       key: stage.key || buildStageKey(stage),
       techniqueName: stage.techniqueName || "",
       passIndex: Number.isInteger(stage.passIndex) ? stage.passIndex : 0,
@@ -381,8 +381,8 @@ export function buildShaderModules(normalized)
  * modules.
  *
  * @param {object} normalized Normalized package data.
- * @param {CjsWebGPUShaderModule[]} shaderModules Shader modules.
- * @returns {{ pipelines: CjsWebGPUPipeline[], bindGroups: CjsWebGPUBindGroup[] }} Pipeline and bind-group descriptors.
+ * @param {CjsWebgpuShaderModule[]} shaderModules Shader modules.
+ * @returns {{ pipelines: CjsWebgpuPipeline[], bindGroups: CjsWebgpuBindGroup[] }} Pipeline and bind-group descriptors.
  */
 export function buildPipelines(normalized, shaderModules)
 {
@@ -434,7 +434,7 @@ export function buildPipelines(normalized, shaderModules)
         normalized.wgsl?.formatVersion ?? null,
         allTransforms.filter((entry) => entry.layoutKey === passKey)
       )
-      : [ new CjsWebGPUBindGroup({
+      : [ new CjsWebgpuBindGroup({
         key: `${buildPassKey(pass)}.bindings`,
         techniqueName: pass.techniqueName,
         passIndex: pass.passIndex,
@@ -442,7 +442,7 @@ export function buildPipelines(normalized, shaderModules)
       }) ];
 
     bindGroups.push(...passBindGroups);
-    pipelines.push(new CjsWebGPUPipeline({
+    pipelines.push(new CjsWebgpuPipeline({
       key: passKey,
       techniqueName: pass.techniqueName,
       passIndex: pass.passIndex,
@@ -463,9 +463,9 @@ export function buildPipelines(normalized, shaderModules)
  * Create the package descriptor JSON shape exposed by `ToJSON()`.
  *
  * @param {object} normalized Normalized package data.
- * @param {CjsWebGPUShaderModule[]} shaderModules Shader modules.
- * @param {CjsWebGPUPipeline[]} pipelines Pipelines.
- * @param {CjsWebGPUBindGroup[]} bindGroups Bind groups.
+ * @param {CjsWebgpuShaderModule[]} shaderModules Shader modules.
+ * @param {CjsWebgpuPipeline[]} pipelines Pipelines.
+ * @param {CjsWebgpuBindGroup[]} bindGroups Bind groups.
  * @returns {object} Plain JSON-compatible snapshot.
  */
 export function buildPackageJson(normalized, shaderModules, pipelines, bindGroups)
@@ -624,7 +624,7 @@ function buildCanonicalBindGroups(pass, layout, formatVersion, transforms = [])
       identities.set(scopeIdentity, fingerprint);
       return createCanonicalDescriptor(pass, binding, transforms);
     });
-    return new CjsWebGPUBindGroup({
+    return new CjsWebgpuBindGroup({
       key: `${buildPassKey(pass)}.group${groupRecord.group}`,
       techniqueName: pass.techniqueName,
       passIndex: pass.passIndex,
@@ -762,7 +762,7 @@ function createCanonicalDescriptor(pass, binding, transforms = [])
     }
     const uniform = binding.buffer.type === "uniform";
     const readWrite = binding.buffer.type === "storage";
-    return new CjsWebGPUBuffer({
+    return new CjsWebgpuBuffer({
       ...base,
       access: uniform ? "uniform" : readWrite ? "readWrite" : "readOnly",
       bufferKind: uniform
@@ -772,7 +772,7 @@ function createCanonicalDescriptor(pass, binding, transforms = [])
   }
   if (binding.texture)
   {
-    return new CjsWebGPUTexture({
+    return new CjsWebgpuTexture({
       ...base,
       access: "sampled",
       textureKind: binding.texture?.viewDimension || "2d",
@@ -782,9 +782,9 @@ function createCanonicalDescriptor(pass, binding, transforms = [])
   }
   if (binding.resourceKind === "sampler")
   {
-    return new CjsWebGPUSampler({ ...base, access: "sampling" });
+    return new CjsWebgpuSampler({ ...base, access: "sampling" });
   }
-  return new CjsWebGPUResource({ ...base, access: "readWrite" });
+  return new CjsWebgpuResource({ ...base, access: "readWrite" });
 }
 
 function mergeBindings(shaderModules)
@@ -823,10 +823,10 @@ function mergeDescriptorStages(current, next)
 
 function recreateDescriptor(current, value)
 {
-  if (current instanceof CjsWebGPUBuffer) return new CjsWebGPUBuffer(value);
-  if (current instanceof CjsWebGPUTexture) return new CjsWebGPUTexture(value);
-  if (current instanceof CjsWebGPUSampler) return new CjsWebGPUSampler(value);
-  return new CjsWebGPUResource(value);
+  if (current instanceof CjsWebgpuBuffer) return new CjsWebgpuBuffer(value);
+  if (current instanceof CjsWebgpuTexture) return new CjsWebgpuTexture(value);
+  if (current instanceof CjsWebgpuSampler) return new CjsWebgpuSampler(value);
+  return new CjsWebgpuResource(value);
 }
 
 function createBindingDescriptor(module, binding)
@@ -859,7 +859,7 @@ function createBindingDescriptor(module, binding)
 
   if (binding.kind === "constantBuffer")
   {
-    return new CjsWebGPUBuffer({
+    return new CjsWebgpuBuffer({
       ...base,
       access: "uniform",
       bufferKind: "constantBuffer"
@@ -868,7 +868,7 @@ function createBindingDescriptor(module, binding)
 
   if (binding.kind === "sampler")
   {
-    return new CjsWebGPUSampler({
+    return new CjsWebgpuSampler({
       ...base,
       access: "sampling"
     });
@@ -877,7 +877,7 @@ function createBindingDescriptor(module, binding)
   const carbonType = binding.carbon?.type;
   if (TEXTURE_RESOURCE_TYPES.has(carbonType))
   {
-    return new CjsWebGPUTexture({
+    return new CjsWebgpuTexture({
       ...base,
       access: binding.kind === "uav" ? "readWrite" : "sampled",
       textureKind: TEXTURE_RESOURCE_TYPES.get(carbonType),
@@ -888,14 +888,14 @@ function createBindingDescriptor(module, binding)
 
   if (BUFFER_RESOURCE_TYPES.has(carbonType))
   {
-    return new CjsWebGPUBuffer({
+    return new CjsWebgpuBuffer({
       ...base,
       access: binding.kind === "uav" ? "readWrite" : "readOnly",
       bufferKind: BUFFER_RESOURCE_TYPES.get(carbonType)
     });
   }
 
-  return new CjsWebGPUResource({
+  return new CjsWebgpuResource({
     ...base,
     access: binding.kind === "uav" ? "readWrite" : "readOnly"
   });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CjsWebGPUPackage } from "../src/index.js";
+import { CjsWebgpuPackage } from "../src/index.js";
 import { createBackendBodySource, isRawPackage } from "../src/core/backendBodySource.js";
 
 const SHA_A = "a".repeat(64);
@@ -153,8 +153,8 @@ function jsonPackage()
 
 test("raw and JSON package inputs converge on the same normalized descriptors", () =>
 {
-  const fromRaw = CjsWebGPUPackage.from(rawPackage());
-  const fromJson = CjsWebGPUPackage.from(jsonPackage());
+  const fromRaw = CjsWebgpuPackage.from(rawPackage());
+  const fromJson = CjsWebgpuPackage.from(jsonPackage());
 
   assert.equal(isRawPackage(rawPackage()), true);
   assert.equal(isRawPackage(jsonPackage()), false);
@@ -176,7 +176,7 @@ test("raw and JSON package inputs converge on the same normalized descriptors", 
 
 test("a raw package exposes its body set keyed by translation-unit identity", () =>
 {
-  const pkg = CjsWebGPUPackage.from(rawPackage());
+  const pkg = CjsWebgpuPackage.from(rawPackage());
   assert.equal(pkg.backendBodySource.bodyCount, 1);
   assert.equal(pkg.backendBodySource.unitCount, 2);
 
@@ -212,7 +212,7 @@ test("a raw body source clones the reader's live shared unit objects", () =>
 
 test("an unsupported body is a success return carrying its reason", () =>
 {
-  const pkg = CjsWebGPUPackage.from(rawPackage({
+  const pkg = CjsWebgpuPackage.from(rawPackage({
     bodies: [ {
       bodyKey: "body7",
       status: "unsupported",
@@ -230,7 +230,7 @@ test("an unsupported body is a success return carrying its reason", () =>
 
 test("a null resolution is named as an ingestion fault, never as an empty body", () =>
 {
-  const pkg = CjsWebGPUPackage.from(rawPackage());
+  const pkg = CjsWebgpuPackage.from(rawPackage());
   assert.throws(
     () => pkg.GetBackendBody(9),
     /resolved no backend body.*failed envelope validation.*permutation graph.*out of range/su
@@ -239,7 +239,7 @@ test("a null resolution is named as an ingestion fault, never as an empty body",
 
 test("a package with no body set is not an error", () =>
 {
-  const pkg = CjsWebGPUPackage.from(rawPackage({ backendBodySet: null }));
+  const pkg = CjsWebgpuPackage.from(rawPackage({ backendBodySet: null }));
   assert.equal(pkg.backendBodySource, null);
   assert.equal(pkg.GetBackendBody(0), null);
 });

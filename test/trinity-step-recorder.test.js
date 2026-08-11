@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CjsWebGPUTrinityStepRecorder } from "../src/core/trinityStepRecorder.js";
+import { CjsWebgpuTrinityStepRecorder } from "../src/core/trinityStepRecorder.js";
 
 function context()
 {
@@ -24,7 +24,7 @@ function context()
 test("Trinity step recorder captures immutable begin, execute, and end segments", () =>
 {
   const renderContext = context();
-  const recorder = new CjsWebGPUTrinityStepRecorder();
+  const recorder = new CjsWebgpuTrinityStepRecorder();
   const job = { id: "job" };
   const color = [ 0.25, 0.5, 0.75, 1 ];
   const swapChain = { id: "swap-chain" };
@@ -65,7 +65,7 @@ test("Trinity step recorder captures immutable begin, execute, and end segments"
 test("Trinity step recorder preserves nested intent order and exactly-once takes", () =>
 {
   const renderContext = context();
-  const recorder = new CjsWebGPUTrinityStepRecorder();
+  const recorder = new CjsWebgpuTrinityStepRecorder();
   const parentJob = { id: "parent-job" };
   const childJob = { id: "child-job" };
   const child = {
@@ -118,7 +118,7 @@ test("Trinity step recorder preserves nested intent order and exactly-once takes
 test("Trinity step recorder closes failed setup and enforces balanced ownership", () =>
 {
   const renderContext = context();
-  const recorder = new CjsWebGPUTrinityStepRecorder();
+  const recorder = new CjsWebgpuTrinityStepRecorder();
   const job = { id: "job" };
   const broken = {
     BeginExecute(received)

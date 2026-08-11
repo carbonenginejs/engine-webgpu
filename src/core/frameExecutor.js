@@ -26,14 +26,14 @@ import { IntentClass } from "./framePlan.js";
 
 function fail(message)
 {
-  const error = new Error(`CjsWebGPUFrameExecutor: ${message}`);
+  const error = new Error(`CjsWebgpuFrameExecutor: ${message}`);
   error.code = "CJS_WEBGPU_FRAME_EXECUTOR_INVALID";
   throw error;
 }
 
 
 /** Drives a planned frame into one command encoder and submits it. */
-export class CjsWebGPUFrameExecutor
+export class CjsWebgpuFrameExecutor
 {
   #webgpu;
 
@@ -44,10 +44,10 @@ export class CjsWebGPUFrameExecutor
   #hooks;
 
   /**
-   * @param {object} webgpu CjsWebGPUDevice-compatible boundary.
+   * @param {object} webgpu CjsWebgpuDevice-compatible boundary.
    * @param {object} options Composition.
-   * @param {object} options.renderTarget CjsWebGPURenderTarget-compatible target.
-   * @param {object} options.passEncoder CjsWebGPUTrinityPassEncoder-compatible encoder.
+   * @param {object} options.renderTarget CjsWebgpuRenderTarget-compatible target.
+   * @param {object} options.passEncoder CjsWebgpuTrinityPassEncoder-compatible encoder.
    * @param {Function} options.ResolveSelections Maps a render region to
    *   `[{ preparedBatchMap, batchType }]`. Returning an empty array is a
    *   legitimate answer and skips the pass.
@@ -100,7 +100,7 @@ export class CjsWebGPUFrameExecutor
     // Acquired once per frame. The canvas texture is only valid for this frame,
     // and every render region resolving to the backbuffer shares it.
     const frame = options.frame ?? this.#renderTarget.AcquireFrame();
-    const commandEncoder = device.createCommandEncoder({ label: options.label ?? "CjsWebGPUFrameExecutor" });
+    const commandEncoder = device.createCommandEncoder({ label: options.label ?? "CjsWebgpuFrameExecutor" });
 
     let encodedRegions = 0;
     let encodedSelections = 0;

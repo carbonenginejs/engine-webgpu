@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CanShareBindings, CjsWebGPUEncodeState, DeriveBatchGroups } from "../src/core/batchGroups.js";
+import { CanShareBindings, CjsWebgpuEncodeState, DeriveBatchGroups } from "../src/core/batchGroups.js";
 
 function draw(overrides = {})
 {
@@ -78,9 +78,9 @@ test("DeriveBatchGroups finds adjacent runs and never reorders", () =>
   assert.deepEqual(DeriveBatchGroups(undefined, handle => handle?.draw), []);
 });
 
-test("CjsWebGPUEncodeState elides only what is already bound", () =>
+test("CjsWebgpuEncodeState elides only what is already bound", () =>
 {
-  const state = new CjsWebGPUEncodeState();
+  const state = new CjsWebgpuEncodeState();
   const pass = {};
   const buffers = [ { slot: 0, buffer: "vb-a", offset: 0 } ];
 
@@ -102,12 +102,12 @@ test("CjsWebGPUEncodeState elides only what is already bound", () =>
   assert.equal(state.NeedsBindGroup(1, "bg-a"), true, "a different group index is a different binding");
 });
 
-test("CjsWebGPUEncodeState refuses to cross a render pass boundary", () =>
+test("CjsWebgpuEncodeState refuses to cross a render pass boundary", () =>
 {
   // Pass state does not survive a pass boundary, so a state object leaking
   // into a second pass would skip a set that genuinely had to happen - and the
   // symptom would be geometry drawn with the previous pass's buffers.
-  const state = new CjsWebGPUEncodeState();
+  const state = new CjsWebgpuEncodeState();
   state.Require({});
 
   assert.throws(() => state.Require({}), error => error.code === "CJS_WEBGPU_ENCODE_STATE_INVALID");

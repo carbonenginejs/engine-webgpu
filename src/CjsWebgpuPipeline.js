@@ -3,7 +3,7 @@ import { cloneJson, deepFreeze } from "./core/freeze.js";
 /**
  * Immutable WebGPU-facing pass/pipeline descriptor.
  */
-export class CjsWebGPUPipeline
+export class CjsWebgpuPipeline
 {
 
   /**

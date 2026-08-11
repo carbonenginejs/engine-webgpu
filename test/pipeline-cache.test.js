@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CanonicalKey, CjsWebGPUPipelineCache, RenderPipelineKey } from "../src/core/pipelineCache.js";
+import { CanonicalKey, CjsWebgpuPipelineCache, RenderPipelineKey } from "../src/core/pipelineCache.js";
 
 test("CanonicalKey ignores property order but not content", () =>
 {
@@ -39,9 +39,9 @@ test("RenderPipelineKey declines to key an unnamed program", () =>
   );
 });
 
-test("CjsWebGPUPipelineCache builds once per key and generation", async () =>
+test("CjsWebgpuPipelineCache builds once per key and generation", async () =>
 {
-  const cache = new CjsWebGPUPipelineCache();
+  const cache = new CjsWebgpuPipelineCache();
   let builds = 0;
   const build = () => Promise.resolve({ built: ++builds });
 
@@ -55,9 +55,9 @@ test("CjsWebGPUPipelineCache builds once per key and generation", async () =>
   assert.equal(builds, 2);
 });
 
-test("CjsWebGPUPipelineCache never hands back a pipeline from a dead device", async () =>
+test("CjsWebgpuPipelineCache never hands back a pipeline from a dead device", async () =>
 {
-  const cache = new CjsWebGPUPipelineCache();
+  const cache = new CjsWebgpuPipelineCache();
   let builds = 0;
   const build = () => Promise.resolve({ built: ++builds });
 
@@ -76,12 +76,12 @@ test("CjsWebGPUPipelineCache never hands back a pipeline from a dead device", as
   assert.equal(cache.size, 0);
 });
 
-test("CjsWebGPUPipelineCache shares one build between racing callers", async () =>
+test("CjsWebgpuPipelineCache shares one build between racing callers", async () =>
 {
   // Pipeline creation is asynchronous on this backend and a frame legitimately
   // prepares many at once; without this each caller creates a GPU object and
   // one silently wins.
-  const cache = new CjsWebGPUPipelineCache();
+  const cache = new CjsWebgpuPipelineCache();
   let builds = 0;
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
@@ -95,9 +95,9 @@ test("CjsWebGPUPipelineCache shares one build between racing callers", async () 
   assert.equal(first, second);
 });
 
-test("CjsWebGPUPipelineCache does not poison a key with a failed build", async () =>
+test("CjsWebgpuPipelineCache does not poison a key with a failed build", async () =>
 {
-  const cache = new CjsWebGPUPipelineCache();
+  const cache = new CjsWebgpuPipelineCache();
   let attempts = 0;
   const build = () =>
   {
@@ -111,9 +111,9 @@ test("CjsWebGPUPipelineCache does not poison a key with a failed build", async (
   assert.deepEqual(await cache.Resolve("a", 1, build), { ok: true });
 });
 
-test("CjsWebGPUPipelineCache bypasses itself for an unnamed pipeline", async () =>
+test("CjsWebgpuPipelineCache bypasses itself for an unnamed pipeline", async () =>
 {
-  const cache = new CjsWebGPUPipelineCache();
+  const cache = new CjsWebgpuPipelineCache();
   let builds = 0;
   const build = () => Promise.resolve({ built: ++builds });
 

@@ -1,4 +1,4 @@
-import { CanonicalKey, CjsWebGPUPipelineCache, RenderPipelineKey } from "./core/pipelineCache.js";
+import { CanonicalKey, CjsWebgpuPipelineCache, RenderPipelineKey } from "./core/pipelineCache.js";
 import { AssertFormatFeature, PlanTextureUpload } from "./core/textureLayout.js";
 
 const PREPARED_PIPELINES = new WeakMap();
@@ -56,13 +56,13 @@ const RGBA8_TEXTURE_PAYLOAD_KEYS = new Set([
 
 function fail(message)
 {
-  throw new Error(`CjsWebGPUDevice: ${message}`);
+  throw new Error(`CjsWebgpuDevice: ${message}`);
 }
 
 function asPipelineJson(pipeline)
 {
   if (pipeline && typeof pipeline.ToJSON === "function") return pipeline.ToJSON();
-  if (!pipeline || typeof pipeline !== "object") fail("pipeline must be a CjsWebGPUPipeline or plain descriptor");
+  if (!pipeline || typeof pipeline !== "object") fail("pipeline must be a CjsWebgpuPipeline or plain descriptor");
   return pipeline;
 }
 
@@ -1092,7 +1092,7 @@ async function popValidationScope(device, state)
  * Engine-owned WebGPU device boundary. It realizes already-selected CEWGPU
  * descriptors; format/capability policy remains with the caller.
  */
-export class CjsWebGPUDevice
+export class CjsWebgpuDevice
 {
   /**
    * Requests or accepts a WebGPU adapter and device, then returns a ready
@@ -1105,7 +1105,7 @@ export class CjsWebGPUDevice
     const adapter = options.adapter || await gpu.requestAdapter(options.adapterOptions);
     if (!adapter) fail("requestAdapter returned null");
     const device = options.device || await adapter.requestDevice(options.deviceDescriptor);
-    return new CjsWebGPUDevice({ ...options, gpu, adapter, device });
+    return new CjsWebgpuDevice({ ...options, gpu, adapter, device });
   }
 
   /**
@@ -1128,8 +1128,8 @@ export class CjsWebGPUDevice
     this._bufferUsage = options.bufferUsage || globalThis.GPUBufferUsage || null;
     this._textureUsage = options.textureUsage || globalThis.GPUTextureUsage || null;
     this._samplerCache = new Map();
-    this._preparedCache = new CjsWebGPUPipelineCache();
-    this._renderPipelineCache = new CjsWebGPUPipelineCache();
+    this._preparedCache = new CjsWebgpuPipelineCache();
+    this._renderPipelineCache = new CjsWebgpuPipelineCache();
     this._resourceRealizations = new WeakMap();
     this._onLost = typeof options.onLost === "function" ? options.onLost : null;
     this._generation = 1;
@@ -1832,7 +1832,7 @@ export class CjsWebGPUDevice
   /**
    * Realize the already-published RGBA8 CPU payload attached to one resource.
    * Mapping remains synchronous and GPU-free; allocation and guarded adapter
-   * publication are delegated to {@link CjsWebGPUDevice#RealizeResource}.
+   * publication are delegated to {@link CjsWebgpuDevice#RealizeResource}.
    * Concurrent calls for the same resource and adapter key share one operation.
    *
    * @param {object} resource Current loaded resource exposing `GetPayload()`.
@@ -1916,7 +1916,7 @@ export class CjsWebGPUDevice
   {
     const stale = () =>
     {
-      const error = new Error(`CjsWebGPUDevice: resource realization target ${plan.adapterKey} is stale`);
+      const error = new Error(`CjsWebgpuDevice: resource realization target ${plan.adapterKey} is stale`);
       error.code = "CJS_WEBGPU_STALE_RESOURCE_REALIZATION";
       error.adapterKey = plan.adapterKey;
       return error;
@@ -2375,7 +2375,7 @@ export class CjsWebGPUDevice
   /**
    * Encodes one validated draw into a render pass.
    *
-   * An optional `state` is a CjsWebGPUEncodeState the CALLER owns for the
+   * An optional `state` is a CjsWebgpuEncodeState the CALLER owns for the
    * lifetime of one render pass. When supplied, a set whose value is already
    * bound is skipped - Carbon's DX11 path does the same redundancy compare on
    * its shader program and its three state caches. Omitting it sets

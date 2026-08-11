@@ -3,7 +3,7 @@ import { cloneJson, deepFreeze } from "./core/freeze.js";
 /**
  * Immutable WebGPU-facing shader-module descriptor.
  */
-export class CjsWebGPUShaderModule
+export class CjsWebgpuShaderModule
 {
 
   /**

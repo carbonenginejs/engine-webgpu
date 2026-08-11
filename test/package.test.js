@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  CjsWebGPUBindGroup,
-  CjsWebGPUBuffer,
-  CjsWebGPUPackage,
-  CjsWebGPUSampler,
-  CjsWebGPUShaderModule,
-  CjsWebGPUTexture
+  CjsWebgpuBindGroup,
+  CjsWebgpuBuffer,
+  CjsWebgpuPackage,
+  CjsWebgpuSampler,
+  CjsWebgpuShaderModule,
+  CjsWebgpuTexture
 } from "../src/index.js";
 import { buildCopyblitDrawDescriptor } from "../src/core/packageDraw.js";
 
@@ -17,9 +17,9 @@ import { buildCopyblitDrawDescriptor } from "../src/core/packageDraw.js";
 // deciding its own configuration. It is handed a resolved path, and it fails
 // loudly on anything it cannot load, which the package validation below covers.
 
-test("CjsWebGPUPackage builds immutable pass, shader, and bind-group descriptors from ANLS data", () =>
+test("CjsWebgpuPackage builds immutable pass, shader, and bind-group descriptors from ANLS data", () =>
 {
-  const pkg = CjsWebGPUPackage.from({
+  const pkg = CjsWebgpuPackage.from({
     format: "CEWGPU",
     version: 1,
     sourcePath: "res:/graphics/effect.dx11/space/quadv5.sm_depth",
@@ -208,8 +208,8 @@ test("CjsWebGPUPackage builds immutable pass, shader, and bind-group descriptors
   assert.equal(pkg.shaderModules.length, 2);
   assert.equal(pkg.pipelines.length, 1);
   assert.equal(pkg.bindGroups.length, 1);
-  assert(pkg.shaderModules[0] instanceof CjsWebGPUShaderModule);
-  assert(pkg.bindGroups[0] instanceof CjsWebGPUBindGroup);
+  assert(pkg.shaderModules[0] instanceof CjsWebgpuShaderModule);
+  assert(pkg.bindGroups[0] instanceof CjsWebgpuBindGroup);
 
   const pipeline = pkg.GetPipeline("Main", 0);
   assert(pipeline);
@@ -221,12 +221,12 @@ test("CjsWebGPUPackage builds immutable pass, shader, and bind-group descriptors
   const t0 = pipeline.bindGroups[0].GetBinding("resource:t0:AlbedoMap:0");
   const s0 = pipeline.bindGroups[0].GetBinding("sampler:s0:AlbedoSampler:0");
 
-  assert(cb0 instanceof CjsWebGPUBuffer);
+  assert(cb0 instanceof CjsWebgpuBuffer);
   assert.equal(cb0.access, "uniform");
-  assert(t0 instanceof CjsWebGPUTexture);
+  assert(t0 instanceof CjsWebgpuTexture);
   assert.equal(t0.textureKind, "2d");
   assert.equal(t0.stages.length, 2);
-  assert(s0 instanceof CjsWebGPUSampler);
+  assert(s0 instanceof CjsWebgpuSampler);
 
   assert.throws(() =>
   {
@@ -244,7 +244,7 @@ test("binding keys preserve distinct D3D register spaces", () =>
     metadataName: "Texture0",
     carbon: { name: "Texture0", type: 2, arrayElements: 1 }
   }));
-  const pkg = CjsWebGPUPackage.from({
+  const pkg = CjsWebgpuPackage.from({
     format: "CEWGPU",
     version: 1,
     stages: [ {
@@ -269,7 +269,7 @@ test("CJS_WGSL_SET code records retain entry points and DXBC source maps", () =>
 {
   const code = "@fragment fn translated() -> @location(0) vec4f { return vec4f(1); }";
   const sourceMap = [ { line: 1, instructionIndex: 4, dxbcOffset: 12 } ];
-  const pkg = CjsWebGPUPackage.from({
+  const pkg = CjsWebgpuPackage.from({
     format: "CEWGPU",
     version: 1,
     stages: [ {
@@ -303,7 +303,7 @@ fn main()
 {
   values[0] = values[0] + 1u;
 }`;
-  const pkg = CjsWebGPUPackage.from({
+  const pkg = CjsWebgpuPackage.from({
     format: "CEWGPU",
     version: 1,
     stages: [ {
@@ -365,7 +365,7 @@ fn main()
   assert.equal(pipeline.GetShaderModule("compute").stageType, 2);
   assert.deepEqual(pipeline.GetShaderModule("compute").threadGroupSize, [ 1, 1, 1 ]);
   const binding = pipeline.bindGroups[0].GetBindingAt(0);
-  assert(binding instanceof CjsWebGPUBuffer);
+  assert(binding instanceof CjsWebgpuBuffer);
   assert.equal(binding.access, "readWrite");
   assert.equal(binding.scopeIdentity, "storage-resource:0:0@compute");
   assert.deepEqual(binding.visibility, [ "compute" ]);
@@ -393,13 +393,13 @@ test("package shader matching rejects contradictory keyed stage provenance", () 
     } ]
   };
   assert.throws(
-    () => CjsWebGPUPackage.from(value),
+    () => CjsWebgpuPackage.from(value),
     /inconsistent WGSL provenance/u
   );
 
   value.shaders[0].stageName = "compute";
   assert.throws(
-    () => CjsWebGPUPackage.from(value),
+    () => CjsWebgpuPackage.from(value),
     /inconsistent WGSL stage fragment/u
   );
 
@@ -408,13 +408,13 @@ test("package shader matching rejects contradictory keyed stage provenance", () 
   value.shaders[0].threadGroupSize = [ 1, 1, 1 ];
   value.stages[0].threadGroupSize = { x: 1, y: 1, z: 1 };
   assert.deepEqual(
-    CjsWebGPUPackage.from(value).GetShaderModule("Main.pass0.compute").threadGroupSize,
+    CjsWebgpuPackage.from(value).GetShaderModule("Main.pass0.compute").threadGroupSize,
     [ 1, 1, 1 ]
   );
 
   value.stages[0].threadGroupSize = { x: 2, y: 1, z: 1 };
   assert.throws(
-    () => CjsWebGPUPackage.from(value),
+    () => CjsWebgpuPackage.from(value),
     /inconsistent threadGroupSize metadata/u
   );
 
@@ -424,7 +424,7 @@ test("package shader matching rejects contradictory keyed stage provenance", () 
   value.shaders[0].stage = "fragment";
   value.shaders[0].stageType = 1;
   assert.throws(
-    () => CjsWebGPUPackage.from(value),
+    () => CjsWebgpuPackage.from(value),
     /cannot declare threadGroupSize/u
   );
 });
@@ -453,20 +453,20 @@ test("render packages normalize only the inactive zero thread-group sentinel", (
     } ]
   };
   assert.equal(
-    CjsWebGPUPackage.from(value).GetShaderModule("Main.pass0.vertex").threadGroupSize,
+    CjsWebgpuPackage.from(value).GetShaderModule("Main.pass0.vertex").threadGroupSize,
     null
   );
 
   value.shaders[0].threadGroupSize = { x: 1, y: 1, z: 1 };
   assert.throws(
-    () => CjsWebGPUPackage.from(value),
+    () => CjsWebgpuPackage.from(value),
     /cannot declare threadGroupSize/u
   );
 
   value.shaders[0].threadGroupSize = { x: 0, y: 0, z: 0 };
   value.stages[0].threadGroupSize = { x: 1, y: 1, z: 1 };
   assert.throws(
-    () => CjsWebGPUPackage.from(value),
+    () => CjsWebgpuPackage.from(value),
     /cannot declare threadGroupSize/u
   );
 });
@@ -475,12 +475,12 @@ test("structured WGSL package input accepts only set versions 1, 2 and 3", () =>
 {
   for (const formatVersion of [ 1, 2, 3 ])
   {
-    const pkg = CjsWebGPUPackage.from({
+    const pkg = CjsWebgpuPackage.from({
       wgsl: { format: "CJS_WGSL_SET", formatVersion, shaders: [], layouts: [] }
     });
     assert.equal(pkg.wgsl.formatVersion, formatVersion);
   }
-  assert.throws(() => CjsWebGPUPackage.from({
+  assert.throws(() => CjsWebgpuPackage.from({
     wgsl: { format: "CJS_WGSL_SET", formatVersion: 4, shaders: [], layouts: [] }
   }), /CJS_WGSL_SET version 1, 2 or 3/u);
   const version2Binding = {
@@ -510,21 +510,21 @@ test("structured WGSL package input accepts only set versions 1, 2 and 3", () =>
       bindings: []
     } ]
   });
-  assert.throws(() => CjsWebGPUPackage.from(version2Package({
+  assert.throws(() => CjsWebgpuPackage.from(version2Package({
     ...version2Binding,
     scopeIdentity: ""
   })), /invalid scope identity/u);
   const missingIdentity = { ...version2Binding };
   delete missingIdentity.identity;
-  assert.throws(() => CjsWebGPUPackage.from(version2Package(missingIdentity)), /requires an explicit D3D identity/u);
+  assert.throws(() => CjsWebgpuPackage.from(version2Package(missingIdentity)), /requires an explicit D3D identity/u);
   const missingScope = { ...version2Binding };
   delete missingScope.scopeIdentity;
-  assert.throws(() => CjsWebGPUPackage.from(version2Package(missingScope)), /requires an explicit scope identity/u);
-  assert.throws(() => CjsWebGPUPackage.from(version2Package({
+  assert.throws(() => CjsWebgpuPackage.from(version2Package(missingScope)), /requires an explicit scope identity/u);
+  assert.throws(() => CjsWebgpuPackage.from(version2Package({
     ...version2Binding,
     scopeIdentity: "sampler:0:0"
   })), /does not cover multiple stages/u);
-  const shared = CjsWebGPUPackage.from(version2Package({
+  const shared = CjsWebgpuPackage.from(version2Package({
     ...version2Binding,
     scopeIdentity: "sampler:0:0",
     visibility: [ "vertex", "fragment" ]
@@ -537,7 +537,7 @@ test("structured WGSL package input accepts only set versions 1, 2 and 3", () =>
     bindGroups: [ { group: 0, bindings: [ { ...version2Binding, scopeIdentity: "" } ] } ]
   } ];
   assert.equal(
-    CjsWebGPUPackage.from(authoritative).pipelines[0].bindGroups[0].bindings[0].scopeIdentity,
+    CjsWebgpuPackage.from(authoritative).pipelines[0].bindGroups[0].bindings[0].scopeIdentity,
     "sampler:0:0@fragment"
   );
 
@@ -545,7 +545,7 @@ test("structured WGSL package input accepts only set versions 1, 2 and 3", () =>
   malformedNestedLayouts.wgsl.layouts = { invalid: true };
   malformedNestedLayouts.layouts = authoritative.wgsl.layouts;
   assert.throws(
-    () => CjsWebGPUPackage.from(malformedNestedLayouts),
+    () => CjsWebgpuPackage.from(malformedNestedLayouts),
     /structured wgsl shaders and layouts must be arrays when provided/u
   );
 
@@ -553,7 +553,7 @@ test("structured WGSL package input accepts only set versions 1, 2 and 3", () =>
   malformedNestedShaders.wgsl.shaders = { invalid: true };
   malformedNestedShaders.shaders = [];
   assert.throws(
-    () => CjsWebGPUPackage.from(malformedNestedShaders),
+    () => CjsWebgpuPackage.from(malformedNestedShaders),
     /structured wgsl shaders and layouts must be arrays when provided/u
   );
 
@@ -562,7 +562,7 @@ test("structured WGSL package input accepts only set versions 1, 2 and 3", () =>
   delete legacyBinding.scopeIdentity;
   const legacy = version2Package(legacyBinding);
   legacy.wgsl.formatVersion = 1;
-  assert.equal(CjsWebGPUPackage.from(legacy).pipelines[0].bindGroups[0].bindings[0].scopeIdentity, "sampler:0:0");
+  assert.equal(CjsWebgpuPackage.from(legacy).pipelines[0].bindGroups[0].bindings[0].scopeIdentity, "sampler:0:0");
 });
 
 test("version 3 WGSL sets keep version 2 identity strictness and bound transform metadata", () =>
@@ -599,26 +599,26 @@ test("version 3 WGSL sets keep version 2 identity strictness and bound transform
   });
 
   assert.equal(
-    CjsWebGPUPackage.from(version3Package(binding)).pipelines[0].bindGroups[0].bindings[0].scopeIdentity,
+    CjsWebgpuPackage.from(version3Package(binding)).pipelines[0].bindGroups[0].bindings[0].scopeIdentity,
     "sampler:0:0@fragment"
   );
 
   const missingIdentity = { ...binding };
   delete missingIdentity.identity;
   assert.throws(
-    () => CjsWebGPUPackage.from(version3Package(missingIdentity)),
+    () => CjsWebgpuPackage.from(version3Package(missingIdentity)),
     /version 3 binding sampler:0:0 requires an explicit D3D identity/u
   );
 
   const missingScope = { ...binding };
   delete missingScope.scopeIdentity;
   assert.throws(
-    () => CjsWebGPUPackage.from(version3Package(missingScope)),
+    () => CjsWebgpuPackage.from(version3Package(missingScope)),
     /version 3 binding sampler:0:0 requires an explicit scope identity/u
   );
 
   assert.throws(
-    () => CjsWebGPUPackage.from(version3Package({ ...binding, scopeIdentity: "sampler:0:0" })),
+    () => CjsWebgpuPackage.from(version3Package({ ...binding, scopeIdentity: "sampler:0:0" })),
     /does not cover multiple stages/u
   );
 
@@ -637,24 +637,24 @@ test("version 3 WGSL sets keep version 2 identity strictness and bound transform
   };
   delete arrayBinding.sampler;
   assert.equal(
-    CjsWebGPUPackage.from(version3Package(arrayBinding)).pipelines[0].bindGroups[0].bindings[0].identity,
+    CjsWebgpuPackage.from(version3Package(arrayBinding)).pipelines[0].bindGroups[0].bindings[0].identity,
     "sampled-resource:0:13"
   );
 
   // A binding cannot claim a transform the document never declared, and array
   // layers are only meaningful as part of one.
   assert.throws(
-    () => CjsWebGPUPackage.from(version3Package({ ...arrayBinding, transformId: "detail-0" })),
+    () => CjsWebgpuPackage.from(version3Package({ ...arrayBinding, transformId: "detail-0" })),
     /claims undeclared resource transform detail-0/u
   );
   assert.throws(
-    () => CjsWebGPUPackage.from(version3Package({ ...arrayBinding, arrayLayerCount: 2 })),
+    () => CjsWebgpuPackage.from(version3Package({ ...arrayBinding, arrayLayerCount: 2 })),
     /declares 2 array layers without a resource transform/u
   );
 
   // A null placeholder is absence, not a transform.
   assert.equal(
-    CjsWebGPUPackage.from(version3Package({ ...arrayBinding, transformId: null, arrayLayerCount: null }))
+    CjsWebgpuPackage.from(version3Package({ ...arrayBinding, transformId: null, arrayLayerCount: null }))
       .pipelines[0].bindGroups[0].bindings[0].identity,
     "sampled-resource:0:13"
   );
@@ -710,7 +710,7 @@ test("resource transforms realize only in the exact shape the engine can assembl
   const build = (mutate = (value) => value, extraBindings = []) =>
   {
     const declared = mutate(transform());
-    return CjsWebGPUPackage.from({
+    return CjsWebgpuPackage.from({
       wgsl: {
         format: "CJS_WGSL_SET",
         formatVersion: 3,
@@ -827,7 +827,7 @@ test("resource transforms realize only in the exact shape the engine can assembl
     /output layerCount 2 does not match its 1 inputs/u
   );
   assert.throws(
-    () => CjsWebGPUPackage.from({
+    () => CjsWebgpuPackage.from({
       wgsl: {
         format: "CJS_WGSL_SET",
         formatVersion: 3,
@@ -844,7 +844,7 @@ test("resource transforms realize only in the exact shape the engine can assembl
   );
 
   assert.throws(
-    () => CjsWebGPUPackage.from({
+    () => CjsWebgpuPackage.from({
       wgsl: {
         format: "CJS_WGSL_SET",
         formatVersion: 3,
@@ -858,7 +858,7 @@ test("resource transforms realize only in the exact shape the engine can assembl
   );
 
   assert.throws(
-    () => CjsWebGPUPackage.from({
+    () => CjsWebgpuPackage.from({
       wgsl: {
         format: "CJS_WGSL_SET",
         formatVersion: 3,
@@ -872,7 +872,7 @@ test("resource transforms realize only in the exact shape the engine can assembl
   );
 
   assert.throws(
-    () => CjsWebGPUPackage.from({
+    () => CjsWebgpuPackage.from({
       wgsl: {
         format: "CJS_WGSL_SET",
         formatVersion: 3,
@@ -919,7 +919,7 @@ test("canonical WGSL layouts own numeric bind groups and survive missing ANLS me
     type: "sampler",
     sampler: { type: "filtering" }
   } ];
-  const pkg = CjsWebGPUPackage.from({
+  const pkg = CjsWebgpuPackage.from({
     format: "CEWGPU",
     version: 1,
     stages: [ {
@@ -953,9 +953,9 @@ test("canonical WGSL layouts own numeric bind groups and survive missing ANLS me
   const group = pkg.pipelines[0].bindGroups[0];
   assert.equal(group.group, 0);
   assert.equal(group.bindings.length, 3);
-  assert(group.GetBindingAt(0) instanceof CjsWebGPUBuffer);
-  assert(group.GetBindingAt(1) instanceof CjsWebGPUTexture);
-  assert(group.GetBindingAt(2) instanceof CjsWebGPUSampler);
+  assert(group.GetBindingAt(0) instanceof CjsWebgpuBuffer);
+  assert(group.GetBindingAt(1) instanceof CjsWebgpuTexture);
+  assert(group.GetBindingAt(2) instanceof CjsWebgpuSampler);
   assert.equal(group.GetBindingAt(0).layout.buffer.minBindingSize, 48);
   assert.equal(group.GetBindingAt(0).metadataName, "$LocalConstants");
   assert.equal(group.GetBindingAt(2).sourceTruth, "wgsl-layout");
@@ -968,7 +968,7 @@ test("canonical WGSL layouts own numeric bind groups and survive missing ANLS me
 
   const collision = structuredClone(canonicalBindings);
   collision[2].binding = 1;
-  assert.throws(() => CjsWebGPUPackage.from({
+  assert.throws(() => CjsWebgpuPackage.from({
     stages: pkg.ToJSON().stages,
     layouts: [ { key: "Main.pass0", bindGroups: [ { group: 0, bindings: collision } ] } ]
   }), /duplicates group\/binding 0:1/i);
@@ -1031,7 +1031,7 @@ test("canonical WGSL layouts preserve stage-scoped structured and texture t0 res
     type: "texture_2d<f32>",
     texture: { sampleType: "float", viewDimension: "2d", multisampled: false }
   } ];
-  const pkg = CjsWebGPUPackage.from({
+  const pkg = CjsWebgpuPackage.from({
     format: "CEWGPU",
     version: 1,
     stages,
@@ -1044,7 +1044,7 @@ test("canonical WGSL layouts preserve stage-scoped structured and texture t0 res
   const structured = group.GetBindingAt(0);
   const texture = group.GetBindingAt(1);
 
-  assert(structured instanceof CjsWebGPUBuffer);
+  assert(structured instanceof CjsWebgpuBuffer);
   assert.equal(structured.access, "readOnly");
   assert.equal(structured.bufferKind, "structuredBuffer");
   assert.equal(structured.identity, "sampled-resource:0:0");
@@ -1052,7 +1052,7 @@ test("canonical WGSL layouts preserve stage-scoped structured and texture t0 res
   assert.equal(structured.structureStride, 48);
   assert.equal(structured.metadataName, "SkinningData");
   assert.deepEqual(structured.stages.map((entry) => entry.stageName), [ "vertex" ]);
-  assert(texture instanceof CjsWebGPUTexture);
+  assert(texture instanceof CjsWebgpuTexture);
   assert.equal(texture.scopeIdentity, "sampled-resource:0:0@fragment");
   assert.equal(texture.metadataName, "AlbedoMap");
   assert.deepEqual(texture.stages.map((entry) => entry.stageName), [ "pixel" ]);
@@ -1063,14 +1063,14 @@ test("canonical WGSL layouts preserve stage-scoped structured and texture t0 res
 
   const inconsistent = structuredClone(bindings);
   inconsistent[0].identity = "sampled-resource:0:9";
-  assert.throws(() => CjsWebGPUPackage.from({
+  assert.throws(() => CjsWebgpuPackage.from({
     stages,
     layouts: [ { key: "Main.pass0", bindGroups: [ { group: 0, bindings: inconsistent } ] } ]
   }), /inconsistent D3D identity/u);
 
   const malformedScope = structuredClone(bindings);
   malformedScope[0].scopeIdentity = "sampled-resource:0:0@fragment";
-  assert.throws(() => CjsWebGPUPackage.from({
+  assert.throws(() => CjsWebgpuPackage.from({
     stages,
     layouts: [ { key: "Main.pass0", bindGroups: [ { group: 0, bindings: malformedScope } ] } ]
   }), /invalid scope identity/u);
@@ -1078,15 +1078,15 @@ test("canonical WGSL layouts preserve stage-scoped structured and texture t0 res
   const mixedForms = structuredClone(bindings);
   mixedForms[0].scopeIdentity = "sampled-resource:0:0";
   mixedForms[0].visibility = [ "vertex", "fragment" ];
-  assert.throws(() => CjsWebGPUPackage.from({
+  assert.throws(() => CjsWebgpuPackage.from({
     stages,
     layouts: [ { key: "Main.pass0", bindGroups: [ { group: 0, bindings: mixedForms } ] } ]
   }), /mixes shared and stage-scoped forms/u);
 });
 
-test("CjsWebGPUPackage.fromBytes accepts an injected reader", () =>
+test("CjsWebgpuPackage.fromBytes accepts an injected reader", () =>
 {
-  const pkg = CjsWebGPUPackage.fromBytes(new Uint8Array([ 1, 2, 3 ]), {
+  const pkg = CjsWebgpuPackage.fromBytes(new Uint8Array([ 1, 2, 3 ]), {
     read(bytes)
     {
       assert.equal(bytes.length, 3);
@@ -1118,7 +1118,7 @@ function copyblitDrawPipeline()
     group: 0, binding: 2, visibility: [ "fragment" ], type: "sampler",
     sampler: { type: "filtering" }
   } ];
-  const pkg = CjsWebGPUPackage.from({
+  const pkg = CjsWebgpuPackage.from({
     stages: [
       { key: "Main.pass0.vertex", techniqueName: "Main", passIndex: 0, stageName: "vertex", stageType: 0 },
       { key: "Main.pass0.pixel", techniqueName: "Main", passIndex: 0, stageName: "pixel", stageType: 1 }
@@ -1170,7 +1170,7 @@ test("package copyblit draw preserves canonical numeric layouts and rejects unsu
 });
 
 test("read-write storage UAV bindings build readWrite buffers", () => {
-  const pkg = CjsWebGPUPackage.from({
+  const pkg = CjsWebgpuPackage.from({
     format: "CEWGPU",
     version: 1,
     stages: [ {
@@ -1205,7 +1205,7 @@ test("read-write storage UAV bindings build readWrite buffers", () => {
     } ]
   });
   const uav = pkg.pipelines[0].bindGroups[0].GetBindingAt(0);
-  assert(uav instanceof CjsWebGPUBuffer);
+  assert(uav instanceof CjsWebgpuBuffer);
   assert.equal(uav.access, "readWrite");
   assert.equal(uav.bufferKind, "rwBuffer");
   assert.equal(uav.scopeIdentity, "storage-resource:0:1@fragment");

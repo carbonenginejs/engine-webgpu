@@ -1,4 +1,4 @@
-import { CjsWebGPUEncodeState, DeriveBatchGroups } from "./batchGroups.js";
+import { CjsWebgpuEncodeState, DeriveBatchGroups } from "./batchGroups.js";
 
 const MAX_GPU_SIZE_32 = 0xffffffff;
 
@@ -17,7 +17,7 @@ const EMPTY_CONTEXT = Object.freeze({});
 
 function fail(message)
 {
-  const error = new Error(`CjsWebGPUTrinityBatchDispatcher: ${message}`);
+  const error = new Error(`CjsWebgpuTrinityBatchDispatcher: ${message}`);
   error.code = "CJS_WEBGPU_TRINITY_BATCH_INVALID";
   throw error;
 }
@@ -141,14 +141,14 @@ function pipelineRecipe(recipe, topology)
  * composition hooks resolve those references to WebGPU-owned material,
  * geometry, and binding objects without importing runtime-trinity here.
  */
-export class CjsWebGPUTrinityBatchDispatcher
+export class CjsWebgpuTrinityBatchDispatcher
 {
   #webgpu;
 
   #hooks;
 
   /**
-   * @param {object} webgpu CjsWebGPUDevice-compatible boundary.
+   * @param {object} webgpu CjsWebgpuDevice-compatible boundary.
    * @param {object} hooks Backend composition hooks.
    * @param {Function} hooks.ResolveMaterial Resolves batch material to
    *   { pipeline, recipe, prepareOptions? }; receives immutable preparation
@@ -392,7 +392,7 @@ export class CjsWebGPUTrinityBatchDispatcher
     const state = PREPARED_ACCUMULATORS.get(handle);
     if (!state || state.owner !== this) fail("prepared accumulator belongs to another dispatcher");
     if (state.destroyed) fail("prepared accumulator is destroyed");
-    const encodeState = new CjsWebGPUEncodeState();
+    const encodeState = new CjsWebgpuEncodeState();
     this.#EncodeGrouped(pass, handle.gdprBatches, encodeState);
     this.#EncodeGrouped(pass, handle.batches, encodeState);
   }

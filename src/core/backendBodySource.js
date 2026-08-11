@@ -68,7 +68,7 @@ export function createBackendBodySource(value)
 {
   if (!isRawPackage(value))
   {
-    throw new TypeError("CjsWebGPUPackage: backend body source requires a raw package reader result");
+    throw new TypeError("CjsWebgpuPackage: backend body source requires a raw package reader result");
   }
 
   const bodySet = value.backendBodySet ?? null;
