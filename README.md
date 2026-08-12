@@ -50,8 +50,9 @@ remain explicit caller inputs. The bounded Eve space-object Main serializer
 transposes logical matrices once into Carbon cbuffer register-row order while
 copying already GPU-form custom-mask slots unchanged.
 
-The standalone harness prepares selected and all-body WGSB packages and proves
-selected-unit WGSB/WGSL descriptor equivalence. Its browser gates draw selected
+The standalone harness prepares selected and all-body packages and proves that
+the body set and the selected views resolve to equivalent descriptors. Its
+browser gates draw selected
 packages for static and skinned QuadV5 families, decals, array textures, and
 compiler-emitted detail-map resource transforms. They validate transform
 declarations against their post-transform layouts and draw the ordered two- and

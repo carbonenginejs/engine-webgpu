@@ -1,5 +1,5 @@
 import { buildPackageJson, buildPipelines, buildShaderModules, normalizePackageShape } from "./core/packageHelpers.js";
-import { createBackendBodySource, isRawPackage, projectRawPackage } from "./core/backendBodySource.js";
+import { createBackendBodySource } from "./core/backendBodySource.js";
 import { deepFreeze } from "./core/freeze.js";
 
 /**
@@ -43,10 +43,10 @@ export class CjsWebgpuPackage
    */
   constructor(value)
   {
-    // A raw reader result carries the WGSB body set; plain JSON never can. Both
-    // converge on one normalized document, so the existing path is untouched.
-    const raw = isRawPackage(value);
-    const normalized = normalizePackageShape(raw ? projectRawPackage(value) : value);
+    // One shape. A `.carbonwebgpu` file has one emit and it carries everything:
+    // the selected views this normalizes, and the complete backend body set the
+    // engine used to need a second, raw emit to reach.
+    const normalized = normalizePackageShape(value);
     const shaderModules = buildShaderModules(normalized);
     const { pipelines, bindGroups } = buildPipelines(normalized, shaderModules);
 
@@ -57,11 +57,10 @@ export class CjsWebgpuPackage
     this.metadata = deepFreeze(normalized.metadata);
     this.analysis = deepFreeze(normalized.analysis);
     this.wgsl = deepFreeze(normalized.wgsl);
-    this.chunks = deepFreeze(normalized.chunks);
     this.shaderModules = deepFreeze(shaderModules);
     this.pipelines = deepFreeze(pipelines);
     this.bindGroups = deepFreeze(bindGroups);
-    this.backendBodySource = raw ? createBackendBodySource(value) : null;
+    this.backendBodySource = createBackendBodySource(value);
     this._json = buildPackageJson(normalized, shaderModules, pipelines, bindGroups);
     Object.freeze(this);
   }

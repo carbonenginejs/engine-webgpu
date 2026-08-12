@@ -151,8 +151,9 @@ browser/device session:
 npm.cmd run test:webgpu:required -- --prepare-bodyset .\artifacts\quadv5-allbody.cewgpu
 ```
 
-The package is read with the raw emit, because the default JSON emit cannot
-carry the `WGSB` body set. Descriptors are built per translation unit directly
+The package is read once. There is one emit, and the document it returns carries
+the complete backend body set alongside the selected views, so nothing has to ask
+for a second, differently-shaped read. Descriptors are built per translation unit directly
 from `unit.shaders` and `unit.layouts[0]`, never through the ANLS-driven stage
 list: that list names the selected body only, and its
 `(techniqueName, passIndex, stageName)` match carries no body discriminator, so
@@ -175,44 +176,57 @@ bytecode, semantic bindings and layouts; the body set carries no render states
 at all, so they must come from portable reflection and an engine reading them
 from a unit would be reading a value that does not exist.
 
-### Proving the WGSB path equals the legacy path
+### Proving the body-set path equals the selected path
 
 `test/wgsb-equivalence.test.js` compares, for the selected body, the
-WGSB-derived `pipeline.ToJSON()` against the legacy WGSL-chunk-derived one. It
-is stronger than a pixel comparison and costs seconds rather than a device:
-both paths converge on a JSON blob consumed by byte-identical browser code, so
-equality of the GPU-determining fields deterministically implies pixel equality,
-and a JSON diff names the discrepant field.
+body-set-derived `pipeline.ToJSON()` against the one the selected package's own
+views produce. It is stronger than a pixel comparison and costs seconds rather
+than a device: both paths converge on a JSON blob consumed by byte-identical
+browser code, so equality of the GPU-determining fields deterministically implies
+pixel equality, and a JSON diff names the discrepant field.
 
-This is the evidence boundary: every all-body WGSB translation unit is prepared,
-and the selected WGSB unit is proven Node-equivalent to the selected WGSL unit.
+This is the evidence boundary: every all-body translation unit is prepared, and
+the selected body's unit is proven Node-equivalent to what selection baked in.
 Browser draws consume selected packages; there is no separate browser draw that
-selects its pipeline directly from WGSB. The earlier one-off direct confirmation
-step is retired in favor of deterministic equality of every GPU-determining
-field before the byte-identical browser path. Do not describe all-body WGSB as
-browser-drawn.
+selects its pipeline directly from the body set. The earlier one-off direct
+confirmation step is retired in favor of deterministic equality of every
+GPU-determining field before the byte-identical browser path. Do not describe an
+all-body package as browser-drawn.
 
 It asserts three things rather than one:
 
+- **complete resolution** — every permutation the manifest pins is resolved, not
+  just the one compared. Resolution is what was broken, and a single index proves
+  only that one index works;
 - **body identity** — the permutation index is resolved from the selected
-  package's own recorded selections through the PGRF axes and must equal the
-  index that package baked in. Without this a green comparison could be luck,
-  since any body compares equal to itself;
+  package's own recorded selections through the permutation graph's axes and must
+  equal the index that package baked in. Without this a green comparison could be
+  luck, since any body compares equal to itself;
 - **GPU-determining equality** — WGSL payload and entry point per stage, and
   every canonical binding's group, binding, identity, scope identity,
   visibility, layout descriptor and structure stride;
 - **bounded divergence** — everything that differs must be an enumerated
-  analysis-only field. A WGSB unit is stage bytecode, semantic bindings and
-  layouts; Carbon reflection and render states live in ANLS and portable
-  reflection. Enumerating them means a future drift into a GPU-determining
-  field cannot hide inside "they always differed".
+  analysis-only field. A translation unit is stage bytecode, semantic bindings and
+  layouts; Carbon reflection and render states belong to the description, which
+  the body set does not duplicate. Enumerating them means a future drift into a
+  GPU-determining field cannot hide inside "they always differed".
 
-It needs real packages, which are derived artifacts and deliberately not
-committed, so it skips with instructions unless `CJS_WEBGPU_FIXTURE_DIR` points
-at a directory holding both the selected and all-body packages:
+It builds both packages **in process**, from CCP source effect bytes. It used to
+need a directory of pre-built `.cewgpu` files named by `CJS_WEBGPU_FIXTURE_DIR`;
+nobody had one, so this test and the Trinity read-chain test skipped for weeks
+while the path they cover stopped working, with 237 synthetic-record tests green
+throughout. A pre-built package is fully determined by (source bytes, compiler),
+so pinning it stores a guarantee the compiler already gives and rots when the
+compiler moves.
+
+What cannot be removed is the need for source bytes, which are game files and are
+never committed. So it skips with instructions unless `CARBON_EFFECT_CORPUS_DIR`
+points at a source effect corpus at the manifest's pinned build — the same
+variable the format proofs use — and every source file's sha256 is checked
+against the manifest before it is built:
 
 ```powershell
-$env:CJS_WEBGPU_FIXTURE_DIR = "<dir>"; npm.cmd test
+$env:CARBON_EFFECT_CORPUS_DIR = "<dir>"; npm.cmd test
 ```
 
 To perform the first actual QuadV5 draw, package the same explicitly selected

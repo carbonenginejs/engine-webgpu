@@ -491,15 +491,15 @@ async function ReadBodySetPrepare(path)
         import("../src/index.js"),
         import("../src/core/bodySetPipelines.js")
     ]);
-    // Raw emit is the only route to the WGSB chunk: the default JSON emit does
-    // not project the body set, and its chunk records carry no bytes.
+    // One emit. The container's single read carries the complete body set, so
+    // there is no second emit to ask for and no chunk to reach past.
     const pkg = CjsWebgpuPackage.fromBytes(await readFile(path), {
         read: CjsWebgpuFormat.read,
-        readOptions: { source: path, emit: CjsWebgpuFormat.OUTPUT_RAW }
+        readOptions: { source: path }
     });
     if (!pkg.backendBodySource)
     {
-        throw new Error(`${path} carries no WGSB body set; build it with mode "all"`);
+        throw new Error(`${path} carries no backend body set; build it with mode "all"`);
     }
     return buildBodySetPipelines(pkg);
 }

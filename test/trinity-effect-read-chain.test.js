@@ -7,46 +7,41 @@
 // pipeline resolves to exactly what the harness resolves directly. It does not
 // pretend the loader exists, and it never touches a GPU.
 //
-// What the env-gated test below pins is the CURRENT mechanism, not a contract
-// anyone should build on.
+// A .carbonwebgpu file is one Carbon-v15 record container. The reader derives the
+// analysis, permutation, reflection and WGSL views from that one tree; none is a
+// second stored chunk, and there is one emit that carries all of them plus the
+// complete backend body set.
 //
-// A .cewgpu is one Carbon-v15 record container. The reader derives the former
-// analysis, permutation, reflection and WGSL package views from that one tree;
-// none is a second stored chunk. Today Tr2EffectRes consumes the raw container
-// object and duck-types GetPortableEffectReflection off it, so a class crosses
-// the boundary. The intended direction is the opposite: the shader reads the
-// packaged form itself from bytes, the way ccpwgl's
-// Tw2Shader.fromCCPBinary(reader, context) does, with the engine supplying only
-// binding. Nothing but bytes should cross.
+// Nothing but bytes crosses the boundary. Tr2EffectRes.DoLoad takes the container
+// bytes and retains its own reader, the way ccpwgl's Tw2Shader.fromCCPBinary does,
+// with the engine supplying only binding. An earlier revision handed over a reader
+// object and duck-typed a method off it; that is gone.
 //
-// The engine's own CjsWebgpuPackage is not a valid Tr2EffectRes payload, because
-// normalizePackageShape deep-clones to plain JSON and drops permutationGraph and
-// reflection. That is an engine-side projection choice, NOT a property of the
-// format and NOT evidence that two objects are inherent - an earlier version of
-// this file claimed otherwise and was wrong. It is asserted below only because
-// the rejection is currently load-bearing: preserving those fields without also
-// preserving the method would flip a loud rejection into a silently shaderless
-// effect.
+// The engine's own CjsWebgpuPackage is still not a valid Tr2EffectRes payload, and
+// the rejection is the safe outcome rather than a property worth preserving for
+// its own sake: the engine's view is a binding projection that declares no
+// permutation axes, so it fails the payload check by name instead of resolving no
+// shader at all.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 
 import { Tr2Effect } from "@carbonenginejs/runtime-trinity/shader";
 import {
   Tr2RenderBatch,
   TriRenderBatchAccumulator,
   TriRenderBatchMap
-} from "@carbonenginejs/runtime-trinity/trinityCore";
-import { TriBatchType } from "@carbonenginejs/runtime-trinity/generated/trinityCore";
+} from "@carbonenginejs/runtime-trinity/core";
+// TriBatchType is a runtime-utils graphics enum, not a Trinity one. It moved
+// packages in trinity 0.11.0, alongside `trinityCore` becoming `core`.
+import { TriBatchType } from "@carbonenginejs/runtime-utils/graphics";
 
 import { CjsWebgpuPackage } from "../src/index.js";
 import { CjsWebgpuTrinityBatchDispatcher } from "../src/core/trinityBatchDispatcher.js";
+import { buildSelectedPackage, corpusSkipReason, manifestFixture } from "./support/effectPackages.js";
 
 const TRIANGLE_LIST = 4;
 
-const FIXTURE_DIR = process.env.CJS_WEBGPU_FIXTURE_DIR || null;
-const FIXTURE_STEM = process.env.CJS_WEBGPU_FIXTURE_STEM || "unpacked_quadv5.sm_hi";
+const SKIP = corpusSkipReason();
 
 async function readerModules()
 {
@@ -302,32 +297,17 @@ test("the engine dispatcher reaches the package pipeline through a real batch ma
   dispatcher.DestroyBatchMap(handle);
 });
 
-// Pins today's mechanism so a change to it is visible. It is not an endorsement:
-// see the header - the direction of travel is bytes-in, which would retire the
-// GetPortableEffectReflection assertion entirely.
-test("a real Tr2EffectRes resolves a shader from a real CEWGPU container", async (t) =>
+// The direction of travel arrived: nothing but bytes crosses the boundary.
+// `Tr2EffectRes.DoLoad` takes the container bytes and retains its own reader, so
+// there is no reader object to hand over and no method to duck-type off one.
+test("a real Tr2EffectRes resolves a shader from real container bytes", { skip: SKIP }, async () =>
 {
-  if (!FIXTURE_DIR)
-  {
-    t.skip("set CJS_WEBGPU_FIXTURE_DIR to a directory holding the built "
-      + `${FIXTURE_STEM}-ppt-main.<backend>.cewgpu packages `
-      + "(build them per test/fixtures/quadv5/manifest.json)");
-    return;
-  }
-
   const { Tr2EffectRes, CjsWebgpuFormat } = await readerModules();
-  const path = join(FIXTURE_DIR, `${FIXTURE_STEM}-ppt-main.dx11.cewgpu`);
-  const bytes = new Uint8Array(await readFile(path));
-
-  // The raw emit is the internal CewgpuContainer. The default emit is a plain
-  // JSON projection without GetPortableEffectReflection, so it would be accepted
-  // as a payload and then silently resolve no shader at all - the failure a
-  // loader is most likely to ship by accident.
-  const reader = CjsWebgpuFormat.read(bytes, { source: path, emit: CjsWebgpuFormat.OUTPUT_RAW });
-  assert.equal(typeof reader.GetPortableEffectReflection, "function");
+  const fixture = await manifestFixture("quadv5-ppt-main");
+  const { bytes, source } = await buildSelectedPackage(CjsWebgpuFormat, fixture, "dx11");
 
   const resource = new Tr2EffectRes();
-  resource.SetPayload(reader);
+  resource.DoLoad(bytes);
 
   const effect = new Tr2Effect();
   effect.effectResource = resource;
@@ -342,20 +322,24 @@ test("a real Tr2EffectRes resolves a shader from a real CEWGPU container", async
   // binding; that view is a lossy derived projection, not a second artifact the
   // format requires and not something a loader has to "also produce".
   const enginePackage = CjsWebgpuPackage.fromBytes(bytes, {
-    source: path,
-    read: CjsWebgpuFormat.read
+    read: CjsWebgpuFormat.read,
+    readOptions: { source }
   });
   const pipeline = enginePackage.GetPipeline("Main", 0);
   assert.ok(pipeline, "the engine package must expose Main.pass0");
 
-  // The projection cannot double as a payload today, and the rejection is the
-  // safe outcome: normalizePackageShape deep-clones to plain JSON, so the method
-  // Tr2EffectRes reads cannot survive it. Restoring the dropped fields without
-  // restoring that capability would turn this loud failure into a silent one.
-  assert.equal(enginePackage.permutationGraph, undefined);
+  // Both halves of the read work off the same bytes now, and both are complete:
+  // the shader resolves through Tr2EffectRes, and the engine's own view builds a
+  // pipeline. Neither is a fallback for the other failing.
+  assert.ok(pipeline.HasCompleteWgsl(), "the engine package's Main.pass0 must carry complete WGSL");
+
+  // The engine's view is a projection for binding, not an effect payload. It
+  // declares no permutation axes, so it is rejected - and the rejection stays
+  // loud rather than resolving no shader at all, which is the failure a loader
+  // is most likely to ship by accident.
   assert.throws(
     () => new Tr2EffectRes().SetPayload(enginePackage),
-    /permutation graph, permutations array, or one portable reflection/u,
+    /permutations array/u,
     "the engine package must not be accepted as a Tr2EffectRes payload"
   );
 });

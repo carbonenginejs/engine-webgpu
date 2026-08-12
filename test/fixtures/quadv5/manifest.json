@@ -59,11 +59,22 @@
   },
   "compiler": {
     "package": "@carbonenginejs/runtime-resource",
-    "installedVersion": "0.12.0",
+    "installedVersion": "0.17.0",
     "backendPackage": "@carbonenginejs/runtime-resource/formats/webgpu",
-    "backendPackageVersion": "0.11.1",
+    "backendPackageVersion": "0.17.0",
     "translator": "dxbc-js-wgsl",
-    "translatorVersion": "0.11.1"
+    "translatorVersion": "0.17.0",
+    "previous": {
+      "installedVersion": "0.12.0",
+      "backendPackageVersion": "0.11.1",
+      "translatorVersion": "0.11.1"
+    }
+  },
+  "staleness": {
+    "reMeasured": "2026-08-13, runtime-resource 0.17.0, by test/wgsb-equivalence.test.js building in process from the pinned source bytes.",
+    "current": "Every count under fixtures[quadv5-ppt-main].allBody. permutations and translationUnits are unchanged on both backends; dx12 uniqueBodies/unsupportedBodies moved and are re-pinned with their reason.",
+    "stale": "Every packageSha256 and packageByteLength in this file, and every count under fixtures[quadv5-high-ppt-main]. They were measured before the Carbon v15 container replaced the chunk package, so the wire format itself changed: the medium dx11 every-body package is 3154661 bytes now against the 15054155 pinned here. They are retained as the historical record of what the previous compiler produced, and nothing asserts them.",
+    "policy": "A number in this file is either asserted by a test or listed as stale. Do not add a third category: an unasserted, undated number reads as a pin and is how the engine came to be measured against a package nobody had rebuilt in weeks."
   },
   "fixtures": [
     {
@@ -126,10 +137,11 @@
           "packageSha256": "9b09e853b5a16305c5b99c748ff6c71c1f62f536b4da9c690a6ae68f73d5b6cc",
           "packageByteLength": 23806313,
           "permutations": 480,
-          "uniqueBodies": 288,
+          "uniqueBodies": 193,
           "translationUnits": 144,
-          "unsupportedBodies": 144,
-          "note": "DX12 exposes bindless bodies that do not lower. They are retained as explicitly unsupported records with their reason; DX12 is comparison-only evidence."
+          "unsupportedBodies": 49,
+          "note": "DX12 exposes bindless bodies that do not lower. They are retained as explicitly unsupported records with their reason; DX12 is comparison-only evidence.",
+          "uniqueBodiesNote": "Was 288/144 before the container port. All 144 bodies that do not lower still exist as permutations, but an untranslated body emits no programs, so its record differs only by its Carbon description - and 144 such records share 49 distinct descriptions, which the container's alias rule collapses. No body is lost: translationUnits is still 144, which is why that is the count the test asserts and uniqueBodies is not."
         }
       ]
     },

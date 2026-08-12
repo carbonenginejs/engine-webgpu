@@ -81,7 +81,7 @@ function shaderModuleKey(shader)
 export function buildBodySetPipelines(pkg, options = {})
 {
   const source = pkg?.backendBodySource;
-  if (!source) fail("package carries no backend body set; read it with the raw emit");
+  if (!source) fail("package carries no backend body set");
 
   const permutationCount = Number.isInteger(options.permutationCount)
     ? options.permutationCount

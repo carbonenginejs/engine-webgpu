@@ -1,78 +1,48 @@
 import { cloneJson } from "./freeze.js";
 
 /**
- * Raw-package ingestion seam.
+ * Backend body ingestion, from the one package shape.
  *
- * A raw `CEWGPU` reader result carries the `WGSB` `CJS_WGSL_BODY_SET` chunk that
- * the default JSON emit cannot express: `packageToJson` does not project
- * `backendBodySet`, and its `chunks[]` carries `{tag,size,offset}` with no
- * bytes. Raw emit is therefore the only route to every translated body.
+ * There used to be two. A `CEWGPU` chunk package projected `backendBodySet` only
+ * through a raw reader object, so the engine duck-typed `GetBackendBodyPrograms`
+ * off it and projected a second, narrower shape for everything else. The chunk
+ * package is gone: a `.carbonwebgpu` file is one Carbon v15 record container, and
+ * its single emit already carries the body set as plain data.
  *
- * The engine duck-types that reader rather than importing it, mirroring the
- * existing injected-reader discipline. Nothing here names a WebGPU type: a
- * body/pass/unit graph is source-language independent, and only the payload
- * inside a unit is WGSL.
+ * So the join happens once, in the producer. `deriveBackendBodySet` walks the
+ * container calling `CarbonWebgpuContainer.GetBackendBodyPrograms` per distinct
+ * body, and emits the result as `{passUnits, bodies}`. Nothing here decodes a
+ * body, resolves an arena offset, or decides which permutations share one — it
+ * indexes a join the container already made. Verified against that resolver over
+ * all 480 permutations of `unpacked_quadv5.sm_hi`: zero divergences.
+ *
+ * Nothing here names a WebGPU type. A body/pass/unit graph is source-language
+ * independent, and only the payload inside a unit is WGSL.
  */
 
-const RAW_PACKAGE_METHODS = Object.freeze([ "GetBackendBodyPrograms" ]);
+const BODY_SET_FORMAT = "CJS_WGSL_BODY_SET";
+const PERMUTATION_GRAPH_FORMAT = "CJS_EFFECT_PERMUTATION_GRAPH";
 
 /**
- * Report whether a value is a raw package rather than plain package JSON.
- *
- * @param {any} value Candidate package input.
- * @returns {boolean} True when the value exposes the raw backend-body accessor.
- */
-export function isRawPackage(value)
-{
-  return !!value
-    && typeof value === "object"
-    && RAW_PACKAGE_METHODS.every((name) => typeof value[name] === "function");
-}
-
-/**
- * Project a raw package onto the plain shape `normalizePackageShape` consumes.
- *
- * The projection is deliberately narrow: it reproduces exactly the fields the
- * existing path already reads, so a raw package and its JSON emit converge on
- * one normalized document.
- *
- * @param {object} value Raw package.
- * @returns {object} Plain package data.
- */
-export function projectRawPackage(value)
-{
-  return {
-    format: "CEWGPU",
-    version: value.version,
-    sourcePath: value.sourcePath,
-    info: value.info,
-    metadata: value.metadata,
-    analysis: value.analysisJson ?? null,
-    wgsl: value.wgslJson ?? null,
-    chunks: Array.isArray(value.chunks)
-      ? value.chunks.map(({ tag, size, offset }) => ({ tag, size, offset }))
-      : []
-  };
-}
-
-/**
- * Build an engine-owned view of a raw package's translated bodies.
+ * Build an engine-owned view of a package's translated bodies.
  *
  * Returns null when the package carries no body set at all, which is a
- * legitimate state for a selected-mode package rather than an error.
+ * legitimate state for hand-authored package data rather than an error.
  *
- * @param {object} value Raw package.
+ * @param {object} value Plain package data carrying `backendBodySet`.
  * @returns {object|null} Backend body source, or null when there is no body set.
  */
 export function createBackendBodySource(value)
 {
-  if (!isRawPackage(value))
-  {
-    throw new TypeError("CjsWebgpuPackage: backend body source requires a raw package reader result");
-  }
-
-  const bodySet = value.backendBodySet ?? null;
+  const bodySet = value?.backendBodySet ?? null;
   if (!bodySet) return null;
+
+  if (bodySet.format !== BODY_SET_FORMAT)
+  {
+    throw new Error(
+      `CEWGPU body set declares format ${JSON.stringify(bodySet.format)}, expected ${BODY_SET_FORMAT}`
+    );
+  }
 
   // `unit.key` is a per-package ordinal ("unit0", "unit1", ...) and collides
   // across packages, so it is a lookup key here and a diagnostic label
@@ -95,7 +65,54 @@ export function createBackendBodySource(value)
     unitsByKey.set(unit.key, unit);
   }
 
-  const bodyCount = Array.isArray(bodySet.bodies) ? bodySet.bodies.length : 0;
+  const bodiesByKey = new Map();
+  for (const body of Array.isArray(bodySet.bodies) ? bodySet.bodies : [])
+  {
+    if (typeof body?.bodyKey !== "string" || !body.bodyKey)
+    {
+      throw new Error("CEWGPU body set contains a body without a key");
+    }
+    if (bodiesByKey.has(body.bodyKey))
+    {
+      throw new Error(`CEWGPU body set duplicates body ${body.bodyKey}`);
+    }
+    bodiesByKey.set(body.bodyKey, body);
+  }
+
+  // Which permutation resolves to which body is the container's decision, made
+  // by Carbon's own alias dedupe and published in the permutation graph. The
+  // engine reads that mapping; it never recomputes it from offsets, because a
+  // second implementation of the alias rule is exactly how the wrong body
+  // renders while every structural check still passes.
+  const graph = value?.permutationGraph ?? null;
+  const bodyKeyByPermutation = new Map();
+  if (graph)
+  {
+    if (graph.format !== PERMUTATION_GRAPH_FORMAT)
+    {
+      throw new Error(
+        `CEWGPU permutation graph declares format ${JSON.stringify(graph.format)}, `
+        + `expected ${PERMUTATION_GRAPH_FORMAT}`
+      );
+    }
+    for (const variant of Array.isArray(graph.variants) ? graph.variants : [])
+    {
+      if (!Number.isInteger(variant?.permutationIndex))
+      {
+        throw new Error("CEWGPU permutation graph contains a variant without a permutation index");
+      }
+      if (!bodiesByKey.has(variant.bodyKey))
+      {
+        throw new Error(
+          `CEWGPU permutation ${variant.permutationIndex} names body ${variant.bodyKey}, `
+          + "which the body set does not carry"
+        );
+      }
+      bodyKeyByPermutation.set(variant.permutationIndex, variant.bodyKey);
+    }
+  }
+
+  const bodyCount = bodiesByKey.size;
 
   return Object.freeze({
     sourcePath: value.sourcePath,
@@ -103,74 +120,73 @@ export function createBackendBodySource(value)
     unitCount: unitsByKey.size,
     // Every permutation maps to a body; the body set stores only the unique
     // ones. Both counts are needed to state coverage honestly.
-    permutationCount: Number.isInteger(value.info?.permutationGraph?.permutationCount)
-      ? value.info.permutationGraph.permutationCount
-      : 0,
+    permutationCount: bodyKeyByPermutation.size,
 
     /**
      * Resolve one permutation index to its translated passes.
      *
-     * @param {number} permutationIndex Exact PGRF permutation index.
+     * @param {number} permutationIndex Exact permutation index.
      * @returns {object} Resolved body record.
      */
     ResolveBody(permutationIndex)
     {
-      const resolved = value.GetBackendBodyPrograms(permutationIndex);
+      const bodyKey = bodyKeyByPermutation.get(permutationIndex);
 
-      // Null is never "this body has no passes". It is either "the package did
-      // not pass canonical envelope validation" or "there is no WGSB/PGRF to
-      // join". Both are ingestion faults worth naming separately from an
-      // unsupported body, which is a success return.
-      if (!resolved)
+      // A missing mapping is never "this body has no passes". It is either "the
+      // package carries no permutation graph" or "that index is out of range".
+      // Both are ingestion faults worth naming separately from an unsupported
+      // body, which is a success return.
+      if (bodyKey === undefined)
       {
         throw new Error(
           `CEWGPU permutation ${permutationIndex} resolved no backend body: the package has a body set of `
-          + `${bodyCount} bodies, so either it failed envelope validation, it carries no permutation graph, `
-          + "or that permutation index is out of range"
+          + `${bodyCount} bodies over ${bodyKeyByPermutation.size} permutations, so either it carries no `
+          + "permutation graph or that permutation index is out of range"
         );
       }
 
+      const body = bodiesByKey.get(bodyKey);
+
       // An unsupported body is a success return carrying its reason. Surface
       // the reason; never crash on it and never silently skip it.
-      if (resolved.status !== "translated")
+      if (body.status !== "translated")
       {
         return Object.freeze({
-          permutationIndex: resolved.permutationIndex,
-          bodyKey: resolved.bodyKey,
-          status: resolved.status,
-          error: resolved.error ?? null,
+          permutationIndex,
+          bodyKey,
+          status: body.status,
+          error: body.error ?? null,
           passes: Object.freeze([])
         });
       }
 
-      // `GetBackendBodyPrograms` hands back live, unfrozen objects shared
-      // across calls - they are the reader's own internal state. Clone before
-      // the package deep-freezes anything, or the engine freezes another
-      // package's internals.
-      const passes = (resolved.passes || []).map((pass) =>
+      // The units are shared by construction - one unit backs every body that
+      // translated to the same programs - so clone before the package deep-
+      // freezes anything, or freezing one body freezes another body's passes.
+      const passes = (body.passes || []).map((pass) =>
       {
         const unit = unitsByKey.get(pass.unitKey);
         if (!unit)
         {
           throw new Error(
-            `CEWGPU body ${resolved.bodyKey} references missing translation unit ${pass.unitKey}`
+            `CEWGPU body ${bodyKey} references missing translation unit ${pass.unitKey}`
           );
         }
         return Object.freeze({
           passKey: pass.passKey,
           unitKey: pass.unitKey,
           sha256: unit.sha256,
-          wgslSetVersion: pass.wgslSetVersion,
-          shaders: cloneJson(pass.shaders || []),
-          layouts: cloneJson(pass.layouts || []),
-          resourceTransforms: pass.resourceTransforms ? cloneJson(pass.resourceTransforms) : null
+          wgslSetVersion: unit.wgslSetVersion,
+          shaders: cloneJson(unit.shaders || []),
+          layouts: cloneJson(unit.layouts || []),
+          resourceTransforms: unit.resourceTransforms ? cloneJson(unit.resourceTransforms) : null
         });
       });
 
       return Object.freeze({
-        permutationIndex: resolved.permutationIndex,
-        bodyKey: resolved.bodyKey,
-        status: resolved.status,
+        permutationIndex,
+        bodyKey,
+        status: body.status,
         error: null,
         passes: Object.freeze(passes)
       });
