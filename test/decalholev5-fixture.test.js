@@ -210,8 +210,8 @@ function record(backend)
   });
   return {
     backend,
-    filePath: `E:/fixtures/unpacked_decalholev5.${backend}.cewgpu`,
-    resourcePath: `res:/webgpu-harness/decalholev5/${backend}.cewgpu`,
+    filePath: `E:/fixtures/unpacked_decalholev5.${backend}.carbonwebgpu`,
+    resourcePath: `res:/webgpu-harness/decalholev5/${backend}.carbonwebgpu`,
     analysis: {
       source,
       bodyIndex: 0,

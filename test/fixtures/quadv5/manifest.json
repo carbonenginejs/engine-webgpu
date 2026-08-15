@@ -1,8 +1,8 @@
 {
   "manifest": "CJS_ENGINE_WEBGPU_DRAW_FIXTURES",
   "manifestVersion": 1,
-  "gate": "npm run test:webgpu:required -- --draw-quadv5 <dx11.cewgpu> <dx12.cewgpu>",
-  "rationale": "A .cewgpu is a derived artifact, fully determined by (source bytes at a pinned build id + compiler version). Storing the package duplicates a guarantee the compiler already gives and rots silently when the compiler moves. This manifest pins the identity instead: rebuild, compare packageSha256, and a compiler change announces itself as a reviewable manifest diff. The rendered target bytes are pinned because they are the only part that needs a GPU to reproduce.",
+  "gate": "npm run test:webgpu:required -- --draw-quadv5 <dx11.carbonwebgpu> <dx12.carbonwebgpu>",
+  "rationale": "A .carbonwebgpu is a derived artifact, fully determined by (source bytes at a pinned build id + compiler version). Storing the package duplicates a guarantee the compiler already gives and rots silently when the compiler moves. This manifest pins the identity instead: rebuild, compare packageSha256, and a compiler change announces itself as a reviewable manifest diff. The rendered target bytes are pinned because they are the only part that needs a GPU to reproduce.",
   "sourcePolicy": "Source .sm_lo/.sm_hi/.sm_depth bytes are CCP game files. Never commit, fixture, or publish them. Fetch through tools-core at the pinned build id.",
   "resourceTransformGates": [
     {
@@ -163,8 +163,8 @@
       "layoutBindings": 25,
       "resourceTransforms": 0,
       "gates": {
-        "prepared": "--prepare-cewgpu and --prepare-bodyset are green at High: 25 canonical bindings per selected package, and all 168 all-body translation units, with 0 WGSL warnings",
-        "drawn": "npm run test:webgpu:required -- --draw-quadv5 <dx11.cewgpu> <dx12.cewgpu> with the .sm_depth pair: 25 logical bindings over 25 physical, 4096 pixels matched exactly across 1 case, both MRTs, and both backends with 0 WGSL warnings. The tier is derived from the package source-path suffix, so the same flag covers both tiers."
+        "prepared": "--prepare-carbonwebgpu and --prepare-bodyset are green at High: 25 canonical bindings per selected package, and all 168 all-body translation units, with 0 WGSL warnings",
+        "drawn": "npm run test:webgpu:required -- --draw-quadv5 <dx11.carbonwebgpu> <dx12.carbonwebgpu> with the .sm_depth pair: 25 logical bindings over 25 physical, 4096 pixels matched exactly across 1 case, both MRTs, and both backends with 0 WGSL warnings. The tier is derived from the package source-path suffix, so the same flag covers both tiers."
       },
       "inventory": {
         "uniformBuffers": 5,

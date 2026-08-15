@@ -94,7 +94,7 @@ function packageData(overrides = {})
   ];
 
   return {
-    format: "CEWGPU",
+    format: "Carbon WebGPU",
     version: 15,
     sourcePath: "res:/test/effect.dx11/quad.sm_hi",
     info: { format: "CARBON_WEBGPU", effectVersion: 15, permutationCount: variants.length },

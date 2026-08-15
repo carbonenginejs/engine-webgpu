@@ -3,7 +3,7 @@ import { cloneJson } from "./freeze.js";
 /**
  * Backend body ingestion, from the one package shape.
  *
- * There used to be two. A `CEWGPU` chunk package projected `backendBodySet` only
+ * There used to be two. A `Carbon WebGPU` chunk package projected `backendBodySet` only
  * through a raw reader object, so the engine duck-typed `GetBackendBodyPrograms`
  * off it and projected a second, narrower shape for everything else. The chunk
  * package is gone: a `.carbonwebgpu` file is one Carbon v15 record container, and
@@ -40,7 +40,7 @@ export function createBackendBodySource(value)
   if (bodySet.format !== BODY_SET_FORMAT)
   {
     throw new Error(
-      `CEWGPU body set declares format ${JSON.stringify(bodySet.format)}, expected ${BODY_SET_FORMAT}`
+      `Carbon WebGPU body set declares format ${JSON.stringify(bodySet.format)}, expected ${BODY_SET_FORMAT}`
     );
   }
 
@@ -52,15 +52,15 @@ export function createBackendBodySource(value)
   {
     if (typeof unit?.key !== "string" || !unit.key)
     {
-      throw new Error("CEWGPU body set contains a translation unit without a key");
+      throw new Error("Carbon WebGPU body set contains a translation unit without a key");
     }
     if (typeof unit.sha256 !== "string" || !/^[0-9a-f]{64}$/u.test(unit.sha256))
     {
-      throw new Error(`CEWGPU translation unit ${unit.key} has no sha256 identity`);
+      throw new Error(`Carbon WebGPU translation unit ${unit.key} has no sha256 identity`);
     }
     if (unitsByKey.has(unit.key))
     {
-      throw new Error(`CEWGPU body set duplicates translation unit ${unit.key}`);
+      throw new Error(`Carbon WebGPU body set duplicates translation unit ${unit.key}`);
     }
     unitsByKey.set(unit.key, unit);
   }
@@ -70,11 +70,11 @@ export function createBackendBodySource(value)
   {
     if (typeof body?.bodyKey !== "string" || !body.bodyKey)
     {
-      throw new Error("CEWGPU body set contains a body without a key");
+      throw new Error("Carbon WebGPU body set contains a body without a key");
     }
     if (bodiesByKey.has(body.bodyKey))
     {
-      throw new Error(`CEWGPU body set duplicates body ${body.bodyKey}`);
+      throw new Error(`Carbon WebGPU body set duplicates body ${body.bodyKey}`);
     }
     bodiesByKey.set(body.bodyKey, body);
   }
@@ -91,7 +91,7 @@ export function createBackendBodySource(value)
     if (graph.format !== PERMUTATION_GRAPH_FORMAT)
     {
       throw new Error(
-        `CEWGPU permutation graph declares format ${JSON.stringify(graph.format)}, `
+        `Carbon WebGPU permutation graph declares format ${JSON.stringify(graph.format)}, `
         + `expected ${PERMUTATION_GRAPH_FORMAT}`
       );
     }
@@ -99,12 +99,12 @@ export function createBackendBodySource(value)
     {
       if (!Number.isInteger(variant?.permutationIndex))
       {
-        throw new Error("CEWGPU permutation graph contains a variant without a permutation index");
+        throw new Error("Carbon WebGPU permutation graph contains a variant without a permutation index");
       }
       if (!bodiesByKey.has(variant.bodyKey))
       {
         throw new Error(
-          `CEWGPU permutation ${variant.permutationIndex} names body ${variant.bodyKey}, `
+          `Carbon WebGPU permutation ${variant.permutationIndex} names body ${variant.bodyKey}, `
           + "which the body set does not carry"
         );
       }
@@ -139,7 +139,7 @@ export function createBackendBodySource(value)
       if (bodyKey === undefined)
       {
         throw new Error(
-          `CEWGPU permutation ${permutationIndex} resolved no backend body: the package has a body set of `
+          `Carbon WebGPU permutation ${permutationIndex} resolved no backend body: the package has a body set of `
           + `${bodyCount} bodies over ${bodyKeyByPermutation.size} permutations, so either it carries no `
           + "permutation graph or that permutation index is out of range"
         );
@@ -169,7 +169,7 @@ export function createBackendBodySource(value)
         if (!unit)
         {
           throw new Error(
-            `CEWGPU body ${bodyKey} references missing translation unit ${pass.unitKey}`
+            `Carbon WebGPU body ${bodyKey} references missing translation unit ${pass.unitKey}`
           );
         }
         return Object.freeze({

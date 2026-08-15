@@ -802,7 +802,7 @@ async function CreatePhaseZeroDraw(webgpu)
 
 async function LoadDrawDescriptor()
 {
-    if (CONFIG.drawCewgpu)
+    if (CONFIG.drawCarbonWebgpu)
     {
         const response = await fetch("/draw-package.json");
         Assert(response.ok, `Failed to load ${CONFIG.packageLabel}: HTTP ${response.status}`);
@@ -6732,7 +6732,7 @@ async function RunDecalV5Comparison(webgpu)
 
 async function PreparePackage(webgpu)
 {
-    if (!CONFIG.prepareCewgpu) return null;
+    if (!CONFIG.prepareCarbonWebgpu) return null;
     const response = await fetch("/prepare-package.json");
     Assert(response.ok, `Failed to load ${CONFIG.preparePackageLabel}: HTTP ${response.status}`);
     const pipeline = await response.json();

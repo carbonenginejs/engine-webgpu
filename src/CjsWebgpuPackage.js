@@ -3,7 +3,7 @@ import { createBackendBodySource } from "./core/backendBodySource.js";
 import { deepFreeze } from "./core/freeze.js";
 
 /**
- * Immutable descriptor-only consumer for `CEWGPU` package data.
+ * Immutable descriptor-only consumer for `Carbon WebGPU` package data.
  */
 export class CjsWebgpuPackage
 {

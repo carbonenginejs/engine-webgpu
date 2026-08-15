@@ -203,9 +203,9 @@ struct FragmentOutput {
     resource(registers[index], definition));
   return {
     backend,
-    label: `${backend}.cewgpu`,
-    filePath: `E:/fixtures/unpacked_decalcylindricv5.${backend}.cewgpu`,
-    resourcePath: `res:/webgpu-harness/decalcylindricv5/${backend}.cewgpu`,
+    label: `${backend}.carbonwebgpu`,
+    filePath: `E:/fixtures/unpacked_decalcylindricv5.${backend}.carbonwebgpu`,
+    resourcePath: `res:/webgpu-harness/decalcylindricv5/${backend}.carbonwebgpu`,
     analysis: {
       source,
       bodyIndex: 0,

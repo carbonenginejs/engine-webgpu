@@ -140,9 +140,9 @@ struct FragmentOutput {
 }`;
   return {
     backend,
-    label: `${backend}.cewgpu`,
-    filePath: `E:/fixtures/unpacked_decalcounterv5.${backend}.cewgpu`,
-    resourcePath: `res:/webgpu-harness/decalcounterv5/${backend}.cewgpu`,
+    label: `${backend}.carbonwebgpu`,
+    filePath: `E:/fixtures/unpacked_decalcounterv5.${backend}.carbonwebgpu`,
+    resourcePath: `res:/webgpu-harness/decalcounterv5/${backend}.carbonwebgpu`,
     analysis: {
       source,
       bodyIndex: 0,

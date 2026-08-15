@@ -505,9 +505,9 @@ function makeRecord(backend, variant = "skinned")
   return {
     backend,
     variant,
-    label: `${backend}.cewgpu`,
-    filePath: `C:/fixtures/quadsailsv5/${backend}.cewgpu`,
-    resourcePath: `res:/webgpu-harness/quadsailsv5/${backend}.cewgpu`,
+    label: `${backend}.carbonwebgpu`,
+    filePath: `C:/fixtures/quadsailsv5/${backend}.carbonwebgpu`,
+    resourcePath: `res:/webgpu-harness/quadsailsv5/${backend}.carbonwebgpu`,
     analysis: {
       source,
       bodyIndex: profile.bodyIndex,

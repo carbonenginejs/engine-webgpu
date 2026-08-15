@@ -7,7 +7,7 @@ Summary: Defines what the WebGPU engine package owns and what callers must suppl
 
 ## Purpose
 
-The package turns validated, already-selected CEWGPU descriptors and explicit
+The package turns validated, already-selected Carbon WebGPU descriptors and explicit
 caller data into generation-bound WebGPU objects and encoded draws.
 
 ## Current ownership
@@ -90,7 +90,7 @@ matrix should hand that to `SetAndTranspose` and let it transpose once, which is
 what `EveCustomMask` does. A record-to-record copy needs a genuine slot copy, not
 the accessor pair.
 
-CEWGPU bytes can be decoded by an injected reader. Offline corpus tooling can
+Carbon WebGPU bytes can be decoded by an injected reader. Offline corpus tooling can
 produce packages for qualification, but it is not an engine dependency.
 
 ## Provisional Trinity batch boundary

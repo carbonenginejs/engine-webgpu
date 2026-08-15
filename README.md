@@ -1,6 +1,6 @@
 # @carbonenginejs/engine-webgpu
 
-`@carbonenginejs/engine-webgpu` consumes already-selected CEWGPU package data
+`@carbonenginejs/engine-webgpu` consumes already-selected Carbon WebGPU package data
 and realizes explicit WebGPU pipeline, resource, binding, and draw requests.
 
 Use this experimental package when the caller already owns effect selection,
@@ -22,7 +22,7 @@ npm install
 
 ## Quick start
 
-In a browser with WebGPU, prepare an already-decoded CEWGPU package and its
+In a browser with WebGPU, prepare an already-decoded Carbon WebGPU package and its
 selected pipeline:
 
 ```js

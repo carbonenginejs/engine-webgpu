@@ -385,9 +385,9 @@ function makeRecord(backend)
   return {
     backend,
     variant: "skinned",
-    label: `${backend}.cewgpu`,
-    filePath: `C:/fixtures/quadoilv5/${backend}.cewgpu`,
-    resourcePath: `res:/webgpu-harness/quadoilv5/${backend}.cewgpu`,
+    label: `${backend}.carbonwebgpu`,
+    filePath: `C:/fixtures/quadoilv5/${backend}.carbonwebgpu`,
+    resourcePath: `res:/webgpu-harness/quadoilv5/${backend}.carbonwebgpu`,
     analysis: {
       source,
       bodyIndex: 0,
@@ -699,11 +699,11 @@ test("QuadOilV5 launcher rejects a mixed decal-family invocation", () =>
   const result = spawnSync(process.execPath, [
     script,
     "--draw-skinned-quadoilv5",
-    "oil-dx11.cewgpu",
-    "oil-dx12.cewgpu",
+    "oil-dx11.carbonwebgpu",
+    "oil-dx12.carbonwebgpu",
     "--draw-decalv5",
-    "decal-dx11.cewgpu",
-    "decal-dx12.cewgpu"
+    "decal-dx11.carbonwebgpu",
+    "decal-dx12.carbonwebgpu"
   ], {
     encoding: "utf8"
   });

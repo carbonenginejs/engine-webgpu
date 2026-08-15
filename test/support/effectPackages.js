@@ -5,7 +5,7 @@ import { join } from "node:path";
 /**
  * Build the manifest's pinned packages in process, from source effect bytes.
  *
- * These two tests used to need a directory of pre-built `.cewgpu` files, named
+ * These two tests used to need a directory of pre-built `.carbonwebgpu` files, named
  * by `CJS_WEBGPU_FIXTURE_DIR`. Nobody had one, so both tests skipped for weeks
  * while the path they cover stopped working - the engine kept reading a chunk
  * package that the producer had stopped emitting, and 237 synthetic-record

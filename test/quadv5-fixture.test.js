@@ -620,9 +620,9 @@ function validRecord(backend = "dx11", variant = "static", tier = "medium")
   return {
     backend,
     variant,
-    label: "unpacked-quadv5-ppt-on.cewgpu",
-    filePath: `fixtures/packages/unpacked-quadv5-ppt-on-${backend}.cewgpu`,
-    resourcePath: `res:/webgpu-harness/quadv5/${backend}.cewgpu`,
+    label: "unpacked-quadv5-ppt-on.carbonwebgpu",
+    filePath: `fixtures/packages/unpacked-quadv5-ppt-on-${backend}.carbonwebgpu`,
+    resourcePath: `res:/webgpu-harness/quadv5/${backend}.carbonwebgpu`,
     analysis: {
       source,
       bodyIndex: 4,

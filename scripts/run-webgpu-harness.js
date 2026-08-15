@@ -31,16 +31,16 @@ if (DRAW_WGSL_INDEX >= 0 && (!process.argv[DRAW_WGSL_INDEX + 1] || !process.argv
 }
 const DRAW_VERTEX_PATH = DRAW_WGSL_INDEX >= 0 ? resolve(process.argv[DRAW_WGSL_INDEX + 1]) : null;
 const DRAW_FRAGMENT_PATH = DRAW_WGSL_INDEX >= 0 ? resolve(process.argv[DRAW_WGSL_INDEX + 2]) : null;
-const DRAW_CEWGPU_INDEX = process.argv.indexOf("--draw-cewgpu");
-if (DRAW_CEWGPU_INDEX >= 0 && !process.argv[DRAW_CEWGPU_INDEX + 1])
+const DRAW_CARBONWEBGPU_INDEX = process.argv.indexOf("--draw-carbonwebgpu");
+if (DRAW_CARBONWEBGPU_INDEX >= 0 && !process.argv[DRAW_CARBONWEBGPU_INDEX + 1])
 {
-    throw new Error("--draw-cewgpu requires a CEWGPU file path");
+    throw new Error("--draw-carbonwebgpu requires a Carbon WebGPU file path");
 }
-if (DRAW_CEWGPU_INDEX >= 0 && DRAW_WGSL_INDEX >= 0)
+if (DRAW_CARBONWEBGPU_INDEX >= 0 && DRAW_WGSL_INDEX >= 0)
 {
-    throw new Error("--draw-cewgpu and --draw-wgsl are mutually exclusive");
+    throw new Error("--draw-carbonwebgpu and --draw-wgsl are mutually exclusive");
 }
-const DRAW_CEWGPU_PATH = DRAW_CEWGPU_INDEX >= 0 ? resolve(process.argv[DRAW_CEWGPU_INDEX + 1]) : null;
+const DRAW_CARBONWEBGPU_PATH = DRAW_CARBONWEBGPU_INDEX >= 0 ? resolve(process.argv[DRAW_CARBONWEBGPU_INDEX + 1]) : null;
 const DRAW_QUADV5_INDEX = process.argv.indexOf("--draw-quadv5");
 const DRAW_SKINNED_QUADV5_INDEX = process.argv.indexOf("--draw-skinned-quadv5");
 const DRAW_SKINNED_QUADHEATV5_INDEX =
@@ -95,7 +95,7 @@ if (ACTIVE_QUADV5_INDEX >= 0
     || process.argv[ACTIVE_QUADV5_INDEX + 1].startsWith("--")
     || process.argv[ACTIVE_QUADV5_INDEX + 2].startsWith("--")))
 {
-    throw new Error(`${QUADV5_FLAG} requires DX11-derived and DX12-derived CEWGPU file paths`);
+    throw new Error(`${QUADV5_FLAG} requires DX11-derived and DX12-derived Carbon WebGPU file paths`);
 }
 const DRAW_QUADV5_PATHS = ACTIVE_QUADV5_INDEX >= 0
     ? [ resolve(process.argv[ACTIVE_QUADV5_INDEX + 1]), resolve(process.argv[ACTIVE_QUADV5_INDEX + 2]) ]
@@ -120,7 +120,7 @@ if (ACTIVE_QUADGLASSV5_INDEX >= 0
     || process.argv[ACTIVE_QUADGLASSV5_INDEX + 2].startsWith("--")))
 {
     throw new Error(
-        `${QUADGLASSV5_FLAG} requires DX11-derived and DX12-derived CEWGPU file paths`
+        `${QUADGLASSV5_FLAG} requires DX11-derived and DX12-derived Carbon WebGPU file paths`
     );
 }
 if (ACTIVE_QUADGLASSV5_INDEX >= 0 && ACTIVE_QUADV5_INDEX >= 0)
@@ -139,7 +139,7 @@ if (DRAW_QUADHEATV5_INDEX >= 0
     || process.argv[DRAW_QUADHEATV5_INDEX + 2].startsWith("--")))
 {
     throw new Error(
-        "--draw-quadheatv5 requires DX11-derived and DX12-derived CEWGPU file paths"
+        "--draw-quadheatv5 requires DX11-derived and DX12-derived Carbon WebGPU file paths"
     );
 }
 if (DRAW_QUADHEATV5_INDEX >= 0
@@ -173,7 +173,7 @@ if (ACTIVE_QUADSAILSV5_INDEX >= 0
     || process.argv[ACTIVE_QUADSAILSV5_INDEX + 2].startsWith("--")))
 {
     throw new Error(
-        `${QUADSAILSV5_FLAG} requires DX11-derived and DX12-derived CEWGPU file paths`
+        `${QUADSAILSV5_FLAG} requires DX11-derived and DX12-derived Carbon WebGPU file paths`
     );
 }
 if (ACTIVE_QUADSAILSV5_INDEX >= 0
@@ -211,7 +211,7 @@ if (ACTIVE_QUADDETAILV5_INDEX >= 0
     || process.argv[ACTIVE_QUADDETAILV5_INDEX + 2].startsWith("--")))
 {
     throw new Error(
-        `${QUADDETAILV5_FLAG} requires DX11-derived and DX12-derived CEWGPU file paths`
+        `${QUADDETAILV5_FLAG} requires DX11-derived and DX12-derived Carbon WebGPU file paths`
     );
 }
 if (ACTIVE_QUADDETAILV5_INDEX >= 0
@@ -237,7 +237,7 @@ if (DRAW_SKINNED_QUADOILV5_INDEX >= 0
     || process.argv[DRAW_SKINNED_QUADOILV5_INDEX + 2].startsWith("--")))
 {
     throw new Error(
-        "--draw-skinned-quadoilv5 requires DX11-derived and DX12-derived CEWGPU file paths"
+        "--draw-skinned-quadoilv5 requires DX11-derived and DX12-derived Carbon WebGPU file paths"
     );
 }
 if (DRAW_SKINNED_QUADOILV5_INDEX >= 0
@@ -329,7 +329,7 @@ if (ACTIVE_DECALV5_INDEX >= 0
     || process.argv[ACTIVE_DECALV5_INDEX + 1].startsWith("--")
     || process.argv[ACTIVE_DECALV5_INDEX + 2].startsWith("--")))
 {
-    throw new Error(`${DECALV5_FLAG} requires DX11-derived and DX12-derived CEWGPU file paths`);
+    throw new Error(`${DECALV5_FLAG} requires DX11-derived and DX12-derived Carbon WebGPU file paths`);
 }
 const DRAW_DECALV5_PATHS = ACTIVE_DECALV5_INDEX >= 0
     ? [ resolve(process.argv[ACTIVE_DECALV5_INDEX + 1]), resolve(process.argv[ACTIVE_DECALV5_INDEX + 2]) ]
@@ -342,7 +342,7 @@ const DRAW_HULL_INDEX = process.argv.indexOf("--draw-hull");
 if (DRAW_HULL_INDEX >= 0
   && (!process.argv[DRAW_HULL_INDEX + 1] || process.argv[DRAW_HULL_INDEX + 1].startsWith("--")))
 {
-    throw new Error("--draw-hull requires a packed quadv5 CEWGPU file path");
+    throw new Error("--draw-hull requires a packed quadv5 Carbon WebGPU file path");
 }
 const DRAW_HULL_PATH = DRAW_HULL_INDEX >= 0
     ? resolve(process.argv[DRAW_HULL_INDEX + 1])
@@ -395,17 +395,17 @@ if ((ACTIVE_QUADV5_INDEX >= 0 || ACTIVE_QUADGLASSV5_INDEX >= 0
   || ACTIVE_QUADDETAILV5_INDEX >= 0
   || DRAW_SKINNED_QUADOILV5_INDEX >= 0
   || ACTIVE_DECALV5_INDEX >= 0)
-  && (DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0))
+  && (DRAW_CARBONWEBGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0))
 {
     throw new Error("a ship-family draw flag cannot be combined with another draw input");
 }
-const PREPARE_CEWGPU_INDEX = process.argv.indexOf("--prepare-cewgpu");
-if (PREPARE_CEWGPU_INDEX >= 0 && !process.argv[PREPARE_CEWGPU_INDEX + 1])
+const PREPARE_CARBONWEBGPU_INDEX = process.argv.indexOf("--prepare-carbonwebgpu");
+if (PREPARE_CARBONWEBGPU_INDEX >= 0 && !process.argv[PREPARE_CARBONWEBGPU_INDEX + 1])
 {
-    throw new Error("--prepare-cewgpu requires a CEWGPU file path");
+    throw new Error("--prepare-carbonwebgpu requires a Carbon WebGPU file path");
 }
-if (PREPARE_CEWGPU_INDEX >= 0
-  && (DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0
+if (PREPARE_CARBONWEBGPU_INDEX >= 0
+  && (DRAW_CARBONWEBGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0
     || ACTIVE_QUADV5_INDEX >= 0 || ACTIVE_QUADGLASSV5_INDEX >= 0
     || DRAW_QUADHEATV5_INDEX >= 0
     || ACTIVE_QUADSAILSV5_INDEX >= 0
@@ -413,16 +413,16 @@ if (PREPARE_CEWGPU_INDEX >= 0
     || DRAW_SKINNED_QUADOILV5_INDEX >= 0
     || ACTIVE_DECALV5_INDEX >= 0))
 {
-    throw new Error("--prepare-cewgpu cannot be combined with a draw input");
+    throw new Error("--prepare-carbonwebgpu cannot be combined with a draw input");
 }
-const PREPARE_CEWGPU_PATH = PREPARE_CEWGPU_INDEX >= 0 ? resolve(process.argv[PREPARE_CEWGPU_INDEX + 1]) : null;
+const PREPARE_CARBONWEBGPU_PATH = PREPARE_CARBONWEBGPU_INDEX >= 0 ? resolve(process.argv[PREPARE_CARBONWEBGPU_INDEX + 1]) : null;
 const PREPARE_MATRIX_INDEX = process.argv.indexOf("--prepare-matrix");
 if (PREPARE_MATRIX_INDEX >= 0 && !process.argv[PREPARE_MATRIX_INDEX + 1])
 {
     throw new Error("--prepare-matrix requires a CJS_WEBGPU_EFFECT_MATRIX JSON file path");
 }
 if (PREPARE_MATRIX_INDEX >= 0
-  && (PREPARE_CEWGPU_INDEX >= 0 || DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0
+  && (PREPARE_CARBONWEBGPU_INDEX >= 0 || DRAW_CARBONWEBGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0
     || ACTIVE_QUADV5_INDEX >= 0 || ACTIVE_QUADGLASSV5_INDEX >= 0
     || DRAW_QUADHEATV5_INDEX >= 0
     || ACTIVE_QUADSAILSV5_INDEX >= 0
@@ -437,14 +437,14 @@ const PREPARE_BODYSET_INDEX = process.argv.indexOf("--prepare-bodyset");
 if (PREPARE_BODYSET_INDEX >= 0
   && (!process.argv[PREPARE_BODYSET_INDEX + 1] || process.argv[PREPARE_BODYSET_INDEX + 1].startsWith("--")))
 {
-    throw new Error("--prepare-bodyset requires an all-body CEWGPU file path");
+    throw new Error("--prepare-bodyset requires an all-body Carbon WebGPU file path");
 }
 if (PREPARE_BODYSET_INDEX >= 0 && PREPARE_MATRIX_INDEX >= 0)
 {
     throw new Error("--prepare-bodyset cannot be combined with --prepare-matrix");
 }
 if (PREPARE_BODYSET_INDEX >= 0
-  && (PREPARE_CEWGPU_INDEX >= 0 || DRAW_CEWGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0
+  && (PREPARE_CARBONWEBGPU_INDEX >= 0 || DRAW_CARBONWEBGPU_INDEX >= 0 || DRAW_WGSL_INDEX >= 0
     || ACTIVE_QUADV5_INDEX >= 0 || ACTIVE_QUADGLASSV5_INDEX >= 0
     || DRAW_QUADHEATV5_INDEX >= 0
     || ACTIVE_QUADSAILSV5_INDEX >= 0
@@ -479,8 +479,8 @@ async function ReadPackagePipeline(path)
         readOptions: { source: path }
     });
     const pipeline = pkg.GetPipeline("Main", 0);
-    if (!pipeline) throw new Error("CEWGPU package has no Main pass 0 pipeline");
-    if (!pipeline.HasCompleteWgsl()) throw new Error("CEWGPU Main pass 0 does not have complete WGSL");
+    if (!pipeline) throw new Error("Carbon WebGPU package has no Main pass 0 pipeline");
+    if (!pipeline.HasCompleteWgsl()) throw new Error("Carbon WebGPU Main pass 0 does not have complete WGSL");
     return { pipeline: pipeline.ToJSON(), validateCopyblit: buildCopyblitDrawDescriptor };
 }
 
@@ -511,7 +511,7 @@ async function ReadBodySetPrepare(path)
  * has to get a complete Main.pass0 pipeline into the browser; it does not
  * re-check the variant here and then again there.
  *
- * @param {string} path CEWGPU file path.
+ * @param {string} path Carbon WebGPU file path.
  * @returns {Promise<object>} Serializable package record.
  */
 async function ReadHullPackage(path)
@@ -533,7 +533,7 @@ async function ReadHullPackage(path)
         label: basename(path),
         backend: "dx11",
         filePath: path,
-        resourcePath: "res:/webgpu-harness/hull/quadv5.cewgpu",
+        resourcePath: "res:/webgpu-harness/hull/quadv5.carbonwebgpu",
         // No analysis chunk: the fixture takes the material layout from the
         // pass binding, which keeps this draw off the engine's analysis-reading
         // fallback rather than adding another caller to it.
@@ -559,7 +559,7 @@ async function ReadQuadV5Packages(paths, variant)
         backend,
         variant,
         filePath: paths[index],
-        resourcePath: `res:/webgpu-harness/${variant}-quadv5/${backend}.cewgpu`
+        resourcePath: `res:/webgpu-harness/${variant}-quadv5/${backend}.carbonwebgpu`
     }));
 
     const records = [];
@@ -618,8 +618,8 @@ async function ReadQuadGlassV5Packages(paths, variant)
         variant,
         filePath: paths[index],
         resourcePath: variant === "static"
-            ? `res:/webgpu-harness/quadglassv5/${backend}.cewgpu`
-            : `res:/webgpu-harness/quadglassv5/${variant}/${backend}.cewgpu`
+            ? `res:/webgpu-harness/quadglassv5/${backend}.carbonwebgpu`
+            : `res:/webgpu-harness/quadglassv5/${variant}/${backend}.carbonwebgpu`
     }));
     const records = [];
     for (const request of requests)
@@ -680,7 +680,7 @@ async function ReadQuadHeatV5Packages(paths)
     const requests = [ "dx11", "dx12" ].map((backend, index) => ({
         backend,
         filePath: paths[index],
-        resourcePath: `res:/webgpu-harness/quadheatv5/${backend}.cewgpu`
+        resourcePath: `res:/webgpu-harness/quadheatv5/${backend}.carbonwebgpu`
     }));
     const records = [];
     for (const request of requests)
@@ -735,7 +735,7 @@ async function ReadQuadSailsV5Packages(paths, variant)
         backend,
         variant,
         filePath: paths[index],
-        resourcePath: `res:/webgpu-harness/quadsailsv5/${variant}/${backend}.cewgpu`
+        resourcePath: `res:/webgpu-harness/quadsailsv5/${variant}/${backend}.carbonwebgpu`
     }));
     const records = [];
     for (const request of requests)
@@ -791,7 +791,7 @@ async function ReadQuadDetailV5Packages(paths, variant)
         backend,
         variant,
         filePath: paths[index],
-        resourcePath: `res:/webgpu-harness/quaddetailv5/${variant}/${backend}.cewgpu`
+        resourcePath: `res:/webgpu-harness/quaddetailv5/${variant}/${backend}.carbonwebgpu`
     }));
     const records = [];
     for (const request of requests)
@@ -848,7 +848,7 @@ async function ReadQuadOilV5Packages(paths)
         variant: "skinned",
         filePath: paths[index],
         resourcePath:
-            `res:/webgpu-harness/quadoilv5/skinned/${backend}.cewgpu`
+            `res:/webgpu-harness/quadoilv5/skinned/${backend}.carbonwebgpu`
     }));
     const records = [];
     for (const request of requests)
@@ -900,7 +900,7 @@ async function ReadDecalV5Packages(paths, variant)
         backend,
         variant,
         filePath: paths[index],
-        resourcePath: `res:/webgpu-harness/decalv5/${variant}/${backend}.cewgpu`
+        resourcePath: `res:/webgpu-harness/decalv5/${variant}/${backend}.carbonwebgpu`
     }));
 
     const records = [];
@@ -946,10 +946,10 @@ async function ReadDecalV5Packages(paths, variant)
     return records;
 }
 
-const PACKAGE_DRAW_RECORD = DRAW_CEWGPU_PATH ? await ReadPackagePipeline(DRAW_CEWGPU_PATH) : null;
+const PACKAGE_DRAW_RECORD = DRAW_CARBONWEBGPU_PATH ? await ReadPackagePipeline(DRAW_CARBONWEBGPU_PATH) : null;
 if (PACKAGE_DRAW_RECORD) PACKAGE_DRAW_RECORD.validateCopyblit(PACKAGE_DRAW_RECORD.pipeline);
 const PACKAGE_DRAW = PACKAGE_DRAW_RECORD?.pipeline || null;
-const PACKAGE_PREPARE = PREPARE_CEWGPU_PATH ? (await ReadPackagePipeline(PREPARE_CEWGPU_PATH)).pipeline : null;
+const PACKAGE_PREPARE = PREPARE_CARBONWEBGPU_PATH ? (await ReadPackagePipeline(PREPARE_CARBONWEBGPU_PATH)).pipeline : null;
 // Both prepare inputs converge on one CJS_WEBGPU_PREPARE_MATRIX document, so
 // the browser prepares a body set with no browser-side code of its own.
 const MATRIX_PREPARE = PREPARE_MATRIX_PATH
@@ -1018,7 +1018,7 @@ const ASSETS = new Map([
             compileWgsl: !!COMPILE_WGSL_PATH,
             label: COMPILE_WGSL_PATH ? basename(COMPILE_WGSL_PATH) : null,
             drawWgsl: !!DRAW_VERTEX_PATH,
-            drawCewgpu: !!PACKAGE_DRAW,
+            drawCarbonWebgpu: !!PACKAGE_DRAW,
             drawHull: !!HULL_DRAW,
             drawQuadV5: !!QUADV5_DRAW,
             drawQuadGlassV5: !!QUADGLASSV5_DRAW,
@@ -1038,9 +1038,9 @@ const ASSETS = new Map([
             quadGlassV5Variant:
                 QUADGLASSV5_DRAW ? QUADGLASSV5_VARIANT : null,
             quadSailsV5Variant: QUADSAILSV5_DRAW ? QUADSAILSV5_VARIANT : null,
-            prepareCewgpu: !!PACKAGE_PREPARE,
+            prepareCarbonWebgpu: !!PACKAGE_PREPARE,
             prepareMatrix: !!MATRIX_PREPARE,
-            packageLabel: DRAW_CEWGPU_PATH ? basename(DRAW_CEWGPU_PATH) : null,
+            packageLabel: DRAW_CARBONWEBGPU_PATH ? basename(DRAW_CARBONWEBGPU_PATH) : null,
             quadV5Labels: DRAW_QUADV5_PATHS?.map((path) => basename(path)) || [],
             quadGlassV5Labels:
                 DRAW_QUADGLASSV5_PATHS?.map((path) => basename(path)) || [],
@@ -1053,7 +1053,7 @@ const ASSETS = new Map([
             quadSailsV5Labels:
                 DRAW_QUADSAILSV5_PATHS?.map((path) => basename(path)) || [],
             decalV5Labels: DRAW_DECALV5_PATHS?.map((path) => basename(path)) || [],
-            preparePackageLabel: PREPARE_CEWGPU_PATH ? basename(PREPARE_CEWGPU_PATH) : null,
+            preparePackageLabel: PREPARE_CARBONWEBGPU_PATH ? basename(PREPARE_CARBONWEBGPU_PATH) : null,
             prepareMatrixLabel: PREPARE_MATRIX_PATH
                 ? basename(PREPARE_MATRIX_PATH)
                 : (PREPARE_BODYSET_PATH ? basename(PREPARE_BODYSET_PATH) : null),
@@ -1454,7 +1454,7 @@ async function Main()
             console.log(
                 `Rendered PPT-on QuadV5 body ${quad.bodyIndex} from ` +
                 `${quad.variant}${quad.tier ? ` ${quad.tier}-tier` : ""} ` +
-                `${quad.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `${quad.labels.join(" and ")} from direct Carbon WebGPU reads; ` +
                 (quad.physicalBindingCount
                     ? `${quad.logicalBindingCount} logical bindings over ` +
                         `${quad.physicalBindingCount} physical; `
@@ -1479,7 +1479,7 @@ async function Main()
             console.log(
                 `Rendered non-bindless ${skinned ? "PPT-on skinned" : "PPT-off"} ` +
                 `QuadGlassV5 body ${glass.bodyIndex} ` +
-                `from ${glass.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `from ${glass.labels.join(" and ")} from direct Carbon WebGPU reads; ` +
                 `${glass.pixelCount} pixels matched exactly across both complementary ` +
                 `Main passes, ${glass.renderCaseCount} PaintMask cases, both MRTs, ` +
                 `and both backends with 0 WGSL warnings ` +
@@ -1498,7 +1498,7 @@ async function Main()
             const heat = result.quadHeatV5Comparison;
             console.log(
                 `Rendered non-bindless PPT-off QuadHeatV5 body ${heat.bodyIndex} ` +
-                `from ${heat.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `from ${heat.labels.join(" and ")} from direct Carbon WebGPU reads; ` +
                 `${heat.pixelCount} pixels matched exactly across ${heat.renderCaseCount} ` +
                 `thermal cases, both MRTs, and both backends with 0 WGSL warnings ` +
                 `(${heat.heatOracle.changedPixels}/${heat.heatOracle.coveredPixels} ` +
@@ -1515,7 +1515,7 @@ async function Main()
                 `Rendered non-bindless PPT-on ${skinned ? "skinned" : "static"} ` +
                 `QuadDetailV5 body ` +
                 `${detail.bodyIndex} from ${detail.labels.join(" and ")} from direct ` +
-                `CEWGPU reads; ${detail.pixelCount} pixels matched exactly across ` +
+                `Carbon WebGPU reads; ${detail.pixelCount} pixels matched exactly across ` +
                 `${detail.renderCaseCount} synthetic PPT/detail cases, both MRTs, and ` +
                 `both backends with 0 WGSL warnings ` +
                 `(PPT ${oracle.ppt.changedPixels}/${oracle.ppt.coveredPixels}, ` +
@@ -1533,7 +1533,7 @@ async function Main()
             console.log(
                 `Rendered non-bindless PPT-off skinned QuadOilV5 body ` +
                 `${oil.bodyIndex} from ${oil.labels.join(" and ")} from direct ` +
-                `CEWGPU reads; ${oil.pixelCount} pixels matched exactly across ` +
+                `Carbon WebGPU reads; ${oil.pixelCount} pixels matched exactly across ` +
                 `${oil.renderCaseCount} OilFilm lookup cases, both MRTs, and both ` +
                 `backends with 0 WGSL warnings ` +
                 `(${oil.oilFilmOracle.changedPixels}/` +
@@ -1550,7 +1550,7 @@ async function Main()
             console.log(
                 `Rendered non-bindless ${skinned ? "PPT-on skinned" : "PPT-off static"} ` +
                 `QuadSailsV5 body ${sails.bodyIndex} ` +
-                `from ${sails.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `from ${sails.labels.join(" and ")} from direct Carbon WebGPU reads; ` +
                 `${sails.pixelCount} pixels matched exactly across ${sails.renderCaseCount} ` +
                 `sails-detail cases, both MRTs, and both backends with 0 WGSL warnings ` +
                 `(${sails.sailsDetailOracle.changedPixels}/` +
@@ -1565,7 +1565,7 @@ async function Main()
         {
             console.log(
                 `Rendered non-bindless DecalV5 body ${result.decalV5Comparison.bodyIndex} from ` +
-                `${result.decalV5Comparison.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `${result.decalV5Comparison.labels.join(" and ")} from direct Carbon WebGPU reads; ` +
                 `${result.decalV5Comparison.pixelCount} pixels matched exactly across the color target ` +
                 `and both backends with 0 WGSL warnings.`
             );
@@ -1578,7 +1578,7 @@ async function Main()
                 `Rendered non-bindless DecalCylindricV5 body ` +
                 `${result.decalCylindricV5Comparison.bodyIndex} from ` +
                 `${result.decalCylindricV5Comparison.labels.join(" and ")} from direct ` +
-                `CEWGPU reads; ${result.decalCylindricV5Comparison.pixelCount} pixels ` +
+                `Carbon WebGPU reads; ${result.decalCylindricV5Comparison.pixelCount} pixels ` +
                 `matched exactly across ` +
                 `${result.decalCylindricV5Comparison.renderCaseCount} transparency cases and ` +
                 `both backends with 0 WGSL warnings ` +
@@ -1595,7 +1595,7 @@ async function Main()
                 `Rendered non-bindless DecalHoleV5 body ` +
                 `${result.decalHoleV5Comparison.bodyIndex} from ` +
                 `${result.decalHoleV5Comparison.labels.join(" and ")} from direct ` +
-                `CEWGPU reads; ${result.decalHoleV5Comparison.pixelCount} pixels ` +
+                `Carbon WebGPU reads; ${result.decalHoleV5Comparison.pixelCount} pixels ` +
                 `matched exactly across ${result.decalHoleV5Comparison.renderCaseCount} ` +
                 `discard/texture cases and both backends with 0 WGSL warnings ` +
                 `(${hole.activePixels} surviving, ${hole.discardedPixels} discarded; ` +
@@ -1607,7 +1607,7 @@ async function Main()
         {
             console.log(
                 `Rendered non-bindless DecalCounterV5 body ${result.decalCounterV5Comparison.bodyIndex} from ` +
-                `${result.decalCounterV5Comparison.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `${result.decalCounterV5Comparison.labels.join(" and ")} from direct Carbon WebGPU reads; ` +
                 `${result.decalCounterV5Comparison.pixelCount} pixels matched exactly across the color target ` +
                 `and both backends with 0 WGSL warnings ` +
                 `(${result.decalCounterV5Comparison.statistics.coverage} active pixels, bounds ` +
@@ -1619,7 +1619,7 @@ async function Main()
             const influence = result.decalGlowV5Comparison.textureInfluence;
             console.log(
                 `Rendered non-bindless DecalGlowV5 body ${result.decalGlowV5Comparison.bodyIndex} from ` +
-                `${result.decalGlowV5Comparison.labels.join(" and ")} from direct CEWGPU reads; ` +
+                `${result.decalGlowV5Comparison.labels.join(" and ")} from direct Carbon WebGPU reads; ` +
                 `${result.decalGlowV5Comparison.pixelCount} pixels matched exactly across ` +
                 `${result.decalGlowV5Comparison.renderCaseCount} texture cases and both backends ` +
                 `with 0 WGSL warnings (${result.decalGlowV5Comparison.statistics.coverage} active ` +
@@ -1635,7 +1635,7 @@ async function Main()
                 `Rendered non-bindless DecalGlowCylindricV5 body ` +
                 `${result.decalGlowCylindricV5Comparison.bodyIndex} from ` +
                 `${result.decalGlowCylindricV5Comparison.labels.join(" and ")} from direct ` +
-                `CEWGPU reads; ${result.decalGlowCylindricV5Comparison.pixelCount} pixels ` +
+                `Carbon WebGPU reads; ${result.decalGlowCylindricV5Comparison.pixelCount} pixels ` +
                 `matched exactly across ` +
                 `${result.decalGlowCylindricV5Comparison.renderCaseCount} texture cases and ` +
                 `both backends with 0 WGSL warnings ` +
@@ -1649,7 +1649,7 @@ async function Main()
         }
         if (result.preparedPackage)
         {
-            console.log(`Prepared CEWGPU package ${result.preparedPackage.label} with ${result.preparedPackage.bindingCount} canonical bindings and 0 WGSL warnings.`);
+            console.log(`Prepared Carbon WebGPU package ${result.preparedPackage.label} with ${result.preparedPackage.bindingCount} canonical bindings and 0 WGSL warnings.`);
         }
         if (result.preparedMatrix)
         {

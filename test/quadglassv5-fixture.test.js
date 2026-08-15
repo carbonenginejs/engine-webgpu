@@ -470,14 +470,14 @@ function validRecord(backend, variant = "static")
     ...(skinned ? { variant: "skinned" } : {}),
     backend,
     label: skinned
-      ? `unpackedskinned_quadglassv5.${backend}.cewgpu`
-      : `unpacked_quadglassv5.${backend}.cewgpu`,
+      ? `unpackedskinned_quadglassv5.${backend}.carbonwebgpu`
+      : `unpacked_quadglassv5.${backend}.carbonwebgpu`,
     filePath: skinned
-      ? `E:/fixtures/unpackedskinned_quadglassv5.${backend}.cewgpu`
-      : `E:/fixtures/unpacked_quadglassv5.${backend}.cewgpu`,
+      ? `E:/fixtures/unpackedskinned_quadglassv5.${backend}.carbonwebgpu`
+      : `E:/fixtures/unpacked_quadglassv5.${backend}.carbonwebgpu`,
     resourcePath: skinned
-      ? `res:/webgpu-harness/quadglassv5/skinned/${backend}.cewgpu`
-      : `res:/webgpu-harness/quadglassv5/${backend}.cewgpu`,
+      ? `res:/webgpu-harness/quadglassv5/skinned/${backend}.carbonwebgpu`
+      : `res:/webgpu-harness/quadglassv5/${backend}.carbonwebgpu`,
     analysis: {
       source,
       bodyIndex: skinned ? 4 : 0,

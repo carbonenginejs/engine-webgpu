@@ -275,9 +275,9 @@ function makeRecord(backend)
   ];
   return {
     backend,
-    label: `${backend}.cewgpu`,
-    filePath: `C:/fixtures/${backend}.cewgpu`,
-    resourcePath: `res:/webgpu-harness/quadheatv5/${backend}.cewgpu`,
+    label: `${backend}.carbonwebgpu`,
+    filePath: `C:/fixtures/${backend}.carbonwebgpu`,
+    resourcePath: `res:/webgpu-harness/quadheatv5/${backend}.carbonwebgpu`,
     analysis: {
       source,
       bodyIndex: 0,

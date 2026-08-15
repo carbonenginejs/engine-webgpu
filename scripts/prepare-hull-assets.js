@@ -175,12 +175,12 @@ async function Main()
     console.log("Draw with:");
     console.log(
         `  node scripts/run-webgpu-harness.js --required \\\n` +
-        `    --draw-hull <quadv5.cewgpu> --hull-assets ${output} --capture-hull hull.png`
+        `    --draw-hull <quadv5.carbonwebgpu> --hull-assets ${output} --capture-hull hull.png`
     );
     console.log(
         "\nBuild that package with this repository's own runtime-resource, not the\n" +
         "sibling source: the two disagree on the container and a mismatch reports\n" +
-        "as \"Invalid CEWGPU magic\", which looks like a corrupt file and is not one."
+        "as \"Invalid Carbon WebGPU magic\", which looks like a corrupt file and is not one."
     );
 }
 

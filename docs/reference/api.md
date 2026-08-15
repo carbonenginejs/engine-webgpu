@@ -7,7 +7,7 @@ Summary: Lists the current public exports and their supported responsibilities.
 
 ## Package descriptors
 
-- `CjsWebgpuPackage` consumes decoded CEWGPU data and exposes immutable package
+- `CjsWebgpuPackage` consumes decoded Carbon WebGPU data and exposes immutable package
   and pipeline records.
 - `CjsWebgpuPipeline`, `CjsWebgpuShaderModule`, `CjsWebgpuBindGroup`,
   `CjsWebgpuResource`, `CjsWebgpuBuffer`, `CjsWebgpuTexture`, and
@@ -20,7 +20,7 @@ injected reader function and optional reader options.
 ## Device boundary
 
 `CjsWebgpuDevice.Request(...)` acquires or accepts a WebGPU adapter and device.
-The device prepares CEWGPU pipelines, creates explicit geometry, RGBA8 2D or
+The device prepares Carbon WebGPU pipelines, creates explicit geometry, RGBA8 2D or
 2D-array textures and samplers, builds binding sets, encodes draws, submits
 command buffers, and manages device generations.
 

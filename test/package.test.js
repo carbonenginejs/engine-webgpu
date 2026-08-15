@@ -20,7 +20,7 @@ import { buildCopyblitDrawDescriptor } from "../src/core/packageDraw.js";
 test("CjsWebgpuPackage builds immutable pass, shader, and bind-group descriptors from ANLS data", () =>
 {
   const pkg = CjsWebgpuPackage.from({
-    format: "CEWGPU",
+    format: "Carbon WebGPU",
     version: 1,
     sourcePath: "res:/graphics/effect.dx11/space/quadv5.sm_depth",
     metadata: {
@@ -204,7 +204,7 @@ test("CjsWebgpuPackage builds immutable pass, shader, and bind-group descriptors
     } ]
   });
 
-  assert.equal(pkg.format, "CEWGPU");
+  assert.equal(pkg.format, "Carbon WebGPU");
   assert.equal(pkg.shaderModules.length, 2);
   assert.equal(pkg.pipelines.length, 1);
   assert.equal(pkg.bindGroups.length, 1);
@@ -245,7 +245,7 @@ test("binding keys preserve distinct D3D register spaces", () =>
     carbon: { name: "Texture0", type: 2, arrayElements: 1 }
   }));
   const pkg = CjsWebgpuPackage.from({
-    format: "CEWGPU",
+    format: "Carbon WebGPU",
     version: 1,
     stages: [ {
       key: "Main.pass0.pixel",
@@ -270,7 +270,7 @@ test("CJS_WGSL_SET code records retain entry points and DXBC source maps", () =>
   const code = "@fragment fn translated() -> @location(0) vec4f { return vec4f(1); }";
   const sourceMap = [ { line: 1, instructionIndex: 4, dxbcOffset: 12 } ];
   const pkg = CjsWebgpuPackage.from({
-    format: "CEWGPU",
+    format: "Carbon WebGPU",
     version: 1,
     stages: [ {
       key: "Main.pass0.pixel",
@@ -304,7 +304,7 @@ fn main()
   values[0] = values[0] + 1u;
 }`;
   const pkg = CjsWebgpuPackage.from({
-    format: "CEWGPU",
+    format: "Carbon WebGPU",
     version: 1,
     stages: [ {
       key: "Main.pass0.compute",
@@ -920,7 +920,7 @@ test("canonical WGSL layouts own numeric bind groups and survive missing ANLS me
     sampler: { type: "filtering" }
   } ];
   const pkg = CjsWebgpuPackage.from({
-    format: "CEWGPU",
+    format: "Carbon WebGPU",
     version: 1,
     stages: [ {
       key: "Main.pass0.pixel",
@@ -1032,7 +1032,7 @@ test("canonical WGSL layouts preserve stage-scoped structured and texture t0 res
     texture: { sampleType: "float", viewDimension: "2d", multisampled: false }
   } ];
   const pkg = CjsWebgpuPackage.from({
-    format: "CEWGPU",
+    format: "Carbon WebGPU",
     version: 1,
     stages,
     layouts: [ {
@@ -1091,7 +1091,7 @@ test("CjsWebgpuPackage.fromBytes accepts an injected reader", () =>
     {
       assert.equal(bytes.length, 3);
       return {
-        format: "CEWGPU",
+        format: "Carbon WebGPU",
         version: 1,
         stages: [],
         shaders: []
@@ -1171,7 +1171,7 @@ test("package copyblit draw preserves canonical numeric layouts and rejects unsu
 
 test("read-write storage UAV bindings build readWrite buffers", () => {
   const pkg = CjsWebgpuPackage.from({
-    format: "CEWGPU",
+    format: "Carbon WebGPU",
     version: 1,
     stages: [ {
       key: "Main.pass0.pixel",

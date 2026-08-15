@@ -3,7 +3,7 @@
 Status: Experimental
 Scope: `@carbonenginejs/engine-webgpu` browser harness
 Audience: Maintainers and shader integrators
-Summary: Explains how to run the standalone WebGPU probes and current CEWGPU render gates.
+Summary: Explains how to run the standalone WebGPU probes and current Carbon WebGPU render gates.
 
 These commands are repository-maintainer checks and require a source checkout
 with its development dependencies. The npm artifact ships this reference page,
@@ -15,7 +15,7 @@ into a 4x4 offscreen `rgba8unorm` texture, copies the result through a
 256-byte-row-padded buffer, maps it, and verifies all pixels.
 
 The portable probe does not use Deno, TypeScript, a canvas, Carbon assets,
-network access, or another CarbonEngineJS package. The CEWGPU integration
+network access, or another CarbonEngineJS package. The Carbon WebGPU integration
 commands documented below intentionally consume sibling CarbonEngineJS
 packages.
 
@@ -91,11 +91,11 @@ This path creates the canonical group-0 `cb0`/`t0`/`s0` layout, renders the
 generated pair into the same 4x4 target, and verifies the expected pixels. The
 fixtures are intentionally self-contained; runtime-resource is not involved.
 
-## Producing indexed CEWGPU inputs
+## Producing indexed Carbon WebGPU inputs
 
 For normal EVE corpus packages, do not add resource acquisition or batch
 conversion to this harness. Build them through tools-core, then select the
-qualified CEWGPU file named by its exact `outputPath` entry in
+qualified Carbon WebGPU file named by its exact `outputPath` entry in
 `build-report.json`:
 
 From a tools-core checkout, run:
@@ -116,11 +116,11 @@ below remain explicit compiler/engine qualification. The registered
 `.sm_hi` inputs,
 so do not mislabel those broader experiments as tools-core corpus output.
 
-To prepare a real CEWGPU `Main.pass0` without pretending the package contains
+To prepare a real Carbon WebGPU `Main.pass0` without pretending the package contains
 vertex-buffer strides, render-target policy, or live resources:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --prepare-cewgpu .\artifacts\quadv5-main.cewgpu
+npm.cmd run test:webgpu:required -- --prepare-carbonwebgpu .\artifacts\quadv5-main.carbonwebgpu
 ```
 
 To prepare every distinct pass-ready pipeline from a full permutation-matrix
@@ -148,7 +148,7 @@ To prepare every translated body of an all-body (`mode: "all"`) package in one
 browser/device session:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --prepare-bodyset .\artifacts\quadv5-allbody.cewgpu
+npm.cmd run test:webgpu:required -- --prepare-bodyset .\artifacts\quadv5-allbody.carbonwebgpu
 ```
 
 The package is read once. There is one emit, and the document it returns carries
@@ -212,7 +212,7 @@ It asserts three things rather than one:
   GPU-determining field cannot hide inside "they always differed".
 
 It builds both packages **in process**, from CCP source effect bytes. It used to
-need a directory of pre-built `.cewgpu` files named by `CJS_WEBGPU_FIXTURE_DIR`;
+need a directory of pre-built `.carbonwebgpu` files named by `CJS_WEBGPU_FIXTURE_DIR`;
 nobody had one, so this test and the Trinity read-chain test skipped for weeks
 while the path they cover stopped working, with 237 synthetic-record tests green
 throughout. A pre-built package is fully determined by (source bytes, compiler),
@@ -230,10 +230,10 @@ $env:CARBON_EFFECT_CORPUS_DIR = "<dir>"; npm.cmd test
 ```
 
 To perform the first actual QuadV5 draw, package the same explicitly selected
-PPT-on `Main.pass0` body from DX11 and DX12, then pass both CEWGPU files:
+PPT-on `Main.pass0` body from DX11 and DX12, then pass both Carbon WebGPU files:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-quadv5 .\artifacts\quadv5-ppt-on-dx11.cewgpu .\artifacts\quadv5-ppt-on-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-quadv5 .\artifacts\quadv5-ppt-on-dx11.carbonwebgpu .\artifacts\quadv5-ppt-on-dx12.carbonwebgpu
 ```
 
 ### Array textures
@@ -270,9 +270,9 @@ three-layer static/skinned QuadDetail merge. QuadDetail is drawn at medium and
 High tiers; its High groups also carry the forward-light storage resources and
 the source-declared `LightProfileArray`.
 
-### Draw-fixture identity, and why no `.cewgpu` is committed
+### Draw-fixture identity, and why no `.carbonwebgpu` is committed
 
-A `.cewgpu` is a derived artifact, fully determined by the source bytes at a
+A `.carbonwebgpu` is a derived artifact, fully determined by the source bytes at a
 pinned EVE build id plus the compiler version. Committing one duplicates a
 guarantee the compiler already gives, costs megabytes that git history cannot
 reclaim without a rewrite, and rots silently: a stored package keeps passing a
@@ -310,7 +310,7 @@ identical across backends. The gates assert it exactly, and for both.
 Use the skinned family gate with the corresponding pair:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-skinned-quadv5 .\artifacts\quadv5-skinned-dx11.cewgpu .\artifacts\quadv5-skinned-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-skinned-quadv5 .\artifacts\quadv5-skinned-dx11.carbonwebgpu .\artifacts\quadv5-skinned-dx12.carbonwebgpu
 ```
 
 The representative skinned heat gate currently requires medium-quality
@@ -318,7 +318,7 @@ The representative skinned heat gate currently requires medium-quality
 vertex/pixel pair:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-skinned-quadheatv5 .\artifacts\quadheatv5-skinned-ppt-dx11.cewgpu .\artifacts\quadheatv5-skinned-ppt-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-skinned-quadheatv5 .\artifacts\quadheatv5-skinned-ppt-dx11.carbonwebgpu .\artifacts\quadheatv5-skinned-ppt-dx12.carbonwebgpu
 ```
 
 The build-3444265 SOF/resource audit correlates this compiled family to 313
@@ -338,7 +338,7 @@ The skinned heat/detail material-block high-water mark is gated separately
 with explicit PPT-on `unpackedskinned_quadheatdetailv5` packages:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-skinned-quadheatdetailv5 .\artifacts\quadheatdetailv5-ppt-dx11.cewgpu .\artifacts\quadheatdetailv5-ppt-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-skinned-quadheatdetailv5 .\artifacts\quadheatdetailv5-ppt-dx11.carbonwebgpu .\artifacts\quadheatdetailv5-ppt-dx12.carbonwebgpu
 ```
 
 This command requires body `4` with all five local selections, including
@@ -364,7 +364,7 @@ The hull-derived glass gate requires packages explicitly selecting the whole
 default `unpacked_quadglassv5` `Main` technique, not only `Main.pass0`:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-quadglassv5 .\artifacts\quadglassv5-main-dx11.cewgpu .\artifacts\quadglassv5-main-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-quadglassv5 .\artifacts\quadglassv5-main-dx11.carbonwebgpu .\artifacts\quadglassv5-main-dx12.carbonwebgpu
 ```
 
 This is a synthetic conformance gate for the shader family identified on the
@@ -382,7 +382,7 @@ does not yet prove pass 0 then pass 1 ordering or same-target composition.
 The common skinned sibling has a separate PPT-on gate:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-skinned-quadglassv5 .\artifacts\skinned-quadglassv5-ppt-dx11.cewgpu .\artifacts\skinned-quadglassv5-ppt-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-skinned-quadglassv5 .\artifacts\skinned-quadglassv5-ppt-dx11.carbonwebgpu .\artifacts\skinned-quadglassv5-ppt-dx12.carbonwebgpu
 ```
 
 The build-3444265 SOF/resource audit correlates
@@ -405,7 +405,7 @@ per-object defaults.
 The SOF-authored static Sails path uses the exact PPT-off body-0 pair:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-quadsailsv5 .\artifacts\quadsailsv5-main-dx11.cewgpu .\artifacts\quadsailsv5-main-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-quadsailsv5 .\artifacts\quadsailsv5-main-dx11.carbonwebgpu .\artifacts\quadsailsv5-main-dx12.carbonwebgpu
 ```
 
 The build-3444265 SOF/resource audit correlates `unpacked_quadsailsv5` to 77
@@ -417,7 +417,7 @@ transparency is not a local compiled axis for this effect.
 The skinned Sails family has a separate explicit PPT-on gate:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-skinned-quadsailsv5 .\artifacts\skinned-quadsailsv5-ppt-dx11.cewgpu .\artifacts\skinned-quadsailsv5-ppt-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-skinned-quadsailsv5 .\artifacts\skinned-quadsailsv5-ppt-dx11.carbonwebgpu .\artifacts\skinned-quadsailsv5-ppt-dx12.carbonwebgpu
 ```
 
 The build-3444265 resource audit correlates the logical
@@ -463,14 +463,14 @@ The static QuadDetailV5 gate requires an exact PPT-on
 `.sm_depth` quality:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-quaddetailv5 .\artifacts\quaddetailv5-ppt-dx11.cewgpu .\artifacts\quaddetailv5-ppt-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-quaddetailv5 .\artifacts\quaddetailv5-ppt-dx11.carbonwebgpu .\artifacts\quaddetailv5-ppt-dx12.carbonwebgpu
 ```
 
 The skinned sibling requires the exact PPT-on
 `unpackedskinned_quaddetailv5` `Main.pass0` pair at the matching tier:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-skinned-quaddetailv5 .\artifacts\skinned-quaddetailv5-ppt-dx11.cewgpu .\artifacts\skinned-quaddetailv5-ppt-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-skinned-quaddetailv5 .\artifacts\skinned-quaddetailv5-ppt-dx11.carbonwebgpu .\artifacts\skinned-quaddetailv5-ppt-dx12.carbonwebgpu
 ```
 
 The build-3444265 SOF audit finds 587 QuadDetailV5 areas across 257 hull
@@ -535,7 +535,7 @@ The live-ship QuadOilV5 slice uses the exact PPT-off
 `unpackedskinned_quadoilv5` `Main.pass0` pair:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-skinned-quadoilv5 .\artifacts\skinned-quadoilv5-ppt-off-dx11.cewgpu .\artifacts\skinned-quadoilv5-ppt-off-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-skinned-quadoilv5 .\artifacts\skinned-quadoilv5-ppt-off-dx11.carbonwebgpu .\artifacts\skinned-quadoilv5-ppt-off-dx12.carbonwebgpu
 ```
 
 The build-3444265 SOF audit finds 30 opaque QuadOil areas across 25 hull
@@ -585,7 +585,7 @@ The older PPT-off static heat gate requires explicitly selected medium-quality
 `unpacked_quadheatv5` `Main.pass0` packages:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-quadheatv5 .\artifacts\quadheatv5-main-dx11.cewgpu .\artifacts\quadheatv5-main-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-quadheatv5 .\artifacts\quadheatv5-main-dx11.carbonwebgpu .\artifacts\quadheatv5-main-dx12.carbonwebgpu
 ```
 
 This is a synthetic conformance gate for the shader family identified on the
@@ -600,42 +600,42 @@ The first decal-family gate uses the explicitly selected non-bindless
 `unpacked_decalv5` Main pass:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-decalv5 .\artifacts\decalv5-dx11.cewgpu .\artifacts\decalv5-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-decalv5 .\artifacts\decalv5-dx11.carbonwebgpu .\artifacts\decalv5-dx12.carbonwebgpu
 ```
 
 The full cylindrical surface sibling uses the separately qualified default
 `unpacked_decalcylindricv5` Main pass:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-decalcylindricv5 .\artifacts\decalcylindricv5-dx11.cewgpu .\artifacts\decalcylindricv5-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-decalcylindricv5 .\artifacts\decalcylindricv5-dx11.carbonwebgpu .\artifacts\decalcylindricv5-dx12.carbonwebgpu
 ```
 
 The ray/sphere hole sibling uses the separately qualified default
 `unpacked_decalholev5` Main pass:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-decalholev5 .\artifacts\decalholev5-dx11.cewgpu .\artifacts\decalholev5-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-decalholev5 .\artifacts\decalholev5-dx11.carbonwebgpu .\artifacts\decalholev5-dx12.carbonwebgpu
 ```
 
 The kill-counter slice uses the separately qualified default
 `unpacked_decalcounterv5` Main pass:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-decalcounterv5 .\artifacts\decalcounterv5-dx11.cewgpu .\artifacts\decalcounterv5-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-decalcounterv5 .\artifacts\decalcounterv5-dx11.carbonwebgpu .\artifacts\decalcounterv5-dx12.carbonwebgpu
 ```
 
 The glow slice uses the separately qualified default `unpacked_decalglowv5`
 Main pass:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-decalglowv5 .\artifacts\decalglowv5-dx11.cewgpu .\artifacts\decalglowv5-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-decalglowv5 .\artifacts\decalglowv5-dx11.carbonwebgpu .\artifacts\decalglowv5-dx12.carbonwebgpu
 ```
 
 The cylindrical glow sibling uses the separately qualified default
 `unpacked_decalglowcylindricv5` Main pass:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-decalglowcylindricv5 .\artifacts\decalglowcylindricv5-dx11.cewgpu .\artifacts\decalglowcylindricv5-dx12.cewgpu
+npm.cmd run test:webgpu:required -- --draw-decalglowcylindricv5 .\artifacts\decalglowcylindricv5-dx11.carbonwebgpu .\artifacts\decalglowcylindricv5-dx12.carbonwebgpu
 ```
 
 Add `--capture-quadv5 .\artifacts\quadv5-ppt-on.png` to save a browser-rendered
@@ -977,7 +977,7 @@ broader texture formats, a uniform scheduler, render-state translation, and
 full production resource lifetime remain outstanding. The final engine
 publication stage itself is implemented and exercised.
 
-The `--prepare-cewgpu` and `--prepare-matrix` modes read through
+The `--prepare-carbonwebgpu` and `--prepare-matrix` modes read through
 `format-webgpu` and `CjsWebgpuPackage`, compile WGSL, create the canonical
 bind-group/pipeline layouts, and require zero warnings. Those preparation-only
 modes deliberately stop before render-pipeline creation and drawing. The
@@ -992,12 +992,12 @@ and decal-family commands are direct format/engine integration gates. They
 import the runtime-resource WebGPU format reader, but do not start a resource
 manager or load `runtime-core`, `runtime-trinity`, or a Trinity graph.
 
-To exercise the real package boundary, pass a CEWGPU package containing the
+To exercise the real package boundary, pass a Carbon WebGPU package containing the
 generated `Main.pass0.vertex` and `Main.pass0.pixel` shaders plus its canonical
 WGSL layout:
 
 ```powershell
-npm.cmd run test:webgpu:required -- --draw-cewgpu .\artifacts\copyblit.cewgpu
+npm.cmd run test:webgpu:required -- --draw-carbonwebgpu .\artifacts\copyblit.carbonwebgpu
 ```
 
 The Node launcher reads the package through `format-webgpu` and

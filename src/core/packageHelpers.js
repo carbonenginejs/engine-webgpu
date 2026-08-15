@@ -31,7 +31,7 @@ const BUFFER_RESOURCE_TYPES = new Map([
 ]);
 
 /**
- * Normalize a plain CEWGPU/analysis-shaped value to the package descriptor's
+ * Normalize a plain Carbon WebGPU/analysis-shaped value to the package descriptor's
  * internal working shape.
  *
  * @param {object} value Package-like input.
@@ -73,7 +73,7 @@ export function normalizePackageShape(value)
       : [];
 
   return {
-    format: value.format || "CEWGPU",
+    format: value.format || "Carbon WebGPU",
     version: Number.isInteger(value.version) ? value.version : 1,
     sourcePath: typeof value.sourcePath === "string" ? value.sourcePath : "memory",
     info: cloneJson(value.info || {}),

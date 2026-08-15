@@ -76,11 +76,11 @@ function canonicalPackage()
     texture: { sampleType: "float", viewDimension: "2d", multisampled: false }
   } ];
   return CjsWebgpuPackage.from({
-    format: "CEWGPU",
+    format: "Carbon WebGPU",
     version: 1,
-    sourcePath: "res:/fixture/trinity-read-chain.cewgpu",
+    sourcePath: "res:/fixture/trinity-read-chain.carbonwebgpu",
     analysis: {
-      source: "res:/fixture/trinity-read-chain.cewgpu",
+      source: "res:/fixture/trinity-read-chain.carbonwebgpu",
       passes: [ {
         techniqueName: "Main",
         passIndex: 0,

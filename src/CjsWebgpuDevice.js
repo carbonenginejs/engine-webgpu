@@ -1089,7 +1089,7 @@ async function popValidationScope(device, state)
 }
 
 /**
- * Engine-owned WebGPU device boundary. It realizes already-selected CEWGPU
+ * Engine-owned WebGPU device boundary. It realizes already-selected Carbon WebGPU
  * descriptors; format/capability policy remains with the caller.
  */
 export class CjsWebgpuDevice
@@ -1192,7 +1192,7 @@ export class CjsWebgpuDevice
   }
 
   /**
-   * Compiles a CEWGPU render descriptor and realizes its generation-bound
+   * Compiles a Carbon WebGPU render descriptor and realizes its generation-bound
    * canonical pipeline layout.
    */
   async PreparePipeline(pipeline, options = {})
@@ -1288,7 +1288,7 @@ export class CjsWebgpuDevice
   }
 
   /**
-   * Realizes a generation-bound native render pipeline from a CEWGPU
+   * Realizes a generation-bound native render pipeline from a Carbon WebGPU
    * descriptor or prepared pipeline.
    */
   async CreateRenderPipeline(pipelineOrPrepared, recipe)
@@ -1313,7 +1313,7 @@ export class CjsWebgpuDevice
       try
       {
         const pipelineDescriptor = {
-          label: pipelineRecipe.label || record.descriptor.key || "CEWGPU render pipeline",
+          label: pipelineRecipe.label || record.descriptor.key || "Carbon WebGPU render pipeline",
           layout: record.pipelineLayout,
           vertex: {
             ...pipelineRecipe.vertex,

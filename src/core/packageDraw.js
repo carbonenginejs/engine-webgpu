@@ -18,7 +18,7 @@ const COPYBLIT_BLEND_STATES = Object.freeze(new Map([
 
 function fail(message)
 {
-  throw new Error(`CEWGPU copyblit draw: ${message}`);
+  throw new Error(`Carbon WebGPU copyblit draw: ${message}`);
 }
 
 function shaderFor(pipeline, stageName)
@@ -133,7 +133,7 @@ function translateBlend(pipeline)
  */
 export function buildCopyblitDrawDescriptor(pipeline)
 {
-  if (!pipeline || typeof pipeline !== "object") throw new TypeError("CEWGPU copyblit draw requires a pipeline descriptor");
+  if (!pipeline || typeof pipeline !== "object") throw new TypeError("Carbon WebGPU copyblit draw requires a pipeline descriptor");
   if (!Array.isArray(pipeline.shaderModules) || pipeline.shaderModules.length !== 2)
   {
     fail("requires exactly vertex and pixel shader modules");

@@ -8,7 +8,7 @@ Summary: Provides one-sentence purpose descriptors for every maintained class in
 <!-- class:CjsWebgpuPackage -->
 ## `CjsWebgpuPackage`
 
-Immutable descriptor-only consumer for `CEWGPU` package data.
+Immutable descriptor-only consumer for `Carbon WebGPU` package data.
 
 - Export: `@carbonenginejs/engine-webgpu`
 - Source: `src/CjsWebgpuPackage.js`

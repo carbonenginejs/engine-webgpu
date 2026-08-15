@@ -516,8 +516,8 @@ function packageRecord(backend, variant = "static")
   return {
     backend,
     variant,
-    filePath: `C:/fixture/quaddetail-${variant}-${backend}.cewgpu`,
-    resourcePath: `res:/fixture/quaddetail-${variant}-${backend}.cewgpu`,
+    filePath: `C:/fixture/quaddetail-${variant}-${backend}.carbonwebgpu`,
+    resourcePath: `res:/fixture/quaddetail-${variant}-${backend}.carbonwebgpu`,
     analysis: {
       source,
       bodyIndex: 4,
@@ -844,13 +844,13 @@ test("QuadDetailV5 rejects unordered, aliased, and identical parity inputs", () 
     () => validateQuadDetailV5PackagePair([ dx11, dx12 ]),
     /distinct physical package files/u
   );
-  dx12.filePath = "C:/fixture/quaddetail-dx12.cewgpu";
+  dx12.filePath = "C:/fixture/quaddetail-dx12.carbonwebgpu";
   dx12.resourcePath = dx11.resourcePath;
   assert.throws(
     () => validateQuadDetailV5PackagePair([ dx11, dx12 ]),
     /distinct logical resource paths/u
   );
-  dx12.resourcePath = "res:/fixture/quaddetail-dx12.cewgpu";
+  dx12.resourcePath = "res:/fixture/quaddetail-dx12.carbonwebgpu";
   dx12.pipeline.shaderModules.forEach((module, index) =>
   {
     module.wgsl = dx11.pipeline.shaderModules[index].wgsl;
