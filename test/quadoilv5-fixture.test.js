@@ -253,7 +253,8 @@ function reflectedSampler(registerIndex)
     registerSpace: 0,
     registerIndex,
     registerType: 1,
-    dynamic: true,
+    // The override authorisation, and these samplers are not overridable.
+    dynamic: false,
     carbon: {
       name: null,
       sampler: {
@@ -415,9 +416,9 @@ function makeRecord(backend)
           stageName: "pixel",
           pipelineInputs: pixelInputs(),
           bindings: [
-            ...(backend === "dx11"
-              ? [ reflectedSampler(0), reflectedSampler(1) ]
-              : []),
+            // Reflected on both backends; DX12 declares them in the root signature.
+            reflectedSampler(0),
+            reflectedSampler(1),
             ...RESOURCE_NAMES.map((_name, index) =>
               reflectedResource(backend, index)),
             materialBinding(),
@@ -603,8 +604,11 @@ test("QuadOilV5 rejects profile, interface, binding, and material drift", () =>
     })(),
     (() =>
     {
+      // Drift is pinned on `optionIndex`, not `source`: the Carbon container
+      // records which permutation was translated, never who chose it, so
+      // `source` cannot survive a read back. See quadV5Fixture.js.
       const record = makeRecord("dx11");
-      record.analysis.selectedOptions[2].source = "default";
+      record.analysis.selectedOptions[2].optionIndex += 1;
       return record;
     })(),
     (() =>

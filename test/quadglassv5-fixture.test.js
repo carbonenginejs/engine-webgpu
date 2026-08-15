@@ -371,7 +371,9 @@ function validRecord(backend, variant = "static")
         } : {})
       }
     })),
-    ...(backend === "dx11" ? [ staticSampler(0), staticSampler(1) ] : [])
+    // Reflected on both backends; DX12 declares them in the root signature.
+    staticSampler(0),
+    staticSampler(1)
   ];
   const analysisStages = [];
   for (const passIndex of [ 0, 1 ])
@@ -892,13 +894,18 @@ test("QuadGlassV5 rejects skinned body, bone, interface, binding, and pair drift
     /uniform-buffer:0:3.*uniform-buffer layout/u
   );
 
+  // Stage order is pinned on the pipelines' own module keys rather than on
+  // `metadata.wgslSelection`. The container omits that field entirely for a
+  // technique with more than one pass, so on this two-pass family it never
+  // reaches the validator; the modules are what a real package actually
+  // carries.
   const wrongStageOrder = structuredClone(dx11);
   [
-    wrongStageOrder.metadata.wgslSelection.selectedStageKeys[0],
-    wrongStageOrder.metadata.wgslSelection.selectedStageKeys[1]
+    wrongStageOrder.pipelines[0].shaderModules[0].key,
+    wrongStageOrder.pipelines[0].shaderModules[1].key
   ] = [
-    wrongStageOrder.metadata.wgslSelection.selectedStageKeys[1],
-    wrongStageOrder.metadata.wgslSelection.selectedStageKeys[0]
+    wrongStageOrder.pipelines[0].shaderModules[1].key,
+    wrongStageOrder.pipelines[0].shaderModules[0].key
   ];
   assert.throws(
     () => validateQuadGlassV5PackageRecord(wrongStageOrder),

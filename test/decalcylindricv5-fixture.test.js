@@ -253,9 +253,10 @@ struct FragmentOutput {
             { registerIndex: 9, dimension: 4, type: 0, usedMask: 7 }
           ],
           bindings: [
-            ...(backend === "dx11"
-              ? [ samplerReflection(0), samplerReflection(1) ]
-              : []),
+            // Reflected on both backends: DX12 declares these in the root
+            // signature, and the reflected state is identical.
+            samplerReflection(0),
+            samplerReflection(1),
             ...reflectedResources,
             constantBuffer(0),
             constantBuffer(2),
@@ -492,10 +493,12 @@ test("DecalCylindricV5 rejects provenance, interface, reflection, and pair drift
     /canonical binding slot/u
   );
 
-  const unexpectedDx12Sampler = record("dx12");
-  unexpectedDx12Sampler.analysis.stages[1].bindings.unshift(samplerReflection(0));
+  // A duplicate sampler, not "a DX12 sampler". DX12 reflects s0 and s1 exactly
+  // as DX11 does, so what must be rejected is a third one, not their presence.
+  const duplicatedSampler = record("dx12");
+  duplicatedSampler.analysis.stages[1].bindings.unshift(samplerReflection(0));
   assert.throws(
-    () => validateDecalCylindricV5PackageRecord(unexpectedDx12Sampler),
+    () => validateDecalCylindricV5PackageRecord(duplicatedSampler),
     /binding count/u
   );
 

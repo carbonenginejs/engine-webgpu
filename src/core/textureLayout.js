@@ -11,7 +11,8 @@
 // `bytesPerRow` counts BLOCK rows - `ceil(width / 4) * blockBytes` - and
 // `rowsPerImage` is `ceil(height / 4)`, not `height`. Passing pixel rows to
 // `writeTexture` for a BC texture is the classic version of this bug, and it
-// does not fail loudly: it uploads a quarter of the data and reads garbage.
+// does not fail loudly: at 256x256 it claims 256 rows where 64 exist, so the
+// copy runs off the end of the data and reads garbage.
 //
 // The same rounding is why a BC mip chain does not shrink to nothing. A 1x1 mip
 // of a 4x4-block format still occupies one whole block, so the last three

@@ -300,9 +300,12 @@ across both MRTs and zero WGSL warnings; the fixture manifest records the
 tier-specific evidence.
 
 DX12 declares the unnamed `s0` as an immutable root-signature sampler, so it
-reflects through the effect signature (`sourceTruth: carbon-signature-sampler`,
-D3D12 enum `borderColor`, no dynamic flag) rather than through a stage register
-as DX11 does. Both shapes are asserted exactly; neither is optional.
+reflects through the effect signature (`sourceTruth: carbon-signature-sampler`)
+rather than through a stage register as DX11 does. That is the only surviving
+difference: the wire record stores a one-byte `borderColor` enum and no dynamic
+flag, but the reader resolves both as Carbon does — expanding the enum to four
+floats and restoring `isDynamic: false` — so the reflected sampler state is
+identical across backends. The gates assert it exactly, and for both.
 
 Use the skinned family gate with the corresponding pair:
 
@@ -837,8 +840,7 @@ payloads with the exact active default spans: `320` bytes for vertex `cb3`
 and `16` bytes for fragment `cb4`, whose only consumed lane is
 `displayData.y`. These reflected minima are not production struct sizes. Full
 renderer-resolved Decal RawData shapes remain `384` bytes for
-`DecalVSPerObjectData` and `176` bytes for `DecalPSPerObjectData`, with WebGPU
-and WebGL packing kept independent. Identity matrices do not prove production
+`DecalVSPerObjectData` and `176` bytes for `DecalPSPerObjectData`. Identity matrices do not prove production
 transforms or transposition. The authored cylindrical UVs keep every
 single-mip sample footprint inside the texture, making clamp-to-edge
 equivalent to DX11's zero-border sampler for this fixture only; the reflected
@@ -867,8 +869,7 @@ The semantic serializer supplies material/per-frame `cb0..cb2`; exact
 harness-owned Decal bytes replace the incompatible generic per-object
 payloads with a 384-byte six-matrix vertex `cb3` and the active 16-byte
 fragment `cb4`. Full production Decal RawData remains 384/176 bytes. Packed
-RawData is already GPU-form and must not be transposed again; WebGPU and WebGL
-packing remain independent renderer concerns. Every 2D control has zero outer
+RawData is already GPU-form and must not be transposed again. Every 2D control has zero outer
 texels so WebGPU clamp-to-edge matches the authored DX11 zero-border result at
 the tested footprints. A one-mip, constant-alpha cube intentionally does not
 prove mip bias, cube face selection, seams, or direction-dependent sampling.
@@ -922,9 +923,10 @@ The DecalGlowCylindricV5 command is a separate gate for the canonical
 `unpacked_decalglowcylindricv5` package, not a shader implementation. It
 requires the exact default selection, `Main.pass0` state, vertex outputs
 `1..9`, cylindrical fragment input `8`, five uniform buffers, two textures,
-and one shared filtering sampler. DX11 reflects that sampler as repeat in U/V
-with anisotropy `16` and mip LOD bias `-0.75`; DX12 retains the canonical
-layout but does not carry the static sampler reflection.
+and one shared filtering sampler, reflected as repeat in U/V with anisotropy
+`16` and mip LOD bias `-0.75`. Both backends carry that state identically; DX12
+declares the sampler in the root signature rather than on a stage register,
+which changes where it is found and nothing about what it says.
 
 The fixture keeps every position z at `0.25`, uses identity decal matrices,
 sets `DecalTextureScaling.w` to `1`, and authors asymmetric affine

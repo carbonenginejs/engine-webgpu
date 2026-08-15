@@ -732,10 +732,11 @@ function assertSelections(options, owner, profile)
     const entry = selected.get(name);
     const provenance = SELECTION_PROVENANCE[name];
     if (!entry || entry.value !== value) fail(`${owner} requires ${name}=${value}`);
+    // `source` is build-time policy (who chose the value), not container
+    // data; see quadV5Fixture.js. It cannot survive a read back from bytes.
     if (entry.optionIndex !== provenance.optionIndex
       || entry.defaultOption !== provenance.defaultOption
-      || entry.defaultValue !== provenance.defaultValue
-      || entry.source !== "local")
+      || entry.defaultValue !== provenance.defaultValue)
     {
       fail(`${owner} has unexpected provenance for ${name}`);
     }
@@ -817,7 +818,10 @@ function assertShaderModules(pipeline, profile, tier)
 // bindings shorter than the reflection. Sampler slots are therefore derived from
 // the post-transform texture count rather than tabulated.
 const DETAIL_MERGE = Object.freeze({
-  outputName: "DetailMapArray",
+  // Renamed by runtime-resource 866c5c8 (2026-08-02); this pin predated it and
+  // held the old spelling. The name is a read-side default restored from the
+  // family, never carried on the wire, so it moves whenever that table does.
+  outputName: "DetailArrayMap",
   inputParameters: Object.freeze([ "Detail1Map", "Detail2Map", "Detail3Map" ]),
   viewDimension: "2d-array",
   layerCount: 3,
@@ -1055,15 +1059,16 @@ function hasExactSamplerState(state, isDynamic, filters = ANISOTROPIC_REPEAT_FIL
   return hasFilterState(state, filters) && state.isDynamic === isDynamic;
 }
 
-// A DX12 immutable root-signature sampler is a D3D12_STATIC_SAMPLER_DESC: the
-// same filter and address state, an enum borderColor rather than a float4, and
-// no dynamic flag at all. The absence of `isDynamic` is part of the contract, so
-// it is asserted rather than defaulted.
+// Backend-identical: the reader resolves a static sampler's wire record the way
+// Carbon does, so only `sourceTruth` still records the declaration. See
+// `hasStaticSamplerState` in quadV5Fixture.js for the mechanism and why
+// `isDynamic` must be present rather than absent.
 function hasStaticSamplerState(state, filters = ANISOTROPIC_REPEAT_FILTERS)
 {
   return hasFilterState(state, filters)
-    && state.borderColor === 0
-    && state.isDynamic === undefined;
+    && Array.isArray(state.borderColor)
+    && JSON.stringify(state.borderColor) === JSON.stringify([ 0, 0, 0, 0 ])
+    && state.isDynamic === false;
 }
 
 function assertMaterialReflection(record, tier)
@@ -1239,8 +1244,8 @@ function assertAnalysisResources(record, resources, samplers, profile)
       fail(`${expected.identity} has unexpected reflected sampler state`);
     }
     // An unnamed sampler is declared in the effect signature, which is why DX12
-    // lowers exactly those to immutable root-signature samplers: an enum
-    // borderColor instead of a float4, and no dynamic flag at all.
+    // lowers exactly those to immutable root-signature samplers. `sourceTruth`
+    // is the only field that still records the difference.
     if (expected.reflectedName === null && record.backend === "dx12")
     {
       const signature = matches[0];

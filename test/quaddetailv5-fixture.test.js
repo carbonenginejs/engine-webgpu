@@ -163,6 +163,10 @@ function samplerState(isDynamic)
     addressW: 3,
     mipLODBias: 0,
     maxAnisotropy: 16,
+    // Transparent black, the same four floats a real package carries on both
+    // backends: the wire stores an enum for a static sampler and a float4 for a
+    // stage one, and the reader resolves both to this.
+    borderColor: [ 0, 0, 0, 0 ],
     isDynamic
   };
 }
@@ -216,7 +220,10 @@ function analysisSampler(registerIndex, backend = "dx11")
       sourceTruth: "carbon-signature-sampler",
       carbon: {
         name: null,
-        sampler: { ...samplerState(false), borderColor: 0, isDynamic: undefined }
+        // Same state as the stage sampler. The reader expands the static
+        // record's border-colour enum and restores its `isDynamic` exactly as
+        // Carbon does, so only `sourceTruth` still marks the declaration.
+        sampler: samplerState(false)
       }
     };
   }
@@ -311,7 +318,7 @@ const DETAIL_MERGE_INPUTS = [ "Detail1Map", "Detail2Map", "Detail3Map" ];
 // The layout keeps Detail1Map's register but renames it to the merged output.
 const MERGED_RESOURCE_NAMES = RESOURCE_NAMES
   .filter((name) => DETAIL_MERGE_INPUTS.indexOf(name) <= 0)
-  .map((name) => name === DETAIL_MERGE_INPUTS[0] ? "DetailMapArray" : name);
+  .map((name) => name === DETAIL_MERGE_INPUTS[0] ? "DetailArrayMap" : name);
 
 function mergedRegisters(backend)
 {
@@ -334,7 +341,7 @@ function detailTransform(backend)
     group: 0,
     binding: null,
     output: {
-      name: "DetailMapArray",
+      name: "DetailArrayMap",
       identity: `sampled-resource:0:${first}`,
       scopeIdentity: `sampled-resource:0:${first}@fragment`,
       viewDimension: "2d-array",
@@ -368,7 +375,7 @@ function layoutResourceBindings(backend, skinned)
     if (layer === 0)
     {
       bindings.push({
-        ...resourceBinding("DetailMapArray", registers[index], slot, index, "2d-array"),
+        ...resourceBinding("DetailArrayMap", registers[index], slot, index, "2d-array"),
         transformId: detailTransform(backend).id,
         arrayLayerCount: 3,
         isSRGB: false
@@ -624,7 +631,7 @@ test("QuadDetailV5 exact static body4 records and resource plans validate", () =
 
   assert.equal(dx11Plan.transforms.length, 1);
   const merge = dx11Plan.transforms[0];
-  assert.equal(merge.output.name, "DetailMapArray");
+  assert.equal(merge.output.name, "DetailArrayMap");
   assert.equal(merge.output.layerCount, 3);
   assert.equal(merge.output.scopeIdentity, "sampled-resource:0:11@fragment");
   assert.deepEqual(

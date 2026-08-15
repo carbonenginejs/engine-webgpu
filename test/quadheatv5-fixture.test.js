@@ -266,7 +266,8 @@ function makeRecord(backend)
     `C:/fixtures/res/graphics/effect.${backend}/managed/space/spaceobject/` +
     "v5/quad/unpacked_quadheatv5.sm_hi";
   const pixelBindings = [
-    ...(backend === "dx11" ? [ reflectedSampler() ] : []),
+    // Reflected on both backends; DX12 declares it in the root signature.
+    reflectedSampler(),
     ...RESOURCE_NAMES.map((_name, index) => reflectedResource(backend, index)),
     materialBinding(),
     { kind: "constantBuffer", registerSpace: 0, registerIndex: 2, carbon: {} },

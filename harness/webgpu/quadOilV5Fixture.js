@@ -250,11 +250,12 @@ function assertSelections(options, owner)
   {
     const entry = selected.get(name);
     const provenance = SELECTION_PROVENANCE[name];
+    // `source` is build-time policy (who chose the value), not container
+    // data; see quadV5Fixture.js. It cannot survive a read back from bytes.
     if (!entry || entry.value !== value
       || entry.optionIndex !== provenance.optionIndex
       || entry.defaultOption !== provenance.defaultOption
-      || entry.defaultValue !== provenance.defaultValue
-      || entry.source !== provenance.source)
+      || entry.defaultValue !== provenance.defaultValue)
     {
       fail(`${owner} has an unexpected ${name} selection or provenance`);
     }
@@ -502,7 +503,11 @@ function assertAnalysisBindings(record, resources)
     "constantBuffer:0:2",
     "constantBuffer:0:4",
     ...resources.map((entry) => `resource:0:${entry.registerIndex}`),
-    ...(record.backend === "dx11" ? [ "sampler:0:0", "sampler:0:1" ] : [])
+    // Both backends now reflect the samplers; DX12 reached them through the
+    // root signature rather than the stage register list, which is a difference
+    // in declaration, not in inventory.
+    "sampler:0:0",
+    "sampler:0:1"
   ].sort();
   const inventory = pixelBindings.map((entry) =>
     `${entry?.kind}:${entry?.registerSpace}:${entry?.registerIndex}`).sort();
@@ -529,32 +534,25 @@ function assertAnalysisBindings(record, resources)
       fail(`${expected.identity} must reflect the exact ${expected.name} resource`);
     }
   }
+  // One assertion covers both backends, and `dynamic` is false on both. See
+  // hasStaticSamplerState in quadV5Fixture.js for why the reflected state is
+  // backend-identical and what `dynamic` means.
   const samplers = pixelBindings.filter((entry) => entry?.kind === "sampler");
-  if (record.backend === "dx12")
+  if (samplers.length !== 2)
   {
-    if (samplers.length !== 0)
-    {
-      fail("DX12 analysis has unexpected static sampler reflection");
-    }
+    fail("analysis must expose both static samplers");
   }
-  else if (samplers.length !== 2)
+  for (let registerIndex = 0; registerIndex < 2; registerIndex += 1)
   {
-    fail("DX11 analysis must expose both static samplers");
-  }
-  else
-  {
-    for (let registerIndex = 0; registerIndex < 2; registerIndex += 1)
+    const sampler = samplers.find((entry) =>
+      entry.registerSpace === 0 && entry.registerIndex === registerIndex);
+    if (!sampler
+      || sampler.registerType !== 1
+      || sampler.dynamic !== false
+      || (sampler.carbon?.name ?? null) !== null
+      || !hasExactSamplerState(sampler.carbon?.sampler, registerIndex))
     {
-      const sampler = samplers.find((entry) =>
-        entry.registerSpace === 0 && entry.registerIndex === registerIndex);
-      if (!sampler
-        || sampler.registerType !== 1
-        || sampler.dynamic !== true
-        || (sampler.carbon?.name ?? null) !== null
-        || !hasExactSamplerState(sampler.carbon?.sampler, registerIndex))
-      {
-        fail(`DX11 sampler s${registerIndex} has unexpected static state`);
-      }
+      fail(`sampler s${registerIndex} has unexpected static state`);
     }
   }
 }

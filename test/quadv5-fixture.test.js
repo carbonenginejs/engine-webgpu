@@ -111,7 +111,7 @@ function heatDetailTransform(backend)
     group: 0,
     binding: 18,
     output: {
-      name: "DetailMapArray",
+      name: "DetailArrayMap",
       identity: `sampled-resource:0:${first}`,
       scopeIdentity: `sampled-resource:0:${first}@fragment`,
       viewDimension: "2d-array",
@@ -242,8 +242,10 @@ function samplerState(isDynamic, filters = ANISOTROPIC_REPEAT)
   };
 }
 
-// DX12 declares every unnamed sampler as an immutable root-signature sampler: an
-// enum borderColor instead of a float4, and no dynamic flag at all.
+// DX12 declares every unnamed sampler as an immutable root-signature sampler.
+// Its wire record stores a border-colour enum and no dynamic flag, but the
+// reader resolves both the way Carbon does, so the reflected state matches the
+// stage sampler exactly and only `sourceTruth` marks the declaration.
 function staticSamplerState(filters = ANISOTROPIC_REPEAT)
 {
   return {
@@ -251,7 +253,8 @@ function staticSamplerState(filters = ANISOTROPIC_REPEAT)
     ...filters,
     mipLODBias: 0,
     maxAnisotropy: 16,
-    borderColor: 0
+    borderColor: [ 0, 0, 0, 0 ],
+    isDynamic: false
   };
 }
 
@@ -970,7 +973,7 @@ test("QuadV5 fixture validates the PPT-on skinned heat-detail contract", () =>
 
   const merge = plan.transforms[0];
   assert.equal(plan.transforms.length, 1);
-  assert.equal(merge.output.name, "DetailMapArray");
+  assert.equal(merge.output.name, "DetailArrayMap");
   assert.equal(merge.output.scopeIdentity, "sampled-resource:0:14@fragment");
   assert.equal(merge.output.layerCount, 2);
   assert.deepEqual(
@@ -981,7 +984,7 @@ test("QuadV5 fixture validates the PPT-on skinned heat-detail contract", () =>
     merge.inputs.map((entry) => entry.scopeIdentity),
     [ "sampled-resource:0:14@fragment", "sampled-resource:0:15@fragment" ]
   );
-  const arrayBinding = plan.textures.find((entry) => entry.name === "DetailMapArray");
+  const arrayBinding = plan.textures.find((entry) => entry.name === "DetailArrayMap");
   assert.equal(arrayBinding.viewDimension, "2d-array");
   assert.equal(arrayBinding.arrayLayerCount, 2);
   assert.equal(arrayBinding.registerIndex, 14);
@@ -1340,8 +1343,14 @@ test("QuadV5 fixture accepts only the current full PPT-on Main contract", () =>
   wrongSource.metadata.sourcePath = wrongSource.analysis.source;
   assert.throws(() => validateQuadV5PackageRecord(wrongSource), /unpacked_quadv5 ship shader/u);
 
+  // Provenance drift is pinned on `optionIndex` rather than on `source`. This
+  // control used to flip `source` to "default", which the chunk package stored
+  // and the Carbon container cannot: `source` records who CHOSE a value, and
+  // the container carries only which permutation was translated. `optionIndex`
+  // is derived from the axes and the resolved variant, so it does survive the
+  // round trip and a wrong one is exactly the drift worth catching.
   const defaulted = structuredClone(record);
-  defaulted.metadata.selectedOptions.find((entry) => entry.name === "SPACE_OBJECT_PPT_ENABLED").source = "default";
+  defaulted.metadata.selectedOptions.find((entry) => entry.name === "SPACE_OBJECT_PPT_ENABLED").optionIndex = 0;
   assert.throws(() => validateQuadV5PackageRecord(defaulted), /unexpected provenance/u);
 
   const wrongShaderKey = structuredClone(record);
@@ -1407,18 +1416,22 @@ test("QuadV5 fixture requires the exact DX12 immutable signature sampler", () =>
     /unexpected DX12 signature-sampler reflection/u
   );
 
-  const wrongBorderColor = structuredClone(validRecord("dx12"));
-  signatureSampler(wrongBorderColor).carbon.sampler.borderColor = [ 0, 0, 0, 0 ];
+  // The raw wire enum, left unexpanded. Carbon expands it to four floats, so a
+  // reader that passes the byte through is the defect now.
+  const unexpandedBorderColor = structuredClone(validRecord("dx12"));
+  signatureSampler(unexpandedBorderColor).carbon.sampler.borderColor = 0;
   assert.throws(
-    () => validateQuadV5PackageRecord(wrongBorderColor),
+    () => validateQuadV5PackageRecord(unexpandedBorderColor),
     /unexpected DX12 signature-sampler reflection/u
   );
 
-  // A dynamic flag on an immutable sampler is a contradiction, not a default.
-  const dynamicFlagged = structuredClone(validRecord("dx12"));
-  signatureSampler(dynamicFlagged).carbon.sampler.isDynamic = false;
+  // A missing dynamic flag is the contradiction, not a present one. It is the
+  // override authorisation, and a consumer testing `isDynamic !== false` reads
+  // absence as dynamic -- the opposite of what an immutable sampler is.
+  const missingDynamicFlag = structuredClone(validRecord("dx12"));
+  delete signatureSampler(missingDynamicFlag).carbon.sampler.isDynamic;
   assert.throws(
-    () => validateQuadV5PackageRecord(dynamicFlagged),
+    () => validateQuadV5PackageRecord(missingDynamicFlag),
     /unexpected DX12 signature-sampler reflection/u
   );
 

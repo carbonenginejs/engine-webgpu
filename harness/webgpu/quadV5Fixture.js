@@ -154,7 +154,10 @@ const HEAT_RESOURCE_NAMES = Object.freeze([
 // reflection is pre-transform and the layout is post-transform, and a consumer
 // that conflates them either over-binds or fails to fill the array.
 const HEAT_DETAIL_MERGE = Object.freeze({
-  outputName: "DetailMapArray",
+  // Renamed by runtime-resource 866c5c8 (2026-08-02); this pin predated it. The
+  // name is a read-side default restored from the transform family table, never
+  // carried on the wire, so it moves whenever that table does.
+  outputName: "DetailArrayMap",
   inputParameters: Object.freeze([ "Detail1Map", "Detail2Map" ]),
   viewDimension: "2d-array",
   layerCount: 2,
@@ -334,8 +337,16 @@ function assertSelections(options, owner, expectedSelection)
     const entry = options.find((candidate) => candidate.name === name);
     const provenance = SELECTION_PROVENANCE[name];
     if (entry.value !== value) fail(`${owner} requires ${name}=${value}`);
+    // `source` is deliberately not asserted. Carbon's build-time resolver
+    // records whether a value arrived as "default", "local" or "global" -- who
+    // CHOSE it, not what it is -- and the container stores only which
+    // permutation was translated. A permutation that happens to equal the axis
+    // default is indistinguishable from one explicitly requested, so a package
+    // read back from bytes cannot carry it and must not invent it. The three
+    // fields below are derived from the axes and the resolved variant, so they
+    // do survive the round trip and are worth pinning.
     if (entry.optionIndex !== provenance.optionIndex || entry.defaultOption !== provenance.defaultOption
-      || entry.defaultValue !== provenance.defaultValue || entry.source !== "local")
+      || entry.defaultValue !== provenance.defaultValue)
     {
       fail(`${owner} has unexpected provenance for ${name}`);
     }
@@ -874,15 +885,22 @@ function hasExactSamplerState(state, expected, isDynamic)
   return hasFilterState(state, expected) && state.isDynamic === isDynamic;
 }
 
-// A DX12 immutable root-signature sampler is a D3D12_STATIC_SAMPLER_DESC: the
-// same filter/address/LOD state, an enum borderColor rather than a float4, and
-// no dynamic flag at all. Absence of `isDynamic` is part of the contract, so it
-// is asserted rather than defaulted.
+// A DX12 immutable root-signature sampler is a D3D12_STATIC_SAMPLER_DESC, whose
+// wire record stores a one-byte border-colour enum and no dynamic flag at all.
+// Neither survives to here any more: the reader expands the enum to the same
+// four floats a stage sampler carries and restores `isDynamic` as false, both
+// exactly as Carbon's own reader does. So the reflected state is identical
+// across backends and only `sourceTruth` records which record type declared it.
+//
+// `isDynamic` in particular must be present rather than absent, because it is
+// the override authorisation: a consumer that treats a missing flag as dynamic
+// would offer an override on a sampler Carbon forbids overriding.
 function hasStaticSamplerState(state, expected)
 {
   return hasFilterState(state, expected)
-    && state.borderColor === 0
-    && state.isDynamic === undefined;
+    && Array.isArray(state.borderColor)
+    && JSON.stringify(state.borderColor) === JSON.stringify([ 0, 0, 0, 0 ])
+    && state.isDynamic === false;
 }
 
 function assertAnalysisResources(record, layout, strict)
@@ -973,9 +991,9 @@ function assertAnalysisResources(record, layout, strict)
     {
       // DX12 declares every unnamed sampler as an immutable root-signature
       // sampler, so it reflects through the signature rather than a stage
-      // register and carries the D3D12 enum borderColor instead of a float4.
-      // That is a real backend difference, not missing reflection - assert its
-      // exact shape.
+      // register. That is the real backend difference, and it is a difference
+      // in WHERE the sampler is declared, not in what it reflects as - see
+      // hasStaticSamplerState above for why the state itself is identical.
       const signature = matches[0];
       const state = signature?.carbon?.sampler;
       if (matches.length !== 1

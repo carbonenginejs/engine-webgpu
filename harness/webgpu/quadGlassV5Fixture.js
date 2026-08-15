@@ -265,10 +265,11 @@ function assertSelections(options, owner, skinned)
     const entry = selected.get(name);
     const provenance = provenanceTable[name];
     if (!entry || entry.value !== value) fail(`${owner} requires ${name}=${value}`);
+    // `source` is build-time policy (who chose the value), not container
+    // data; see quadV5Fixture.js. It cannot survive a read back from bytes.
     if (entry.optionIndex !== provenance.optionIndex
       || entry.defaultOption !== provenance.defaultOption
-      || entry.defaultValue !== provenance.defaultValue
-      || entry.source !== "local")
+      || entry.defaultValue !== provenance.defaultValue)
     {
       fail(`${owner} has unexpected provenance for ${name}`);
     }
@@ -522,18 +523,12 @@ function assertAnalysisResources(record, passIndex, resources, skinned)
       }
     }
   }
+  // Both backends run the same assertions; the DX12 early return that claimed
+  // no samplers were reflected skipped all of them.
   const samplerBindings = bindings.filter((entry) => entry?.kind === "sampler");
-  if (record.backend === "dx12")
-  {
-    if (samplerBindings.length !== 0)
-    {
-      fail("DX12 analysis has unexpected static sampler reflection");
-    }
-    return;
-  }
   if (samplerBindings.length !== 2)
   {
-    fail("DX11 analysis must contain both static samplers");
+    fail("analysis must contain both static samplers");
   }
   const surface = samplerBindings.find((entry) => entry.registerIndex === 0)?.carbon?.sampler;
   const fog = samplerBindings.find((entry) => entry.registerIndex === 1)?.carbon?.sampler;
@@ -543,7 +538,7 @@ function assertAnalysisResources(record, passIndex, resources, skinned)
     || surface.mipLODBias !== 0 || surface.maxAnisotropy !== 16
     || surface.isDynamic !== false)
   {
-    fail("DX11 surface sampler has unexpected static state");
+    fail("surface sampler has unexpected static state");
   }
   if (!fog || fog.comparison !== false
     || fog.minFilter !== 2 || fog.magFilter !== 2 || fog.mipFilter !== 2
@@ -551,7 +546,7 @@ function assertAnalysisResources(record, passIndex, resources, skinned)
     || fog.mipLODBias !== 0 || fog.maxAnisotropy !== 16
     || fog.isDynamic !== false)
   {
-    fail("DX11 fog sampler has unexpected static state");
+    fail("fog sampler has unexpected static state");
   }
 }
 
@@ -687,19 +682,22 @@ export function validateQuadGlassV5PackageRecord(record)
   }
   assertSelections(record.analysis.selectedOptions, "analysis.selectedOptions", skinned);
   assertSelections(record.metadata.selectedOptions, "metadata.selectedOptions", skinned);
-  const selection = record.metadata.wgslSelection;
   const selectedStageKeys = [
     "Main.pass0.vertex",
     "Main.pass0.pixel",
     "Main.pass1.vertex",
     "Main.pass1.pixel"
   ];
-  if (selection?.mode !== "explicit"
-    || selection.techniqueName !== "Main" || selection.passIndex !== null
-    || selection.completePasses !== true
-    || !Array.isArray(selection.requestedStageNames)
-    || selection.requestedStageNames.length !== 0
-    || JSON.stringify(selection.selectedStageKeys) !== JSON.stringify(selectedStageKeys))
+  // `wgslSelection` is not consulted at all. The container emits it only for a
+  // technique with exactly one pass, so on this two-pass family it is always
+  // absent -- and where it does appear it is reconstructed from content rather
+  // than carried, so it cannot report the caller's request either (see
+  // quadHeatV5Fixture.js). Both passes and their four stage modules are directly
+  // observable, which is what this gate actually needs; the runner has already
+  // rejected an incomplete pipeline before reaching here.
+  const actualStageKeys = (record.pipelines ?? [])
+    .flatMap((pipeline) => (pipeline?.shaderModules ?? []).map((module) => module.key));
+  if (JSON.stringify(actualStageKeys) !== JSON.stringify(selectedStageKeys))
   {
     fail("package selection must contain both complete Main render passes");
   }

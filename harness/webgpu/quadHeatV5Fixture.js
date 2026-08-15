@@ -206,10 +206,11 @@ function assertSelections(options, owner)
     const entry = selected.get(name);
     const provenance = SELECTION_PROVENANCE[name];
     if (!entry || entry.value !== value) fail(`${owner} requires ${name}=${value}`);
+    // `source` is build-time policy (who chose the value), not container
+    // data; see quadV5Fixture.js. It cannot survive a read back from bytes.
     if (entry.optionIndex !== provenance.optionIndex
       || entry.defaultOption !== provenance.defaultOption
-      || entry.defaultValue !== provenance.defaultValue
-      || entry.source !== "local")
+      || entry.defaultValue !== provenance.defaultValue)
     {
       fail(`${owner} has unexpected provenance for ${name}`);
     }
@@ -428,7 +429,7 @@ function assertAnalysisResources(record, resources)
     "constantBuffer:0:2",
     "constantBuffer:0:4",
     ...resources.map((entry) => `resource:0:${entry.registerIndex}`),
-    ...(record.backend === "dx11" ? [ "sampler:0:0" ] : [])
+    "sampler:0:0"
   ].sort();
   if (JSON.stringify(pixelInventory) !== JSON.stringify(expectedPixelInventory))
   {
@@ -449,18 +450,15 @@ function assertAnalysisResources(record, resources)
       fail(`${expected.identity} must reflect the exact ${expected.name} resource`);
     }
   }
+  // The DX12 early return is gone. It asserted that DX12 reflected no samplers
+  // and skipped every check below, which stopped being true once signature
+  // samplers were reflected and stopped being a difference at all once their
+  // state was aligned with DX11's. Both backends now reach the same assertions,
+  // so a future divergence fails instead of being skipped.
   const samplerBindings = bindings.filter((entry) => entry?.kind === "sampler");
-  if (record.backend === "dx12")
-  {
-    if (samplerBindings.length !== 0)
-    {
-      fail("DX12 analysis has unexpected static sampler reflection");
-    }
-    return;
-  }
   if (samplerBindings.length !== 1 || samplerBindings[0].registerIndex !== 0)
   {
-    fail("DX11 analysis must contain exactly static sampler s0");
+    fail("analysis must contain exactly static sampler s0");
   }
   const sampler = samplerBindings[0].carbon?.sampler;
   if (!sampler || sampler.comparison !== false
@@ -469,7 +467,7 @@ function assertAnalysisResources(record, resources)
     || sampler.mipLODBias !== 0 || sampler.maxAnisotropy !== 16
     || sampler.isDynamic !== false)
   {
-    fail("DX11 sampler s0 has unexpected static state");
+    fail("sampler s0 has unexpected static state");
   }
 }
 
@@ -573,12 +571,18 @@ export function validateQuadHeatV5PackageRecord(record)
   }
   assertSelections(record.analysis.selectedOptions, "analysis.selectedOptions");
   assertSelections(record.metadata.selectedOptions, "metadata.selectedOptions");
+  // `passIndex === null` and an empty `requestedStageNames` are NOT asserted.
+  // They described how the package was asked for -- a caller that named no pass
+  // and no stage -- and the Carbon container stores no build-time policy. The
+  // metadata view reconstructs this field from what the package actually holds:
+  // `passIndex` is parsed out of the pass key, so it is always a number, and
+  // `requestedStageNames` is collected from the stages carrying programs, so it
+  // is never empty. What survives the round trip, and is what actually matters
+  // here, is the technique and the exact set of stage keys.
   const selection = record.metadata.wgslSelection;
   if (selection?.mode !== "explicit"
-    || selection.techniqueName !== "Main" || selection.passIndex !== null
+    || selection.techniqueName !== "Main"
     || selection.completePasses !== true
-    || !Array.isArray(selection.requestedStageNames)
-    || selection.requestedStageNames.length !== 0
     || JSON.stringify(selection.selectedStageKeys)
       !== JSON.stringify([ "Main.pass0.vertex", "Main.pass0.pixel" ]))
   {

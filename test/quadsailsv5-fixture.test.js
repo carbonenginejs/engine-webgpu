@@ -495,7 +495,8 @@ function makeRecord(backend, variant = "skinned")
     `v5/quad/${profile.sourceFile}`;
   const state = [ { state: 14, value: 1 } ];
   const pixelBindings = [
-    ...(backend === "dx11" ? [ reflectedSampler() ] : []),
+    // Reflected on both backends; DX12 declares it in the root signature.
+    reflectedSampler(),
     ...RESOURCE_NAMES.map((_name, index) => reflectedResource(backend, index, variant)),
     materialBinding(),
     { kind: "constantBuffer", registerSpace: 0, registerIndex: 2, carbon: {} },

@@ -5,8 +5,9 @@ and realizes explicit WebGPU pipeline, resource, binding, and draw requests.
 
 Use this experimental package when the caller already owns effect selection,
 packed geometry, texture pixels, sampler state, uniform values, and render
-policy. It owns WebGPU objects and uploads without depending on runtime-core,
-runtime-resource, or runtime-trinity.
+policy. It owns WebGPU objects and uploads without a production or source
+dependency on runtime-core, runtime-resource, or runtime-trinity; the latter two
+are development dependencies used by the harness and integration tests.
 
 ## Install
 
@@ -26,13 +27,13 @@ selected pipeline:
 
 ```js
 import {
-  CjsWebGPUDevice,
-  CjsWebGPUPackage
+  CjsWebgpuDevice,
+  CjsWebgpuPackage
 } from "@carbonenginejs/engine-webgpu";
 
-const pkg = CjsWebGPUPackage.from(packageData);
+const pkg = CjsWebgpuPackage.from(packageData);
 const pipeline = pkg.GetPipeline("Main", 0);
-const webgpu = await CjsWebGPUDevice.Request({
+const webgpu = await CjsWebgpuDevice.Request({
   gpu: navigator.gpu,
   shaderStage: GPUShaderStage
 });

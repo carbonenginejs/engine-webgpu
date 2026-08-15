@@ -144,10 +144,11 @@ function assertSelections(options, owner)
     const provenance = SELECTION_PROVENANCE[name];
     if (!entry) fail(`${owner} is missing ${name}`);
     if (entry.value !== value) fail(`${owner} requires ${name}=${value}`);
+    // `source` is build-time policy (who chose the value), not container
+    // data; see quadV5Fixture.js. It cannot survive a read back from bytes.
     if (entry.optionIndex !== provenance.optionIndex
       || entry.defaultOption !== provenance.defaultOption
-      || entry.defaultValue !== provenance.defaultValue
-      || entry.source !== "local")
+      || entry.defaultValue !== provenance.defaultValue)
     {
       fail(`${owner} has unexpected provenance for ${name}`);
     }
@@ -356,14 +357,10 @@ function assertAnalysisBindings(record)
   }
   const samplers = (pixel[0].bindings || []).filter((entry) =>
     entry?.kind === "sampler" && entry.registerSpace === 0);
-  if (record.backend === "dx12")
-  {
-    if (samplers.length !== 0) fail("DX12 DecalGlowV5 has unexpected sampler reflection");
-    return;
-  }
+  // Asserted for both backends; the DX12 early return skipped every check below.
   if (samplers.length !== SAMPLERS.length)
   {
-    fail("DX11 DecalGlowV5 must reflect both static samplers");
+    fail("DecalGlowV5 must reflect both static samplers");
   }
   for (const expected of SAMPLERS)
   {

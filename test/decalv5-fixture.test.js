@@ -167,7 +167,9 @@ struct FragmentOutput {
           passIndex: 0,
           stageName: "pixel",
           bindings: [
-            ...(backend === "dx11" ? [ samplerReflection(0), samplerReflection(1) ] : []),
+            // Reflected on both backends; DX12 declares them in the root signature.
+            samplerReflection(0),
+            samplerReflection(1),
             ...analysisBindings,
             constantBuffer(2),
             constantBuffer(4)

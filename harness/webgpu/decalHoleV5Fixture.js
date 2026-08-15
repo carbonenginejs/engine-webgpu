@@ -126,9 +126,10 @@ function assertSelections(options, owner)
   for (const [ name, value ] of expected)
   {
     const entry = selected.get(name);
+    // `source` is build-time policy (who chose the value), not container
+    // data; see quadV5Fixture.js. It cannot survive a read back from bytes.
     if (!entry || entry.value !== value || entry.optionIndex !== 0
-      || entry.defaultOption !== 0 || entry.defaultValue !== value
-      || entry.source !== "local")
+      || entry.defaultOption !== 0 || entry.defaultValue !== value)
     {
       fail(`${owner} has unexpected ${name} provenance`);
     }
@@ -319,7 +320,8 @@ function assertReflection(record, stages)
       fail(`uniform-buffer:0:${registerIndex} has unexpected vertex reflection`);
     }
   }
-  const expectedPixelCount = record.backend === "dx11" ? 8 : 6;
+  // Both backends reflect the same samplers now, so the count no longer splits.
+  const expectedPixelCount = 8;
   if (!Array.isArray(stages.pixel.bindings)
     || stages.pixel.bindings.length !== expectedPixelCount)
   {
@@ -355,15 +357,11 @@ function assertReflection(record, stages)
   }
   const samplers = stages.pixel.bindings.filter((binding) =>
     binding?.kind === "sampler" && binding.registerSpace === 0);
-  if (record.backend === "dx12")
-  {
-    if (samplers.length !== 0) fail("DX12 has unexpected sampler reflection");
-  }
-  else
+  // Asserted for both backends; the DX12 branch skipped these entirely.
   {
     if (samplers.length !== SAMPLERS.length)
     {
-      fail("DX11 must reflect exactly the two hole samplers");
+      fail("must reflect exactly the two hole samplers");
     }
     for (const expected of SAMPLERS)
     {

@@ -47,9 +47,10 @@ as tight C++ packing. The std140 rules that *do* differ (vec3 padded to 16,
 scalar array stride) never engage, because there are no struct members to pad.
 
 So `runtime-trinity` carries Carbon's layout directly, in
-`src/trinityCore/rawData/CjsPerObjectLayouts.js`, and a packer is no longer
-required. An engine that genuinely needs a different physical layout may still
-inject a `ResolveLayout(structName, definition)` packer; none does. This
+`src/core/rawData/CjsPerObjectLayouts.js`, and a packer is no longer
+required. There is no packer injection seam, and none is planned: an engine
+that genuinely needed a different physical layout would have to introduce one
+first, and no backend has produced that need. This
 package's own `spaceObjectMainBindings.js` already packs tight C++ layout
 rather than std140 — `Sun.DirWorld` is a vec3 at byte 640 followed immediately
 by `unused_pad0` at 652 — which is the same conclusion reached independently.
@@ -333,8 +334,10 @@ graph. The duck-typed boundary is shaped for future
 GPU-free package test now drives those real types through the engine dispatcher
 and proves the effect-to-package pipeline read chain. It assigns
 `Tr2Effect.effectResource` by hand; a production loader still does not own that
-write. A later render-step executor still needs to own frame/pass planning and
-select the pass for each batch type.
+write. Frame and pass planning are no longer outstanding — `PlanFrame` and
+`CjsWebgpuFrameExecutor` own them, as described above. Selecting the pass for
+each batch type stays outside this package by design; it is a non-goal below,
+not missing work.
 
 The build-3444265 common skinned-Glass evidence (57 ship areas across 57
 hulls) is likewise synthetic and library-free. Its body-4 PPT-on gate adds an
@@ -430,10 +433,11 @@ geometry, resolve resource paths, extract scene state, choose production
 material or per-object values, translate complete Carbon render state, infer
 batch-type pass policy, realize render-job intents, or schedule a render loop.
 
-The public engine texture adapter uploads explicit, single-mip, uncompressed
-RGBA8 data as 2D or 2D-array textures. The standalone harness may still create
-harness-owned native resources, such as cube views, when a shader contract
-requires a shape outside that provisional adapter.
+The public engine texture adapter uploads explicit pixel data as described under
+*Textures* above: uncompressed 8/16/32-bit and BC1–BC7 formats, mip chains, 2D,
+2D-array, cube and cube-array views. The standalone harness may still create
+harness-owned native resources when a shader contract requires a shape outside
+that adapter.
 
 ## Related documentation
 

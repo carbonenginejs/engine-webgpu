@@ -125,10 +125,11 @@ function assertSelections(options, owner)
     const provenance = SELECTION_PROVENANCE[name];
     if (!entry) fail(`${owner} is missing ${name}`);
     if (entry.value !== value) fail(`${owner} requires ${name}=${value}`);
+    // `source` is build-time policy (who chose the value), not container
+    // data; see quadV5Fixture.js. It cannot survive a read back from bytes.
     if (entry.optionIndex !== provenance.optionIndex
       || entry.defaultOption !== provenance.defaultOption
-      || entry.defaultValue !== provenance.defaultValue
-      || entry.source !== "local")
+      || entry.defaultValue !== provenance.defaultValue)
     {
       fail(`${owner} has unexpected provenance for ${name}`);
     }
@@ -278,17 +279,12 @@ function assertAnalysisBindings(record, resources)
   }
   const reflectedSamplers = (pixel[0].bindings || []).filter((entry) =>
     entry?.kind === "sampler" && entry.registerSpace === 0);
-  if (record.backend === "dx12")
-  {
-    if (reflectedSamplers.length !== 0)
-    {
-      fail("DX12 DecalV5 has unexpected sampler reflection");
-    }
-    return;
-  }
+  // Both backends assert the same sampler reflection. DX12 declares these in the
+  // root signature rather than the stage register list, but that is how the
+  // compiled effect spells them, not what they are.
   if (reflectedSamplers.length !== 2)
   {
-    fail("DX11 DecalV5 requires two reflected static samplers");
+    fail("DecalV5 requires two reflected static samplers");
   }
   const expectedStates = [
     { registerIndex: 0, addressU: 1, addressV: 1, mipLODBias: 0 },

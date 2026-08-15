@@ -199,7 +199,7 @@
           { "register": 2, "wgslName": "PatternMask2MapSampler", "carbonName": "PatternMask2MapSampler", "filters": "aniso/linear/linear, wrap/wrap/clamp" },
           { "register": 3, "wgslName": "s3", "carbonName": null, "filters": "linear/linear/none, clamp/clamp/clamp" }
         ],
-        "samplerNote": "Carbon reflects s0 and s3 without a name, and DX12 lowers exactly those two unnamed samplers to immutable root-signature samplers (enum borderColor, no isDynamic). s3 is not a copy of s0: minFilter 2, mipFilter 0, and clamped addressing on every axis.",
+        "samplerNote": "Carbon reflects s0 and s3 without a name, and DX12 lowers exactly those two unnamed samplers to immutable root-signature samplers. On the wire those carry a borderColor enum byte and no dynamic flag; the reader expands the enum to a float4 and restores isDynamic: false, so the reflected state is identical on both backends. s3 is not a copy of s0: minFilter 2, mipFilter 0, and clamped addressing on every axis.",
         "textureRegisters": {
           "dx11": [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ],
           "dx12": [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ],

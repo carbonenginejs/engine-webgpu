@@ -209,9 +209,10 @@ struct FragmentOutput {
             { registerIndex: 5, dimension: 4, type: 0, usedMask: 8 }
           ],
           bindings: [
-            ...(backend === "dx11"
-              ? [ samplerReflection(0, 4), samplerReflection(1, 1) ]
-              : []),
+            // Reflected on both backends; DX12 declares them in the root
+            // signature, with identical reflected state.
+            samplerReflection(0, 4),
+            samplerReflection(1, 1),
             ...TEXTURES.map(([ registerIndex, _slot, name ]) => ({
               kind: "resource",
               registerSpace: 0,

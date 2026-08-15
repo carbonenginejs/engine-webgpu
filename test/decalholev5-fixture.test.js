@@ -258,9 +258,9 @@ function record(backend)
             { registerIndex: 9, usedMask: 7, dimension: 4, type: 0 }
           ],
           bindings: [
-            ...(backend === "dx11"
-              ? [ samplerReflection(0), samplerReflection(1) ]
-              : []),
+            // Reflected on both backends; DX12 declares them in the root signature.
+            samplerReflection(0),
+            samplerReflection(1),
             ...TEXTURES.map(resource),
             constantBuffer(0),
             constantBuffer(2),
@@ -459,9 +459,11 @@ test("DecalHoleV5 rejects provenance, interface, reflection, and pair drift", ()
   wrongCube.pipeline.bindGroups[0].bindings[7].layout.texture.viewDimension = "2d";
   assert.throws(() => validateDecalHoleV5PackageRecord(wrongCube), /texture layout/u);
 
-  const unexpectedDx12Sampler = record("dx12");
-  unexpectedDx12Sampler.analysis.stages[1].bindings.unshift(samplerReflection(0));
-  assert.throws(() => validateDecalHoleV5PackageRecord(unexpectedDx12Sampler), /binding count/u);
+  // A duplicate sampler, not "a DX12 sampler": DX12 reflects s0 and s1 exactly
+  // as DX11 does, so a third one is what must be rejected.
+  const duplicatedSampler = record("dx12");
+  duplicatedSampler.analysis.stages[1].bindings.unshift(samplerReflection(0));
+  assert.throws(() => validateDecalHoleV5PackageRecord(duplicatedSampler), /binding count/u);
 
   const left = record("dx11");
   const right = record("dx12");

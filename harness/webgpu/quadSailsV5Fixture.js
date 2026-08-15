@@ -288,10 +288,11 @@ function assertSelections(options, owner, profile)
     const entry = selected.get(name);
     const provenance = profile.selectionProvenance[name];
     if (!entry || entry.value !== value) fail(`${owner} requires ${name}=${value}`);
+    // `source` is build-time policy (who chose the value), not container
+    // data; see quadV5Fixture.js. It cannot survive a read back from bytes.
     if (entry.optionIndex !== provenance.optionIndex
       || entry.defaultOption !== provenance.defaultOption
-      || entry.defaultValue !== provenance.defaultValue
-      || entry.source !== "local")
+      || entry.defaultValue !== provenance.defaultValue)
     {
       fail(`${owner} has unexpected provenance for ${name}`);
     }
@@ -655,7 +656,7 @@ function assertAnalysisResources(record, resources, profile)
     "constantBuffer:0:2",
     "constantBuffer:0:4",
     ...resources.map((entry) => `resource:0:${entry.registerIndex}`),
-    ...(record.backend === "dx11" ? [ "sampler:0:0" ] : [])
+    "sampler:0:0"
   ].sort();
   if (JSON.stringify(pixelInventory) !== JSON.stringify(expectedPixelInventory))
   {
@@ -678,21 +679,17 @@ function assertAnalysisResources(record, resources, profile)
       fail(`${expected.identity} must reflect the exact ${expected.name} resource`);
     }
   }
+  // One assertion for both backends. DX12 declares this sampler in the root
+  // signature and DX11 as a stage register, but the reflected state is now
+  // identical, so branching would only hide a future divergence.
   const samplers = bindings.filter((entry) => entry?.kind === "sampler");
-  if (record.backend === "dx12")
-  {
-    if (samplers.length !== 0)
-    {
-      fail("DX12 analysis has unexpected static sampler reflection");
-    }
-  }
-  else if (samplers.length !== 1 || samplers[0].registerSpace !== 0
+  if (samplers.length !== 1 || samplers[0].registerSpace !== 0
     || samplers[0].registerIndex !== 0
     || samplers[0].registerType !== 1
     || (samplers[0].carbon?.name ?? null) !== null
     || !hasExactSurfaceSampler(samplers[0].carbon?.sampler))
   {
-    fail("DX11 sampler s0 has unexpected static state");
+    fail("sampler s0 has unexpected static state");
   }
 }
 
@@ -816,12 +813,13 @@ export function validateQuadSailsV5PackageRecord(record)
   }
   assertSelections(record.analysis.selectedOptions, "analysis.selectedOptions", profile);
   assertSelections(record.metadata.selectedOptions, "metadata.selectedOptions", profile);
+  // Build-time selection policy is not asserted; see quadHeatV5Fixture.js. The
+  // container reconstructs `passIndex` and `requestedStageNames` from what the
+  // package holds, so neither can carry the caller's original request.
   const selection = record.metadata.wgslSelection;
   if (selection?.mode !== "explicit"
-    || selection.techniqueName !== "Main" || selection.passIndex !== null
+    || selection.techniqueName !== "Main"
     || selection.completePasses !== true
-    || !Array.isArray(selection.requestedStageNames)
-    || selection.requestedStageNames.length !== 0
     || JSON.stringify(selection.selectedStageKeys)
       !== JSON.stringify([ "Main.pass0.vertex", "Main.pass0.pixel" ]))
   {
