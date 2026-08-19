@@ -951,9 +951,11 @@ real mip-chain bias behavior remains outside this gate.
 
 The QuadV5 path supplies semantic material, per-frame, and per-object values
 rather than hand-addressed constant-buffer rows. It calls
-`buildEveSpaceObjectMainUniformData(...)` directly; that serializer reflects
-this package's stage-local
-material `cb0`, then packs Carbon's full `PerFrameVSData` (736 bytes),
+`buildEveSpaceObjectMainUniformData(...)` directly. That serializer is a
+harness module, not part of the shipped package, and it takes the stage-local
+material `cb0` layout as a required argument — the fixtures derive theirs from
+the package they are drawing, through `MaterialLayoutFromPackage(...)`. It then
+packs Carbon's full `PerFrameVSData` (736 bytes),
 `PerFramePSData` (1888 bytes), `EveSpaceObjectVSData` (464 bytes), and
 `EveSpaceObjectPSData` (464 bytes). The static medium-quality package's WGSL
 minimum binding sizes are 384, 512, 352, 416, and 432 bytes; the skinned

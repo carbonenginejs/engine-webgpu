@@ -12,7 +12,7 @@ import {
   validateDecalCylindricV5PackagePair,
   validateDecalCylindricV5PackageRecord
 } from "../harness/webgpu/decalCylindricV5Fixture.js";
-import { buildEveSpaceObjectMainUniformData } from "../src/core/spaceObjectMainBindings.js";
+import { buildEveSpaceObjectMainUniformData } from "../harness/webgpu/spaceObjectMainUniforms.js";
 
 const UNIFORMS = [
   [ 0, 0, "fragment", 16 ],
@@ -147,6 +147,16 @@ function samplerReflection(registerIndex)
         isDynamic: false
       }
     }
+  };
+}
+
+// The layout the caller must now state; see the note in the sibling decal
+// fixtures. A fixture owns its own layout rather than reading a format record.
+function materialLayout()
+{
+  return {
+    size: 16,
+    constants: [ { name: "DecalTextureScaling", offset: 0, size: 16, type: 0, dimension: 4, elements: 0 } ]
   };
 }
 
@@ -426,7 +436,7 @@ test("DecalCylindricV5 supplies deterministic alpha axes and exact decal overrid
   for (const backend of [ "dx11", "dx12" ])
   {
     const packed = {
-      ...buildEveSpaceObjectMainUniformData(record(backend), fixture.bindingValues),
+      ...buildEveSpaceObjectMainUniformData(record(backend), fixture.bindingValues, { materialLayout: materialLayout() }),
       ...fixture.decalUniformData
     };
     assert.deepEqual(

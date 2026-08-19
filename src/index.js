@@ -8,11 +8,6 @@ export { CjsWebgpuBuffer } from "./CjsWebgpuBuffer.js";
 export { CjsWebgpuTexture } from "./CjsWebgpuTexture.js";
 export { CjsWebgpuSampler } from "./CjsWebgpuSampler.js";
 export {
-  EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES,
-  buildEveSpaceObjectMainUniformData,
-  getEveSpaceObjectMainMaterialConstants
-} from "./core/spaceObjectMainBindings.js";
-export {
   CollectPerObjectUploads,
   CommitPerObjectUploads,
   UploadPerObjectData

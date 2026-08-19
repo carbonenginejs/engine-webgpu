@@ -47,9 +47,11 @@ try {
 ```
 
 Pipeline state, packed resources, binding values, draw encoding, and cleanup
-remain explicit caller inputs. The bounded Eve space-object Main serializer
-transposes logical matrices once into Carbon cbuffer register-row order while
-copying already GPU-form custom-mask slots unchanged.
+remain explicit caller inputs. Per-object bytes arrive as `runtime-trinity`
+`RawData`, which already stores every matrix in Carbon cbuffer register-row
+order, and reach the GPU through `CollectPerObjectUploads`. Material constant
+layouts come from `MaterialLayoutFromShader`, which reads the pass's stage
+inputs; this package has no path that reads reflection from a format record.
 
 The standalone harness prepares selected and all-body packages and proves that
 the body set and the selected views resolve to equivalent descriptors. Its

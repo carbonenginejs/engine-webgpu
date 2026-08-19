@@ -3,9 +3,8 @@ import { test } from "node:test";
 
 import {
   EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES,
-  buildEveSpaceObjectMainUniformData,
-  getEveSpaceObjectMainMaterialConstants
-} from "../src/core/spaceObjectMainBindings.js";
+  buildEveSpaceObjectMainUniformData as buildUniformData
+} from "../harness/webgpu/spaceObjectMainUniforms.js";
 import { createQuadV5MainBindingValues } from "../harness/webgpu/quadV5Fixture.js";
 
 const MATERIAL_NAMES = Object.freeze([
@@ -44,6 +43,28 @@ function uniformBinding(registerIndex, minBindingSize, scoped = false)
     }
   };
 }
+
+// The material layout is now the caller's to supply, with no fallback to the
+// package's analysis chunk. These are the same constants packageRecord() would
+// have reflected, stated where a fixture states its own.
+const MATERIAL_LAYOUT = Object.freeze({
+  size: 160,
+  constants: MATERIAL_NAMES.map((name, index) => ({
+    name,
+    offset: 16 + index * 16,
+    size: 16,
+    type: 0,
+    dimension: 4,
+    elements: 0
+  }))
+});
+
+
+function buildEveSpaceObjectMainUniformData(record, values, options = {})
+{
+  return buildUniformData(record, values, { materialLayout: MATERIAL_LAYOUT, ...options });
+}
+
 
 function packageRecord(scoped = false)
 {
@@ -304,18 +325,6 @@ test("space-object Main serializer emits exact v2 stage-scoped identities", () =
   assert.equal(floatAt(result["uniform-buffer:0:4@fragment"], 416), 12);
 });
 
-test("space-object Main exposes detached reflected material constants", () =>
-{
-  const record = packageRecord();
-  const constants = getEveSpaceObjectMainMaterialConstants(record);
-
-  assert.equal(Object.isFrozen(constants), true);
-  assert.equal(Object.isFrozen(constants[0]), true);
-  assert.deepEqual(constants.map(constant => constant.name), MATERIAL_NAMES);
-  record.analysis.stages[0].bindings[0].carbon.constants[0].name = "Changed";
-  assert.equal(constants[0].name, "GeneralGlowColor");
-});
-
 test("space-object Main serializer accepts package objects and the QuadV5 semantic fixture", () =>
 {
   const record = packageRecord();
@@ -348,10 +357,14 @@ test("space-object Main serializer fails closed on reflected material drift", ()
     /material\.Mtl4FresnelColor is required/u
   );
 
-  const overlap = packageRecord();
-  overlap.analysis.stages[0].bindings[0].carbon.constants[1].offset = 16;
+  // Overlap is caught in the layout, which is now where the offsets come from.
+  const overlap = {
+    size: MATERIAL_LAYOUT.size,
+    constants: MATERIAL_LAYOUT.constants.map((constant, index) =>
+      index === 1 ? { ...constant, offset: 16 } : constant)
+  };
   assert.throws(
-    () => buildEveSpaceObjectMainUniformData(overlap, bindingValues()),
+    () => buildUniformData(packageRecord(), bindingValues(), { materialLayout: overlap }),
     /overlaps another constant/u
   );
 });
@@ -408,22 +421,13 @@ test("space-object Main serializer rejects incomplete semantics and ABI expansio
   );
 });
 
-test("space-object Main serializer rejects a non-pixel material cb0", () =>
+test("space-object Main uniform data requires a caller-supplied material layout", () =>
 {
-  const record = packageRecord();
-  record.analysis.stages.push({
-    techniqueName: "Main",
-    passIndex: 0,
-    stageName: "vertex",
-    bindings: [ {
-      kind: "constantBuffer",
-      registerSpace: 0,
-      registerIndex: 0,
-      carbon: { hasLocalConstants: true }
-    } ]
-  });
+  // The analysis-chunk fallback that used to answer this is gone. It was a
+  // format record standing in for shader reflection, and a second engine must
+  // not reproduce it, so its absence is asserted rather than assumed.
   assert.throws(
-    () => buildEveSpaceObjectMainUniformData(record, bindingValues()),
-    /only a pixel-local Main\.pass0 cb0 material binding is supported/u
+    () => buildUniformData(packageRecord(), bindingValues()),
+    /options\.materialLayout is required/u
   );
 });

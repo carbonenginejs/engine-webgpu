@@ -18,7 +18,7 @@ import {
   validateDecalHoleV5PackagePair,
   validateDecalHoleV5PackageRecord
 } from "../harness/webgpu/decalHoleV5Fixture.js";
-import { buildEveSpaceObjectMainUniformData } from "../src/core/spaceObjectMainBindings.js";
+import { buildEveSpaceObjectMainUniformData } from "../harness/webgpu/spaceObjectMainUniforms.js";
 
 const PASS_STATES = [
   { state: 14, value: 0 },
@@ -188,6 +188,16 @@ struct FragmentOutput {
   output.output0 = vec4<f32>(input.input8.xyz + input.input9.xyz, 1.0);
   return output;
 }`;
+}
+
+// The layout the caller must now state; see the note in the sibling decal
+// fixtures. A fixture owns its own layout rather than reading a format record.
+function materialLayout()
+{
+  return {
+    size: 16,
+    constants: [ { name: "DecalGlowColor", offset: 0, size: 16, type: 0, dimension: 4, elements: 0 } ]
+  };
 }
 
 function record(backend)
@@ -408,7 +418,7 @@ test("DecalHoleV5 supplies deterministic discard geometry, controls, and exact o
   for (const backend of [ "dx11", "dx12" ])
   {
     const packed = {
-      ...buildEveSpaceObjectMainUniformData(record(backend), fixture.bindingValues),
+      ...buildEveSpaceObjectMainUniformData(record(backend), fixture.bindingValues, { materialLayout: materialLayout() }),
       ...fixture.decalUniformData
     };
     assert.deepEqual(

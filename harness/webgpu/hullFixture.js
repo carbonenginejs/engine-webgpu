@@ -422,46 +422,6 @@ export function getHullResourcePlan(record)
     });
 }
 
-function materialBinding(record)
-{
-    const binding = (record.pipeline.bindGroups ?? [])
-        .flatMap((group) => group.bindings ?? [])
-        .find((entry) => entry.name === "$LocalConstants");
-    if (!binding?.carbon?.constants?.length) fail("package declares no material constants");
-    return binding;
-}
-
-/**
- * The material constant layout, taken from the pass binding rather than from
- * the analysis chunk.
- *
- * `buildEveSpaceObjectMainUniformData` will fall back to reading the analysis
- * chunk if no layout is supplied, and that fallback is a recorded layering
- * defect — the engine has no business reading a format chunk for reflection.
- * The binding's own Carbon constant list is the same information one layer
- * closer to where it belongs, and it is already in the shape
- * `NormalizeMaterialLayout` accepts, so passing it explicitly keeps this
- * fixture off the defective path instead of adding a caller to it.
- *
- * @param {object} record Validated package record.
- * @returns {object} `{ size, constants }` material layout.
- */
-export function getHullMaterialLayout(record)
-{
-    validateHullPackageRecord(record);
-    const binding = materialBinding(record);
-    return Object.freeze({
-        size: binding.carbon.constantValueSize,
-        constants: Object.freeze(binding.carbon.constants.map((constant) => Object.freeze({
-            name: constant.name,
-            offset: constant.offset,
-            size: constant.size,
-            type: constant.type,
-            dimension: constant.dimension,
-            elements: constant.elements
-        })))
-    });
-}
 
 /**
  * Carbon's own constant defaults for this pass, transcribed from the
@@ -546,6 +506,16 @@ const CARBON_MATERIAL_DEFAULTS = Object.freeze({
     PMtl2FresnelColor: Object.freeze([ 1, 1, 1, 1 ]),
     PMtl2Gloss: Object.freeze([ 0.4, 0, 0, 0 ])
 });
+
+function materialBinding(record)
+{
+    const binding = (record.pipeline.bindGroups ?? [])
+        .flatMap((group) => group.bindings ?? [])
+        .find((entry) => entry.name === "$LocalConstants");
+    if (!binding?.carbon?.constants?.length) fail("package declares no material constants");
+    return binding;
+}
+
 
 /**
  * Resolve one value for every material constant the package declares.

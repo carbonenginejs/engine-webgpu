@@ -12,7 +12,7 @@ import {
   validateDecalGlowV5PackagePair,
   validateDecalGlowV5PackageRecord
 } from "../harness/webgpu/decalGlowV5Fixture.js";
-import { buildEveSpaceObjectMainUniformData } from "../src/core/spaceObjectMainBindings.js";
+import { buildEveSpaceObjectMainUniformData } from "../harness/webgpu/spaceObjectMainUniforms.js";
 
 const UNIFORMS = [
   [ 0, 0, "fragment", 64 ],
@@ -137,6 +137,17 @@ function samplerReflection(registerIndex, addressMode)
         isDynamic: false
       }
     }
+  };
+}
+
+// The layout the caller must now state. It was read off the package's analysis
+// chunk until that fallback was removed; a fixture owns its own layout, and a
+// composed caller derives one from `Tr2Shader`.
+function materialLayout(backend)
+{
+  return {
+    size: 64,
+    constants: MATERIAL_LAYOUT[backend].map(([ name, offset ]) => ({ name, offset, size: 16, type: 0, dimension: 4, elements: 0 }))
   };
 }
 
@@ -385,8 +396,8 @@ test("DecalGlowV5 supplies reflected material, object data, textures, and sample
     [ 0, 1, 0, 0, 0, 1, 0, 0 ]
   );
 
-  const dx11 = buildEveSpaceObjectMainUniformData(record("dx11"), fixture.bindingValues);
-  const dx12 = buildEveSpaceObjectMainUniformData(record("dx12"), fixture.bindingValues);
+  const dx11 = buildEveSpaceObjectMainUniformData(record("dx11"), fixture.bindingValues, { materialLayout: materialLayout("dx11") });
+  const dx12 = buildEveSpaceObjectMainUniformData(record("dx12"), fixture.bindingValues, { materialLayout: materialLayout("dx12") });
   const dx11Material = dx11["uniform-buffer:0:0@fragment"];
   const dx12Material = dx12["uniform-buffer:0:0@fragment"];
   assert.equal(dx11Material.byteLength, 64);

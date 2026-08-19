@@ -58,14 +58,18 @@ encoder. It does not choose pass order, techniques, attachments, or submission.
 
 ## Space-object uniform serialization
 
-- `EVE_SPACE_OBJECT_MAIN_BUFFER_SIZES` exposes the bounded struct sizes.
-- `getEveSpaceObjectMainMaterialConstants(packageRecord)` returns detached
-  reflected material constant descriptors.
-- `buildEveSpaceObjectMainUniformData(packageRecord, values)` serializes
-  complete caller-supplied material, per-frame, and per-object values into
-  canonical binding identities.
+The bounded Eve space-object Main serializer is **no longer part of this
+package**. It was harness scaffolding that duplicated an ABI `runtime-trinity`
+already owns in `CjsPerObjectLayouts`/`CjsPerFrameLayouts`, and it carried the
+format-record material read described under *Material constants*. It now lives
+beside the fixtures that use it, at `harness/webgpu/spaceObjectMainUniforms.js`,
+and ships in no artifact.
 
-Logical 4x4 matrix values use ordinary gl-matrix storage. The serializer
+A composed caller needs no replacement: per-object bytes come from `RawData`
+and reach the GPU through `CollectPerObjectUploads`, and the material layout
+comes from `MaterialLayoutFromShader`.
+
+Logical 4x4 matrix values use ordinary gl-matrix storage. The harness serializer
 transposes each matrix once into Carbon cbuffer register-row order, including
 each element of a matrix array. `customMaskMatrix` is copied unchanged because
 the current Trinity custom-mask producer already supplies those slots in GPU
@@ -116,10 +120,10 @@ length and is not that number.
 
 Reflection — constant names, offsets, sizes, defaults, annotations — belongs to
 `Tr2Shader`. The backend package owns only physical binding topology: group,
-binding, visibility, register identity. `buildEveSpaceObjectMainUniformData`
-accepts a `materialLayout` option for exactly this reason; its analysis-chunk
-fallback is a recorded layering defect and a second engine must not reproduce
-it.
+binding, visibility, register identity. The analysis-chunk fallback that once
+stood in for reflection here has been **removed**, along with the serializer
+that held it, so `MaterialLayoutFromShader` is the only path this package
+offers and there is nothing left for a second engine to copy.
 
 ## Effect paths
 

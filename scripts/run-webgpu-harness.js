@@ -986,7 +986,7 @@ const ASSETS = new Map([
     [ "/computePipeline.js", { path: new URL("../harness/webgpu/computePipeline.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/CjsWebgpuDevice.js", { path: new URL("../src/CjsWebgpuDevice.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/packageDraw.js", { path: new URL("../src/core/packageDraw.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
-    [ "/spaceObjectMainBindings.js", { path: new URL("../src/core/spaceObjectMainBindings.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    [ "/spaceObjectMainUniforms.js", { path: new URL("../harness/webgpu/spaceObjectMainUniforms.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/trinityBatchDispatcher.js", { path: new URL("../src/core/trinityBatchDispatcher.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/trinityPassEncoder.js", { path: new URL("../src/core/trinityPassEncoder.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/decalCounterV5Fixture.js", { path: new URL("../harness/webgpu/decalCounterV5Fixture.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
@@ -1010,6 +1010,9 @@ const ASSETS = new Map([
     // a missing route only shows up as a 404 in the browser.
     [ "/batchGroups.js", { path: new URL("../src/core/batchGroups.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/materialConstants.js", { path: new URL("../src/core/materialConstants.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
+    // The harness serializer lives beside the fixtures but imports the engine
+    // module by its real relative path, so the browser needs that URL too.
+    [ "/src/core/materialConstants.js", { path: new URL("../src/core/materialConstants.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/core/batchGroups.js", { path: new URL("../src/core/batchGroups.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/core/pipelineCache.js", { path: new URL("../src/core/pipelineCache.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],
     [ "/core/textureLayout.js", { path: new URL("../src/core/textureLayout.js", import.meta.url), type: "text/javascript; charset=utf-8" } ],

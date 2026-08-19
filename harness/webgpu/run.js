@@ -66,7 +66,6 @@ import {
     createHullBindingValues,
     createHullPlaceholderTextures,
     createHullSamplers,
-    getHullMaterialLayout,
     getHullResourcePlan,
     parseDdsTexture,
     validateHullPackageRecord
@@ -141,7 +140,7 @@ import {
     validateQuadSailsV5PackagePair
 } from "/quadSailsV5Fixture.js";
 import { CjsWebgpuDevice } from "/CjsWebgpuDevice.js";
-import { buildEveSpaceObjectMainUniformData } from "/spaceObjectMainBindings.js";
+import { buildEveSpaceObjectMainUniformData, MaterialLayoutFromPackage } from "/spaceObjectMainUniforms.js";
 import { CjsWebgpuTrinityBatchDispatcher } from "/trinityBatchDispatcher.js";
 import { CjsWebgpuTrinityPassEncoder } from "/trinityPassEncoder.js";
 
@@ -175,7 +174,8 @@ const DECAL_FAMILY_V5_PROFILES = Object.freeze({
         getResourcePlan: getDecalCylindricV5ResourcePlan,
         validatePair: validateDecalCylindricV5PackagePair,
         resolveUniformData: (record, values) => Object.freeze({
-            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
+            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues,
+                { materialLayout: MaterialLayoutFromPackage(record) }),
             ...values.decalUniformData
         })
     }),
@@ -189,7 +189,8 @@ const DECAL_FAMILY_V5_PROFILES = Object.freeze({
         getResourcePlan: getDecalHoleV5ResourcePlan,
         validatePair: validateDecalHoleV5PackagePair,
         resolveUniformData: (record, values) => Object.freeze({
-            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
+            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues,
+                { materialLayout: MaterialLayoutFromPackage(record) }),
             ...values.decalUniformData
         })
     }),
@@ -203,7 +204,8 @@ const DECAL_FAMILY_V5_PROFILES = Object.freeze({
         getResourcePlan: getDecalCounterV5ResourcePlan,
         validatePair: validateDecalCounterV5PackagePair,
         resolveUniformData: (record, values) => Object.freeze({
-            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
+            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues,
+                { materialLayout: MaterialLayoutFromPackage(record) }),
             ...values.decalUniformData
         })
     }),
@@ -217,7 +219,8 @@ const DECAL_FAMILY_V5_PROFILES = Object.freeze({
         getResourcePlan: getDecalGlowV5ResourcePlan,
         validatePair: validateDecalGlowV5PackagePair,
         resolveUniformData: (record, values) => Object.freeze({
-            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
+            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues,
+                { materialLayout: MaterialLayoutFromPackage(record) }),
             ...values.decalUniformData
         })
     }),
@@ -231,7 +234,8 @@ const DECAL_FAMILY_V5_PROFILES = Object.freeze({
         getResourcePlan: getDecalGlowCylindricV5ResourcePlan,
         validatePair: validateDecalGlowCylindricV5PackagePair,
         resolveUniformData: (record, values) => Object.freeze({
-            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues),
+            ...buildEveSpaceObjectMainUniformData(record, values.bindingValues,
+                { materialLayout: MaterialLayoutFromPackage(record) }),
             ...values.decalUniformData
         })
     })
@@ -2525,7 +2529,8 @@ function CreateQuadV5TrinityDispatcher(webgpu, fixture)
             return {
                 uniformData: ScopeFixtureBindingValues(
                     record.pipeline,
-                    new Map(Object.entries(buildEveSpaceObjectMainUniformData(record, batch.objectData))),
+                    new Map(Object.entries(buildEveSpaceObjectMainUniformData(record, batch.objectData,
+                        { materialLayout: MaterialLayoutFromPackage(record) }))),
                     `QuadV5 ${record.label} uniform data`
                 ),
                 resources: ScopeFixtureBindingValues(
@@ -2639,7 +2644,8 @@ function CreateQuadDetailV5TrinityDispatcher(webgpu, fixture)
                     record.pipeline,
                     new Map(Object.entries(buildEveSpaceObjectMainUniformData(
                         record,
-                        batch.objectData
+                        batch.objectData,
+                        { materialLayout: MaterialLayoutFromPackage(record) }
                     ))),
                     `QuadDetailV5 ${record.label} ${batch.renderCase} uniform data`
                 ),
@@ -2755,7 +2761,8 @@ function CreateQuadOilV5TrinityDispatcher(webgpu, fixture)
                     record.pipeline,
                     new Map(Object.entries(buildEveSpaceObjectMainUniformData(
                         record,
-                        batch.objectData
+                        batch.objectData,
+                        { materialLayout: MaterialLayoutFromPackage(record) }
                     ))),
                     `QuadOilV5 ${record.label} ${batch.resourceVariant} uniform data`
                 ),
@@ -2875,7 +2882,8 @@ function CreateQuadSailsV5TrinityDispatcher(webgpu, fixture)
                     record.pipeline,
                     new Map(Object.entries(buildEveSpaceObjectMainUniformData(
                         record,
-                        batch.objectData
+                        batch.objectData,
+                        { materialLayout: MaterialLayoutFromPackage(record) }
                     ))),
                     `QuadSailsV5 ${record.label} ${batch.renderCase} uniform data`
                 ),
@@ -3002,7 +3010,8 @@ function CreateQuadGlassV5TrinityDispatcher(webgpu, fixture)
                     material.pipeline,
                     new Map(Object.entries(buildEveSpaceObjectMainUniformData(
                         passZeroRecord,
-                        batch.objectData
+                        batch.objectData,
+                        { materialLayout: MaterialLayoutFromPackage(passZeroRecord) }
                     ))),
                     `QuadGlassV5 ${record.label} Main.pass${material.passIndex} uniform data`
                 ),
@@ -3119,7 +3128,8 @@ function CreateQuadHeatV5TrinityDispatcher(webgpu, fixture)
                     record.pipeline,
                     new Map(Object.entries(buildEveSpaceObjectMainUniformData(
                         record,
-                        batch.objectData
+                        batch.objectData,
+                        { materialLayout: MaterialLayoutFromPackage(record) }
                     ))),
                     `QuadHeatV5 ${record.label} ${batch.heatCase} uniform data`
                 ),
@@ -4974,7 +4984,7 @@ async function CreateHullGpuResources(webgpu, record, width, height)
     return {
         // The hull's own SOF material, not Carbon's white defaults.
         bindingValues: createHullBindingValues(record, width, height, { sof: true }),
-        materialLayout: getHullMaterialLayout(record),
+        materialLayout: MaterialLayoutFromPackage(record),
         resources,
         geometry: bundle.geometries.main,
         geometrySource,

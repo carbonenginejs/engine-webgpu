@@ -51,9 +51,11 @@ So `runtime-trinity` carries Carbon's layout directly, in
 required. There is no packer injection seam, and none is planned: an engine
 that genuinely needed a different physical layout would have to introduce one
 first, and no backend has produced that need. This
-package's own `spaceObjectMainBindings.js` already packs tight C++ layout
-rather than std140 — `Sun.DirWorld` is a vec3 at byte 640 followed immediately
-by `unused_pad0` at 652 — which is the same conclusion reached independently.
+harness serializer at `harness/webgpu/spaceObjectMainUniforms.js` packs tight
+C++ layout rather than std140 — `Sun.DirWorld` is a vec3 at byte 640 followed
+immediately by `unused_pad0` at 652 — which is the same conclusion reached
+independently, and its four buffer sizes (736/1888/464/464) are exactly what
+`runtime-trinity`'s layouts compile to.
 
 Matrices are always stored transposed, and the accessors enforce it:
 `SetAndTranspose`/`GetTransposed` for matrix fields, `Set`/`Get` for everything
@@ -73,10 +75,15 @@ the WGSL minimum. A package's own records expose only register identity,
 visibility and an active-prefix minimum binding size, and asking them for more
 is the wrong direction.
 
-`spaceObjectMainBindings.js` currently reads those constants out of the format
-package rather than from the shader. That is a known layering defect, not the
-design. Engines must consume the resource-owned `Tr2Shader` reflection graph; a
-second engine package must not copy the format-record path.
+**That layering defect is closed.** The serializer that read those constants out
+of the format package has left `src/` entirely: it was harness scaffolding
+duplicating an ABI `runtime-trinity` owns, so it moved to
+`harness/webgpu/spaceObjectMainUniforms.js`, and its analysis-chunk fallback was
+deleted rather than moved — a material layout is now a required argument with no
+default. Engines consume the resource-owned `Tr2Shader` reflection graph through
+`MaterialLayoutFromShader`; a second engine package has no format-record path to
+copy. A harness fixture may still state the layout its own package declares,
+which is fixture convenience rather than an engine path.
 
 Copying a matrix **between two records** is the one operation the accessor pair
 does not express. `GetTransposed`/`GetTransposedIndex` return the stored value,

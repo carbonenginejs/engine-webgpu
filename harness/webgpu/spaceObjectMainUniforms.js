@@ -1,4 +1,4 @@
-import { PackMaterialConstants } from "./materialConstants.js";
+import { PackMaterialConstants } from "../../src/core/materialConstants.js";
 
 const BUFFER_SIZES = Object.freeze({
   perFrameVS: 736,
@@ -218,29 +218,6 @@ function packStruct(source, size, fields, owner)
   return new Uint8Array(buffer);
 }
 
-function findMaterialBinding(analysis)
-{
-  const stages = analysis?.stages;
-  if (!Array.isArray(stages)) fail("package analysis stages are required");
-  const unsupported = stages.filter((stage) => stage?.techniqueName === "Main"
-    && stage.passIndex === 0 && stage.stageName !== "pixel")
-    .flatMap((stage) => Array.isArray(stage.bindings) ? stage.bindings : [])
-    .filter((binding) => binding?.kind === "constantBuffer"
-      && binding.registerSpace === 0 && binding.registerIndex === 0);
-  if (unsupported.length)
-  {
-    fail("only a pixel-local Main.pass0 cb0 material binding is supported");
-  }
-  const pixels = stages.filter((stage) => stage?.techniqueName === "Main"
-    && stage.passIndex === 0 && stage.stageName === "pixel");
-  if (pixels.length !== 1) fail("package must contain exactly one Main.pass0.pixel analysis stage");
-  const bindings = Array.isArray(pixels[0].bindings) ? pixels[0].bindings : [];
-  const matches = bindings.filter((binding) => binding?.kind === "constantBuffer"
-    && binding.registerSpace === 0 && binding.registerIndex === 0);
-  if (matches.length !== 1) fail("Main.pass0.pixel must contain one reflected cb0 material binding");
-  return matches[0];
-}
-
 function namedValue(values, name)
 {
   if (values instanceof Map) return values.get(name);
@@ -251,21 +228,6 @@ function namedValue(values, name)
   return undefined;
 }
 
-// LEGACY LAYOUT SOURCE. Reading `binding.carbon.constants` off the package's
-// analysis chunk is the recorded layering defect: it is a format record
-// standing in for canonical reflection, which belongs to `Tr2Shader`. It stays
-// only until every caller supplies a layout, and a second engine must not
-// reproduce it. See materialConstants.js.
-function legacyMaterialLayout(binding)
-{
-  const carbon = binding.carbon;
-  if (!carbon?.hasLocalConstants || !Array.isArray(carbon.constants) || !carbon.constants.length)
-  {
-    fail("cb0 has no usable reflected local-constant layout");
-  }
-  return { size: carbon.constantValueSize, constants: carbon.constants };
-}
-
 function resolvePackageRecord(value)
 {
   if (!value || typeof value !== "object") fail("package record is required");
@@ -273,25 +235,6 @@ function resolvePackageRecord(value)
     ? value.GetPipeline("Main", 0)
     : null);
   return { analysis: value.analysis, pipeline };
-}
-
-/**
- * Returns the reflected local material constants consumed by the bounded
- * Eve space-object Main profile. The detached records are safe to pass to a
- * caller-owned effect-value extractor.
- *
- * @param {object} record Loaded package or analysis/pipeline record.
- * @returns {object[]} Frozen reflected constant records.
- */
-export function getEveSpaceObjectMainMaterialConstants(record)
-{
-  const { analysis } = resolvePackageRecord(record);
-  const constants = findMaterialBinding(analysis)?.carbon?.constants;
-  if (!Array.isArray(constants) || constants.length === 0)
-  {
-    fail("Main.pass0.pixel cb0 reflected constants are required");
-  }
-  return Object.freeze(constants.map((constant) => Object.freeze({ ...constant })));
 }
 
 function canonicalUniformBindings(pipeline)
@@ -367,6 +310,41 @@ function canonicalUniformBindings(pipeline)
 }
 
 /**
+ * Derives a material layout from the package's own pass binding.
+ *
+ * This is FIXTURE convenience, not an engine path. The engine used to read the
+ * analysis chunk for the same facts, which put a format-record read inside a
+ * package that must consume reflection rather than own it; that fallback is
+ * gone and must not reappear in a second engine. A harness fixture is allowed
+ * to say "bind what this package declares", because proving the engine draws
+ * the package is the whole point of these gates. A composed caller uses
+ * `MaterialLayoutFromShader` against `Tr2Shader` instead.
+ *
+ * @param {object} record Validated package record.
+ * @returns {object} `{ size, constants }` material layout.
+ */
+export function MaterialLayoutFromPackage(record)
+{
+  const { pipeline } = resolvePackageRecord(record);
+  const binding = (pipeline?.bindGroups ?? [])
+    .flatMap((group) => group.bindings ?? [])
+    .find((entry) => entry.name === "$LocalConstants");
+  if (!binding?.carbon?.constants?.length) fail("package declares no material constants");
+  return Object.freeze({
+    size: binding.carbon.constantValueSize,
+    constants: Object.freeze(binding.carbon.constants.map((constant) => Object.freeze({
+      name: constant.name,
+      offset: constant.offset,
+      size: constant.size,
+      type: constant.type,
+      dimension: constant.dimension,
+      elements: constant.elements
+    })))
+  });
+}
+
+
+/**
  * Serialize the proven Carbon space-scene/space-object Main-pass structs and
  * the package-reflected stage-local material constants into canonical binding
  * scope identities. The caller owns
@@ -381,11 +359,14 @@ function canonicalUniformBindings(pipeline)
  */
 export function buildEveSpaceObjectMainUniformData(record, values = {}, options = {})
 {
-  const { analysis, pipeline } = resolvePackageRecord(record);
-  // A caller-supplied layout is the correct source, because it comes from
-  // `Tr2Shader` rather than from a format record. The analysis fallback is the
-  // recorded defect and goes when the last caller stops needing it.
-  const layout = options.materialLayout ?? legacyMaterialLayout(findMaterialBinding(analysis));
+  const { pipeline } = resolvePackageRecord(record);
+  // The layout is the caller's to supply and has no fallback. The analysis
+  // chunk used to stand in for it, which put a format-record read inside the
+  // engine; that path is gone, and it must not come back in a second engine.
+  // A fixture states its own layout, and a composed caller derives one from
+  // `Tr2Shader` through `MaterialLayoutFromShader`.
+  const layout = options.materialLayout;
+  if (!layout) fail("options.materialLayout is required");
   const material = PackMaterialConstants(layout, values.material);
   const packedData = {
     [IDENTITIES.material]: material,
