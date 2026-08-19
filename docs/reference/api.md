@@ -91,12 +91,14 @@ The serializer does not read SOF and does not supply production defaults.
 and `ClearDirty()`. A payload that cannot report dirtiness is always uploaded,
 because "cannot say" must not read as "unchanged".
 
-Two properties of the dirty flag matter to a caller. It is an **explicit
-invalidation, not a write barrier** — a field write does not mark a record
-dirty; the owner invalidates once per frame — so a clear flag means "not
-invalidated since the last upload", never "nothing was written". And a commit
-must follow a successful write: clearing first would leave a payload claiming to
-match a buffer that was never written, uncorrected until the next invalidation.
+Two properties of the dirty flag matter to a caller. It **is a write barrier**:
+any field write arms it, so a clear flag means "not changed since the last
+upload". That is a deliberate deviation from Carbon, which arms the flag only
+through an explicit once-per-frame invalidation by the owner — a rule that would
+freeze most of our records at their first frame's values, because far more sites
+create a persistent record than call `Invalidate`. And a commit must follow a
+successful write: clearing first would leave a payload claiming to match a
+buffer that was never written.
 
 Deciding which payload binds where is not this API's business. That join is
 Trinity's stage mask plus the package's binding identity; pairs arrive already
