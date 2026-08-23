@@ -141,6 +141,7 @@ export class CjsWebgpuFrameExecutor
     return Object.freeze({ encodedRegions, encodedSelections, submitted: true });
   }
 
+  /** Resolves the render-pass descriptor for one planned frame region. */
   #Descriptor(region, index, frame)
   {
     if (this.#hooks.ResolveDescriptor)

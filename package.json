@@ -35,8 +35,8 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@carbonenginejs/runtime-resource": "^0.18.0",
-    "@carbonenginejs/runtime-trinity": "^0.11.1",
+    "@carbonenginejs/runtime-resource": "^0.22.0",
+    "@carbonenginejs/runtime-trinity": "^0.11.2",
     "@carbonenginejs/runtime-utils": "^0.1.6",
     "playwright": "^1.61.1"
   },

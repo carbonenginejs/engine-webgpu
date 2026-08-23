@@ -13,27 +13,20 @@
 // inventing it would be inventing scene structure. Pairs arrive already
 // decided.
 //
-// THE FLAG IS AN EXPLICIT INVALIDATION, NOT A WRITE BARRIER. This is the part
-// that is easy to assume wrongly: RawData's `Set` and `SetAndTranspose` do NOT
-// mark a record dirty. Only `Invalidate`, `Zero` and `CopyFrom` do, because
-// Carbon invalidates once per frame from the owner's async update
-// (EveSpaceObject2.cpp:626-627) rather than tracking individual writes. So a
-// clear flag means "the owner has not invalidated since the last upload" and
-// never "the producer wrote nothing".
+// THE FLAG IS A WRITE BARRIER. RawData's `Set`, `SetAndTranspose`, `Zero`,
+// `CopyFrom`, and explicit `Invalidate` all mark a record dirty. A successful
+// upload clears that state; the next producer write re-arms it. Engines consume
+// the terminal packed bytes and never reinterpret a field or transpose it.
 //
 // TWO-PHASE ON PURPOSE. Clearing before the bytes are actually on the device
 // would lose an update whenever the upload throws: the payload would claim to
-// match a buffer that was never written, and because writes do not re-arm the
-// flag, nothing would correct it until the owner's next invalidation. So
-// collecting and committing are separate calls and the commit is the caller's
-// to make after the upload succeeds. That ordering cannot be got wrong by
-// accident, which is the point.
+// match a buffer that was never written. So collecting and committing are
+// separate calls and the commit is the caller's to make after the upload
+// succeeds. That ordering cannot be got wrong by accident, which is the point.
 //
-// A TRANSIENT RECORD STAYS DIRTY, and that is correct rather than a leak.
-// RawData's arena records are filled and consumed within one frame and never
-// clear their flag, so `ClearDirty` means "these bytes have been uploaded", not
-// "this payload is now stable". An uploader that assumed the second would skip
-// a transient record's next frame entirely.
+// TRANSIENT RECORDS USE THE SAME LIFECYCLE. `ClearDirty` means "these bytes have
+// been uploaded". Filling a reused arena record on a later frame marks it dirty
+// again, so it cannot be skipped merely because an earlier lease was committed.
 
 function fail(message)
 {
@@ -46,10 +39,10 @@ function fail(message)
 /**
  * Collects the payloads that need uploading into one `uniformData` record.
  *
- * `pairs` is `[{ identity, payload }]`, where `payload` is duck-typed on
- * RawData: `GetData()`, and optionally `IsDirty()` and `ClearDirty()`. A
- * payload with no dirty protocol is always uploaded, because "cannot say" must
- * not read as "unchanged".
+ * `pairs` is `[{ identity, payload }]`. During the pre-consolidation transition
+ * this function still accepts the historical RawData-shaped payload and treats
+ * a payload with no dirty protocol as always dirty. The combined runtime makes
+ * `CjsConstantPayload` the required nominal identity and removes this fallback.
  *
  * `force` uploads everything regardless, which is what a freshly created
  * binding set needs: its buffers hold nothing yet, so a clean payload is still
@@ -97,9 +90,9 @@ export function CollectPerObjectUploads(pairs, options = {})
 /**
  * Marks collected payloads as uploaded.
  *
- * Call only after the write succeeded. A payload without `ClearDirty` is left
- * alone rather than treated as an error, so the same collection works for
- * transient arena records and for hand-built test payloads.
+ * Call only after the write succeeded. The optional call is retained only for
+ * the pre-consolidation structural compatibility path; the combined runtime's
+ * nominal constant-payload contract requires `ClearDirty`.
  */
 export function CommitPerObjectUploads(collection)
 {

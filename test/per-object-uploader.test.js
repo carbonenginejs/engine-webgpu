@@ -7,8 +7,9 @@ import {
   UploadPerObjectData
 } from "../src/core/perObjectUploader.js";
 
-// Duck-typed on RawData. The engine declares no runtime dependencies and cannot
-// import the real one, so anything with this shape works.
+// Transitional RawData-shaped fixture. The separate engine package cannot yet
+// share one nominal contract identity safely; the combined runtime replaces
+// this structural fixture with a CjsConstantPayload subclass.
 function payload(values = [ 1, 2, 3, 4 ], dirty = true)
 {
   return {
@@ -93,10 +94,9 @@ test("CommitPerObjectUploads clears only what was collected", () =>
 
 test("UploadPerObjectData leaves flags set when the write fails", () =>
 {
-  // Clearing before the bytes are on the device would lose the update: the
-  // payload would claim to match a buffer that was never written, and because
-  // a field write does not re-arm the flag - only the owner's per-frame
-  // Invalidate does - nothing would correct it until the next invalidation.
+  // Clearing before the bytes are on the device would lose this update: the
+  // payload would claim to match a buffer that was never written. The failed
+  // collection must remain dirty so the next attempt retries immediately.
   const first = payload([ 1, 1, 1, 1 ], true);
 
   assert.throws(

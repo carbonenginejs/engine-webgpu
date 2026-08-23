@@ -87,9 +87,15 @@ The serializer does not read SOF and does not supply production defaults.
 - `UploadPerObjectData(pairs, write, options)` does both around a caller's
   write, with the ordering built in.
 
-`payload` is duck-typed on `RawData`: `GetData()`, and optionally `IsDirty()`
-and `ClearDirty()`. A payload that cannot report dirtiness is always uploaded,
-because "cannot say" must not read as "unchanged".
+Current, before runtime consolidation: `payload` accepts the historical
+`RawData` shape with `GetData()`, and optional `IsDirty()` and `ClearDirty()`.
+A payload that cannot report dirtiness is always uploaded, because "cannot
+say" must not read as "unchanged".
+
+Planned at the combined-runtime cutover: payloads use the canonical
+`CjsConstantPayload` identity, all three methods are required, and the
+structural fallback is removed. The engine still receives terminal bytes and
+does not reinterpret their layout.
 
 Two properties of the dirty flag matter to a caller. It **is a write barrier**:
 any field write arms it, so a clear flag means "not changed since the last

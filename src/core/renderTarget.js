@@ -333,6 +333,7 @@ export class CjsWebgpuRenderTarget
     return this;
   }
 
+  /** Creates owned multisample and depth attachments for the current size. */
   #CreateAttachments(device, usage)
   {
     if (this.#sampleCount > 1)
@@ -362,6 +363,7 @@ export class CjsWebgpuRenderTarget
     }
   }
 
+  /** Destroys and forgets every owned attachment. */
   #ReleaseAttachments()
   {
     this.#depth?.texture?.destroy?.();
@@ -370,6 +372,7 @@ export class CjsWebgpuRenderTarget
     this.#multisample = null;
   }
 
+  /** Gets the validated texture-usage vocabulary supplied by the host. */
   #RequireUsage()
   {
     const usage = this._textureUsage;
@@ -380,6 +383,7 @@ export class CjsWebgpuRenderTarget
     return usage;
   }
 
+  /** Throws when this target has already been destroyed. */
   #AssertLive()
   {
     if (this.#destroyed) fail("the render target is destroyed");
@@ -388,6 +392,7 @@ export class CjsWebgpuRenderTarget
   // Ordered so the message names the actual problem. A frame invalidated by a
   // later acquire, a resize or a device loss is STALE, and saying "no frame" of
   // one the caller is holding sends them looking in the wrong place.
+  /** Validates that a frame belongs to the target's current generation. */
   #AssertFrame(frame)
   {
     if (!frame || typeof frame !== "object") fail("a frame acquired from this target is required");
@@ -399,6 +404,7 @@ export class CjsWebgpuRenderTarget
     }
   }
 
+  /** Validates that one viewport or scissor rectangle lies inside the target. */
   #AssertInside(rect, name)
   {
     const values = [ rect.x, rect.y, rect.width, rect.height ];
