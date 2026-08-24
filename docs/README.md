@@ -1,5 +1,9 @@
 # @carbonenginejs/engine-webgpu documentation
 
+> **Historical donor documentation.** Current WebGPU documentation is in
+> `runtime/docs/engine/webgpu` and current source is exported by
+> `@carbonenginejs/runtime/engine/webgpu`.
+
 Status: Experimental
 Scope: `@carbonenginejs/engine-webgpu`
 Audience: Users and renderer integrators

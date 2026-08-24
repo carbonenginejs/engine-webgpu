@@ -1,5 +1,9 @@
 # @carbonenginejs/engine-webgpu
 
+> **Retired donor.** Maintained source now lives in
+> `@carbonenginejs/runtime/engine/webgpu` under `runtime/src/engine/webgpu`.
+> This checkout is historical evidence only; do not install or publish it.
+
 `@carbonenginejs/engine-webgpu` consumes already-selected Carbon WebGPU package data
 and realizes explicit WebGPU pipeline, resource, binding, and draw requests.
 
